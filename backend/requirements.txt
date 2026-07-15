@@ -9,4 +9,7 @@ scikit-learn
 pandas
 fpdf2
 psycopg2-binary
+<<<<<<< HEAD
 gunicorn
+=======
+>>>>>>> ab84540118e5a3298e00fb3696c6791dbb012e0d
