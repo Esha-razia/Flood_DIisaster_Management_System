@@ -7,6 +7,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 
 const SEVERITY_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
+const OP_STATUS_KEY_MAP = { "Assigned": "statusAssigned", "In Progress": "statusInProgress", "Completed": "statusCompleted" };
 
 export default function GovDashboard() {
   const { t, lang } = useLanguage();
@@ -22,10 +23,87 @@ export default function GovDashboard() {
   const [resourceGap, setResourceGap] = useState([]);
   const [compareCities, setCompareCities] = useState(["", ""]);
   const [reportCity, setReportCity] = useState("");
+  const [rescueWorkers, setRescueWorkers] = useState([]);
+  const [assigningAlertId, setAssigningAlertId] = useState(null);
+  const [assignForm, setAssignForm] = useState({ worker: "", description: "" });
+  const [govFeedback, setGovFeedback] = useState("");
+  const [allRescueOps, setAllRescueOps] = useState([]);
+  const [donations, setDonations] = useState([]);
+  const [seasonalTrend, setSeasonalTrend] = useState([]);
+
+  const fetchAllRescueOps = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/rescue-operations`);
+      setAllRescueOps(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchDonations = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/donations`);
+      setDonations(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchSeasonalTrend = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/admin/seasonal-trend`);
+      setSeasonalTrend(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+
+  const fetchRescueWorkers = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/users`);
+      setRescueWorkers((res.data || []).filter((u) => u.role === "rescue_worker"));
+    } catch (err) { console.error(err); }
+  };
+
+  const handleAssignRescueWorker = async (alertItem) => {
+    try {
+      const opRes = await axios.post(`${API_BASE}/rescue-operations`, {
+        location: alertItem.location,
+        description: assignForm.description || `Response to alert: ${alertItem.message}`,
+        risk_level: alertItem.risk_level || alertItem.risk || "Medium",
+        assigned_team: assignForm.worker || "Unassigned",
+      });
+      // Mark the alert itself as assigned so the UI knows not to offer this
+      // action again — without this, re-opening the dashboard (or another
+      // official viewing it) would show the same alert as still unassigned.
+      await axios.put(`${API_BASE}/alerts/${alertItem.id}`, {
+        assigned_worker: assignForm.worker || "Unassigned",
+        linked_rescue_op_id: opRes.data.id,
+      });
+      setAssigningAlertId(null);
+      setAssignForm({ worker: "", description: "" });
+      setGovFeedback(t("operationAssignedMsg"));
+      setTimeout(() => setGovFeedback(""), 4000);
+      fetchAlerts();
+      fetchAllRescueOps();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateWorkerStatus = async (workerId, newStatus) => {
+    try {
+      const endpoint = newStatus === "Active" ? "activate" : "deactivate";
+      await axios.put(`${API_BASE}/users/${workerId}/${endpoint}`);
+      fetchRescueWorkers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
 
   useEffect(() => {
     fetchAdvisories();
     fetchResourceGap();
+    fetchRescueWorkers();
+    fetchAllRescueOps();
+    fetchDonations();
+    fetchSeasonalTrend();
   }, []);
 
   const fetchAdvisories = async () => {
@@ -429,10 +507,10 @@ export default function GovDashboard() {
             <div className="dashboard-card p-6">
               <h3 className="font-display text-xl text-parchment mb-6">{t("topRiskLocations")}</h3>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={locationRiskData} layout="horizontal">
+                <BarChart data={locationRiskData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis type="number" stroke="#9CA3AF" />
-                  <YAxis dataKey="location" type="category" stroke="#9CA3AF" width={80} />
+                  <YAxis dataKey="location" type="category" stroke="#9CA3AF" width={110} tick={{ fontSize: 12 }} />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
                     labelStyle={{ color: '#F3F4F6' }}
@@ -477,7 +555,7 @@ export default function GovDashboard() {
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-display text-xl text-parchment">{t("predictionHistory")}</h3>
               <div className="text-sm text-muted">
-                Showing {filteredPredictions.length} of {predictions.length} predictions
+                {t("showingXofYPredictions").replace("{x}", filteredPredictions.length).replace("{y}", predictions.length)}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -513,7 +591,7 @@ export default function GovDashboard() {
               </table>
               {filteredPredictions.length > 20 && (
                 <div className="text-center mt-4 text-muted">
-                  Showing first 20 results. Use filters to see more data.
+                  {t("showingFirst20")}
                 </div>
               )}
             </div>
@@ -607,6 +685,193 @@ export default function GovDashboard() {
                 📄 {t("downloadReport")}
               </button>
             </div>
+          </div>
+
+          {/* High-Risk Alerts — assign a rescue worker directly */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-red-400 mb-2">{t("emergencyResponse")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
+            <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
+            {govFeedback && <p className="text-sm text-emerald-400 mb-3">✓ {govFeedback}</p>}
+            {alerts.filter((a) => (a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium").length === 0 ? (
+              <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
+            ) : (
+              <div className="space-y-3">
+                {alerts
+                  .filter((a) => (a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")
+                  .slice(0, 10)
+                  .map((a) => (
+                    <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${(a.risk_level || a.risk) === "High" ? "text-red-300 border border-red-500/30" : "text-marigold-300 border border-marigold-500/30"}`}>
+                              {t(SEVERITY_KEY_MAP[a.risk_level || a.risk] || a.risk_level || a.risk)}
+                            </span>
+                            <span className="text-sm text-white font-medium">{a.location}</span>
+                          </div>
+                          <p className="text-sm text-muted">{a.message}</p>
+                        </div>
+                        <button
+                          onClick={() => { setAssigningAlertId(assigningAlertId === a.id ? null : a.id); setAssignForm({ worker: "", description: "" }); }}
+                          disabled={!!a.assigned_worker}
+                          className="btn-secondary text-xs py-2 px-3 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {a.assigned_worker
+                            ? `✓ ${t("assignedTo")} ${a.assigned_worker}`
+                            : assigningAlertId === a.id ? t("cancel") : t("assignRescueWorker")}
+                        </button>
+                      </div>
+
+                      {!a.assigned_worker && assigningAlertId === a.id && (
+                        <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                          <select
+                            value={assignForm.worker}
+                            onChange={(e) => setAssignForm((p) => ({ ...p, worker: e.target.value }))}
+                            className="field-input text-sm"
+                          >
+                            <option value="">{t("selectRescueWorker")}</option>
+                            {rescueWorkers.map((w) => (
+                              <option key={w.id} value={w.name}>{w.name} ({w.email})</option>
+                            ))}
+                          </select>
+                          <input
+                            placeholder={t("operationNotesPh")}
+                            value={assignForm.description}
+                            onChange={(e) => setAssignForm((p) => ({ ...p, description: e.target.value }))}
+                            className="field-input text-sm"
+                          />
+                          <button onClick={() => handleAssignRescueWorker(a)} className="btn-primary text-sm w-full">
+                            {t("confirmAssignment")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Rescue Worker Directory */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-2">{t("rescueWorkerDirectory")}</h2>
+            <p className="text-sm text-muted mb-4">{t("rescueWorkerDirectoryDesc")}</p>
+            {rescueWorkers.length === 0 ? (
+              <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-muted">
+                      <th className="pb-2">{t("name")}</th>
+                      <th className="pb-2">{t("email")}</th>
+                      <th className="pb-2">{t("status")}</th>
+                      <th className="pb-2">{t("actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {rescueWorkers.map((w) => (
+                      <tr key={w.id}>
+                        <td className="py-2 text-white">{w.name}</td>
+                        <td className="py-2 text-muted">{w.email}</td>
+                        <td className="py-2">
+                          <span className={w.status === "Active" ? "text-teal-300" : "text-muted"}>{w.status === "Active" ? t("active") : t("inactive")}</span>
+                        </td>
+                        <td className="py-2">
+                          <button
+                            onClick={() => handleUpdateWorkerStatus(w.id, w.status === "Active" ? "Inactive" : "Active")}
+                            className="text-xs text-teal-300 hover:text-teal-200"
+                          >
+                            {w.status === "Active" ? t("deactivate") : t("activate")}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Rescue Operations Overview (monitoring) */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-marigold-400 mb-2">{t("operationsMonitoring")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-2">{t("rescueOperationsOverview")}</h2>
+            <p className="text-sm text-muted mb-4">{t("rescueOperationsOverviewDesc")}</p>
+            {allRescueOps.length === 0 ? (
+              <p className="text-sm text-muted">{t("noOperationsFound")}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-muted">
+                      <th className="pb-2">{t("location2")}</th>
+                      <th className="pb-2">{t("statusLabel")}</th>
+                      <th className="pb-2">{t("riskLabel")}</th>
+                      <th className="pb-2">{t("teamLabel")}</th>
+                      <th className="pb-2">{t("updatedLabel")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {allRescueOps.slice(0, 15).map((op) => (
+                      <tr key={op.id}>
+                        <td className="py-2 text-white">{op.location}</td>
+                        <td className="py-2">
+                          <span className={op.status === "Completed" ? "text-emerald-300" : op.status === "In Progress" ? "text-teal-300" : "text-marigold-300"}>
+                            {t(OP_STATUS_KEY_MAP[op.status] || op.status)}
+                          </span>
+                        </td>
+                        <td className="py-2 text-muted">{t(SEVERITY_KEY_MAP[op.risk_level] || op.risk_level)}</td>
+                        <td className="py-2 text-muted">{op.assigned_team || t("unassigned")}</td>
+                        <td className="py-2 text-muted">{new Date(op.updated_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Donation / Resource Pledges Overview */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-teal-400 mb-2">{t("resourceCoordination")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-2">{t("donationPledges")}</h2>
+            <p className="text-sm text-muted mb-4">{t("donationPledgesOverviewDesc")}</p>
+            {donations.length === 0 ? (
+              <p className="text-sm text-muted">{t("noDonationsYet")}</p>
+            ) : (
+              <div className="space-y-2">
+                {donations.slice(0, 10).map((d) => (
+                  <div key={d.id} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
+                    <div><span className="text-white font-medium">{d.item}</span> <span className="text-muted">× {d.quantity} — {d.donor_name}</span></div>
+                    <span className="text-xs text-teal-300 border border-teal-500/30 rounded-full px-2 py-0.5">{d.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Seasonal / Historical Trend */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-red-400 mb-2">{t("historicalContext")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-2">{t("seasonalTrend")}</h2>
+            <p className="text-sm text-muted mb-4">{t("seasonalTrendDesc")}</p>
+            {seasonalTrend.length === 0 ? (
+              <p className="text-sm text-muted">{t("notEnoughHistory")}</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={seasonalTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#233047" />
+                  <XAxis dataKey="month" stroke="#93A0B4" tick={{ fontSize: 11 }} />
+                  <YAxis stroke="#93A0B4" tick={{ fontSize: 11 }} />
+                  <Tooltip contentStyle={{ backgroundColor: '#101826', border: '1px solid #233047', borderRadius: '10px' }} labelStyle={{ color: '#F3EDE1' }} />
+                  <Bar dataKey="Low" stackId="a" fill="#3FBDB6" />
+                  <Bar dataKey="Medium" stackId="a" fill="#E8A33D" />
+                  <Bar dataKey="High" stackId="a" fill="#ef4444" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           {/* Public Advisories */}

@@ -164,6 +164,9 @@ def initialize_sqlite_db(cursor, conn):
       message TEXT,
       risk_level TEXT,
       location TEXT,
+      status TEXT,
+      assigned_worker TEXT,
+      linked_rescue_op_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -189,20 +192,6 @@ def initialize_sqlite_db(cursor, conn):
       latitude REAL,
       longitude REAL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS rescue_operations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT,
-      location TEXT,
-      risk_level TEXT,
-      assigned_team TEXT,
-      status TEXT DEFAULT 'Pending',
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      completed_at DATETIME NULL
     );
     """)
     cursor.execute("""
@@ -236,6 +225,64 @@ def initialize_sqlite_db(cursor, conn):
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS rescue_operations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      location TEXT,
+      description TEXT,
+      risk_level TEXT,
+      assigned_team TEXT,
+      status TEXT DEFAULT 'Assigned',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME,
+      people_rescued INTEGER,
+      resources_used TEXT,
+      completion_notes TEXT
+    );
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS advisories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      message TEXT,
+      region TEXT,
+      issued_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS system_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      level TEXT,
+      message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Self-healing migration: a database.db created in an earlier session
+    # (before some of these columns existed) keeps its OLD schema forever,
+    # because "CREATE TABLE IF NOT EXISTS" only runs on brand-new tables —
+    # it never adds columns to a table that's already there. Without this,
+    # anyone whose database.db predates a schema change keeps silently
+    # failing to save the newer fields (e.g. alerts.assigned_worker),
+    # which is exactly what caused assignments to appear to "not save."
+    expected_columns = {
+        "users": ["status", "is_verified", "otp"],
+        "predictions": ["user_id", "user_email"],
+        "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
+        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes"],
+    }
+    for table, columns in expected_columns.items():
+        try:
+            cursor.execute(f"PRAGMA table_info({table})")
+            existing = {getattr(row, "name", None) for row in cursor.fetchall()}
+            for col in columns:
+                if col not in existing:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        except Exception as e:
+            print(f"[MIGRATION] Could not check/update '{table}': {e}")
+
     conn.commit()
 
 def initialize_postgresql_db(cursor, conn):
@@ -274,6 +321,9 @@ def initialize_postgresql_db(cursor, conn):
       message TEXT,
       risk_level TEXT,
       location TEXT,
+      status TEXT,
+      assigned_worker TEXT,
+      linked_rescue_op_id INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -304,15 +354,35 @@ def initialize_postgresql_db(cursor, conn):
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS rescue_operations (
       id SERIAL PRIMARY KEY,
-      title TEXT,
       location TEXT,
+      description TEXT,
       risk_level TEXT,
       assigned_team TEXT,
-      status TEXT DEFAULT 'Pending',
-      notes TEXT,
+      status TEXT DEFAULT 'Assigned',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      completed_at TIMESTAMP NULL
+      completed_at TIMESTAMP NULL,
+      people_rescued INTEGER,
+      resources_used TEXT,
+      completion_notes TEXT
+    );
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS advisories (
+      id SERIAL PRIMARY KEY,
+      title TEXT,
+      message TEXT,
+      region TEXT,
+      issued_by TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS system_logs (
+      id SERIAL PRIMARY KEY,
+      level TEXT,
+      message TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
     cursor.execute("""
@@ -475,6 +545,14 @@ def log_event(level, message):
     if len(MEMORY_LOGS) > 300:
         del MEMORY_LOGS[0]
     print(f"[{level.upper()}] {message}")
+
+    if globals().get("DB_AVAILABLE") and globals().get("cursor") is not None:
+        try:
+            cursor.execute("INSERT INTO system_logs (level, message, created_at) VALUES (?, ?, ?)",
+                            (level, message, str(datetime.now())))
+            conn.commit()
+        except Exception:
+            pass  # logging must never itself crash the request it's logging
 
 # Default admin user for testing
 MEMORY_USERS.append({
@@ -1086,6 +1164,9 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
                 "risk_level": risk,
                 "risk": risk,
                 "location": location,
+                "status": "Active",
+                "assigned_worker": None,
+                "linked_rescue_op_id": None,
                 "created_at": str(datetime.now())
             }
             
@@ -1194,7 +1275,7 @@ def get_alerts():
     location_filter = (request.args.get("location") or "").strip().lower()
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT id, message, risk_level, location, created_at FROM alerts ORDER BY created_at DESC")
+            cursor.execute("SELECT id, message, risk_level, location, status, assigned_worker, linked_rescue_op_id, created_at FROM alerts ORDER BY created_at DESC")
             rows = cursor.fetchall()
             data = []
             seen_ids = set()
@@ -1205,6 +1286,9 @@ def get_alerts():
                     "risk_level": getattr(row, "risk_level", None),
                     "risk": getattr(row, "risk_level", None),
                     "location": getattr(row, "location", None),
+                    "status": getattr(row, "status", None),
+                    "assigned_worker": getattr(row, "assigned_worker", None),
+                    "linked_rescue_op_id": getattr(row, "linked_rescue_op_id", None),
                     "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) is not None else None
                 }
                 data.append(record)
@@ -1243,6 +1327,8 @@ def create_alert():
         "risk": data.get("risk", data.get("risk_level", "Medium")),
         "location": data.get("location", "Unknown"),
         "status": "Active",
+        "assigned_worker": None,
+        "linked_rescue_op_id": None,
         "created_at": str(datetime.now())
     }
     
@@ -1258,7 +1344,7 @@ def create_alert():
         except Exception as db_error:
             print(f"Failed to save alert to database: {db_error}")
     
-    return jsonify({"message": "Alert created successfully"})
+    return jsonify(alert_record)
 
 @app.route("/alerts/<int:alert_id>", methods=["DELETE"])
 def delete_alert(alert_id):
@@ -1290,18 +1376,26 @@ def update_alert(alert_id):
                 a["location"] = data["location"]
             if "status" in data:
                 a["status"] = data["status"]  # e.g. "Cancelled"
+            if "assigned_worker" in data:
+                a["assigned_worker"] = data["assigned_worker"]
+                log_event("info", f"Alert #{alert_id} ({a.get('location')}) escalated — rescue worker '{data['assigned_worker']}' assigned")
+            if "linked_rescue_op_id" in data:
+                a["linked_rescue_op_id"] = data["linked_rescue_op_id"]
             updated = a
             break
 
     if DB_AVAILABLE:
         try:
             cursor.execute(
-                "UPDATE alerts SET message = COALESCE(?, message), risk_level = COALESCE(?, risk_level), location = COALESCE(?, location) WHERE id = ?",
-                (data.get("message"), data.get("risk_level"), data.get("location"), alert_id)
+                "UPDATE alerts SET message = COALESCE(?, message), risk_level = COALESCE(?, risk_level), "
+                "location = COALESCE(?, location), status = COALESCE(?, status), "
+                "assigned_worker = COALESCE(?, assigned_worker), linked_rescue_op_id = COALESCE(?, linked_rescue_op_id) WHERE id = ?",
+                (data.get("message"), data.get("risk_level"), data.get("location"), data.get("status"),
+                 data.get("assigned_worker"), data.get("linked_rescue_op_id"), alert_id)
             )
             conn.commit()
         except Exception as db_error:
-            print(f"Failed to update alert in database: {db_error}")
+            log_event("error", f"Failed to update alert in database: {db_error}")
 
     if not updated and not DB_AVAILABLE:
         return jsonify({"message": "Alert not found"}), 404
@@ -1313,14 +1407,36 @@ RISK_PRIORITY = {"High": 1, "Medium": 2, "Low": 3}
 
 @app.route("/rescue-operations", methods=["GET"])
 def get_rescue_operations():
+    all_ops = list(MEMORY_RESCUE_OPS)
+    seen_ids = {o["id"] for o in all_ops}
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT * FROM rescue_operations ORDER BY created_at DESC")
+            for row in cursor.fetchall():
+                row_id = getattr(row, "id", None)
+                if row_id in seen_ids:
+                    continue
+                all_ops.append({
+                    "id": row_id,
+                    "location": getattr(row, "location", None),
+                    "description": getattr(row, "description", None),
+                    "risk_level": getattr(row, "risk_level", None),
+                    "assigned_team": getattr(row, "assigned_team", None),
+                    "status": getattr(row, "status", None),
+                    "created_at": str(getattr(row, "created_at", None)),
+                    "updated_at": str(getattr(row, "updated_at", None)),
+                    "completed_at": str(getattr(row, "completed_at", None)) if getattr(row, "completed_at", None) else None,
+                    "people_rescued": getattr(row, "people_rescued", None),
+                    "resources_used": getattr(row, "resources_used", None),
+                    "completion_notes": getattr(row, "completion_notes", None),
+                })
+                seen_ids.add(row_id)
+        except Exception as e:
+            log_event("error", f"Failed to fetch rescue operations: {e}")
+
     # FR05-07: prioritize by risk level, most urgent first; then newest first
-    ops = sorted(
-        MEMORY_RESCUE_OPS,
-        key=lambda o: (RISK_PRIORITY.get(o["risk_level"], 9), o["created_at"]),
-        reverse=False,
-    )
-    # newest-first within the same priority tier looks better in a live feed
-    ops = sorted(ops, key=lambda o: o["created_at"], reverse=True)
+    ops = sorted(all_ops, key=lambda o: o["created_at"], reverse=True)
     ops = sorted(ops, key=lambda o: RISK_PRIORITY.get(o["risk_level"], 9))
     return jsonify(ops)
 
@@ -1339,6 +1455,23 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
         "completed_at": None,
     }
     MEMORY_RESCUE_OPS.append(op)
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("""
+                INSERT INTO rescue_operations (location, description, risk_level, assigned_team, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"]))
+            conn.commit()
+            # Adopt the database's own auto-increment id so /rescue-operations
+            # (which reads from the DB first) can find this exact record.
+            cursor.execute("SELECT id FROM rescue_operations WHERE location = ? AND created_at = ? ORDER BY id DESC", (op["location"], op["created_at"]))
+            row = cursor.fetchone()
+            if row:
+                op["id"] = row.id if hasattr(row, "id") else row[0]
+        except Exception as db_error:
+            log_event("error", f"Failed to save rescue operation to database: {db_error}")
+
     print(f"[NOTIFY] Rescue team '{op['assigned_team']}' assigned to {op['location']} ({op['risk_level']} risk)")
     return op
 
@@ -1366,21 +1499,56 @@ def update_rescue_operation_status(op_id):
     if new_status not in ("Assigned", "In Progress", "Completed"):
         return jsonify({"message": "Invalid status"}), 400
 
+    updated_at = str(datetime.now())
+    completed_at = updated_at if new_status == "Completed" else None
+    people_rescued = data.get("people_rescued") if new_status == "Completed" else None
+    resources_used = data.get("resources_used", "") if new_status == "Completed" else None
+    completion_notes = data.get("completion_notes", "") if new_status == "Completed" else None
+    assigned_team = data.get("assigned_team")
+
+    result = None
     for op in MEMORY_RESCUE_OPS:
         if op["id"] == op_id:
             op["status"] = new_status
-            op["updated_at"] = str(datetime.now())
-            if "assigned_team" in data:
-                op["assigned_team"] = data["assigned_team"] or "Unassigned"
+            op["updated_at"] = updated_at
+            if assigned_team is not None:
+                op["assigned_team"] = assigned_team or "Unassigned"
             if new_status == "Completed":
-                op["completed_at"] = str(datetime.now())  # FR05-05
-                # Completion report — real outcome data, not just a status flip
-                op["people_rescued"] = data.get("people_rescued")
-                op["resources_used"] = data.get("resources_used", "")
-                op["completion_notes"] = data.get("completion_notes", "")
-            return jsonify(op)
+                op["completed_at"] = completed_at
+                op["people_rescued"] = people_rescued
+                op["resources_used"] = resources_used
+                op["completion_notes"] = completion_notes
+            result = op
+            break
 
-    return jsonify({"message": "Rescue operation not found"}), 404
+    if DB_AVAILABLE:
+        try:
+            cursor.execute(
+                "UPDATE rescue_operations SET status = ?, updated_at = ?, "
+                "assigned_team = COALESCE(?, assigned_team), completed_at = COALESCE(?, completed_at), "
+                "people_rescued = COALESCE(?, people_rescued), resources_used = COALESCE(?, resources_used), "
+                "completion_notes = COALESCE(?, completion_notes) WHERE id = ?",
+                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, op_id)
+            )
+            conn.commit()
+            if result is None:
+                cursor.execute("SELECT * FROM rescue_operations WHERE id = ?", (op_id,))
+                row = cursor.fetchone()
+                if row:
+                    result = {
+                        "id": row.id, "location": row.location, "description": row.description,
+                        "risk_level": row.risk_level, "assigned_team": row.assigned_team, "status": row.status,
+                        "created_at": str(row.created_at), "updated_at": str(row.updated_at),
+                        "completed_at": str(row.completed_at) if row.completed_at else None,
+                        "people_rescued": row.people_rescued, "resources_used": row.resources_used,
+                        "completion_notes": row.completion_notes,
+                    }
+        except Exception as db_error:
+            log_event("error", f"Failed to update rescue operation in database: {db_error}")
+
+    if result is None:
+        return jsonify({"message": "Rescue operation not found"}), 404
+    return jsonify(result)
 
 # ---------------- SHELTERS (FR-07) ----------------
 MEMORY_SHELTERS = []
@@ -2174,7 +2342,18 @@ seed_sample_data()
 # ---------------- SYSTEM LOGS (NFR06-02) ----------------
 @app.route("/admin/logs", methods=["GET"])
 def get_logs():
-    return jsonify(list(reversed(MEMORY_LOGS))[:100])
+    all_logs = list(MEMORY_LOGS)
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT level, message, created_at FROM system_logs ORDER BY created_at DESC LIMIT 200")
+            db_logs = [{"level": getattr(r, "level", None), "message": getattr(r, "message", None), "timestamp": str(getattr(r, "created_at", None))} for r in cursor.fetchall()]
+            # DB logs already include everything MEMORY_LOGS has (since log_event
+            # writes to both) — prefer the DB copy as authoritative once available.
+            if db_logs:
+                all_logs = db_logs
+        except Exception as e:
+            print(f"[LOGS] Failed to fetch from database: {e}")
+    return jsonify(list(reversed(all_logs))[:100] if all_logs is MEMORY_LOGS else all_logs[:100])
 
 # ---------------- COMMUNITY REPORT CONFIRMATIONS ----------------
 @app.route("/community-reports/<int:report_id>/confirm", methods=["POST"])
@@ -2208,7 +2387,27 @@ MEMORY_ADVISORIES = []
 
 @app.route("/advisories", methods=["GET"])
 def get_advisories():
-    return jsonify(list(reversed(MEMORY_ADVISORIES)))
+    all_advisories = list(MEMORY_ADVISORIES)
+    seen_ids = {a["id"] for a in all_advisories}
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT * FROM advisories ORDER BY created_at DESC")
+            for row in cursor.fetchall():
+                row_id = getattr(row, "id", None)
+                if row_id in seen_ids:
+                    continue
+                all_advisories.append({
+                    "id": row_id, "title": getattr(row, "title", None), "message": getattr(row, "message", None),
+                    "region": getattr(row, "region", None), "issued_by": getattr(row, "issued_by", None),
+                    "created_at": str(getattr(row, "created_at", None)),
+                })
+                seen_ids.add(row_id)
+        except Exception as e:
+            log_event("error", f"Failed to fetch advisories: {e}")
+
+    all_advisories.sort(key=lambda a: a["created_at"], reverse=True)
+    return jsonify(all_advisories)
 
 @app.route("/advisories", methods=["POST"])
 def create_advisory():
@@ -2225,15 +2424,59 @@ def create_advisory():
         "created_at": str(datetime.now()),
     }
     MEMORY_ADVISORIES.append(advisory)
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute(
+                "INSERT INTO advisories (title, message, region, issued_by, created_at) VALUES (?, ?, ?, ?, ?)",
+                (advisory["title"], advisory["message"], advisory["region"], advisory["issued_by"], advisory["created_at"])
+            )
+            conn.commit()
+            cursor.execute("SELECT id FROM advisories WHERE title = ? AND created_at = ? ORDER BY id DESC", (advisory["title"], advisory["created_at"]))
+            row = cursor.fetchone()
+            if row:
+                advisory["id"] = row.id if hasattr(row, "id") else row[0]
+        except Exception as db_error:
+            log_event("error", f"Failed to save advisory to database: {db_error}")
+
     log_event("info", f"Public advisory issued: {title} ({advisory['region']})")
     return jsonify(advisory), 201
 
 @app.route("/advisories/<int:advisory_id>", methods=["DELETE"])
 def delete_advisory(advisory_id):
     MEMORY_ADVISORIES[:] = [a for a in MEMORY_ADVISORIES if a["id"] != advisory_id]
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("DELETE FROM advisories WHERE id = ?", (advisory_id,))
+            conn.commit()
+        except Exception as db_error:
+            log_event("error", f"Failed to delete advisory from database: {db_error}")
     return jsonify({"message": "Advisory withdrawn"})
 
 # ---------------- RESOURCE GAP ANALYSIS (Government Official) ----------------
+@app.route("/admin/seasonal-trend", methods=["GET"])
+def seasonal_trend():
+    """Groups the real prediction history by month so Government Officials
+    can see how flood risk has trended over recent months — a genuine,
+    data-driven seasonal comparison (not simulated)."""
+    preds_resp = get_predictions()
+    buckets = {}  # "YYYY-MM" -> {"Low": n, "Medium": n, "High": n, "total": n}
+    for p in preds_resp.json:
+        created = p.get("created_at")
+        if not created:
+            continue
+        month_key = str(created)[:7]  # "YYYY-MM"
+        risk = p.get("risk", "Unknown")
+        if month_key not in buckets:
+            buckets[month_key] = {"Low": 0, "Medium": 0, "High": 0, "total": 0}
+        if risk in buckets[month_key]:
+            buckets[month_key][risk] += 1
+        buckets[month_key]["total"] += 1
+
+    result = [{"month": k, **v} for k, v in sorted(buckets.items())]
+    return jsonify(result[-12:])  # last 12 months of data present
+
+
 @app.route("/admin/resource-gap-analysis", methods=["GET"])
 def resource_gap_analysis():
     """For each known city: current risk level (from the latest prediction)
@@ -2262,7 +2505,7 @@ def resource_gap_analysis():
         rows.append({
             "city": city, "risk": risk,
             "shelters": shelter_count, "hospitals": hospital_count,
-            "gap_flag": RISK_SCORE.get(risk, 0) >= 2 and (shelter_count + hospital_count) < 2,
+            "gap_flag": RISK_SCORE.get(risk, 0) >= 2 and (shelter_count + hospital_count) <= 3,
         })
     rows.sort(key=lambda r: (-RISK_SCORE.get(r["risk"], 0), r["shelters"] + r["hospitals"]))
     return jsonify(rows)

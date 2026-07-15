@@ -13,6 +13,7 @@ export default function Navbar() {
   const [showAlertsPanel, setShowAlertsPanel] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const seenAlertIds = useRef(new Set());
+  const seenAdvisoryIds = useRef(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -64,6 +65,39 @@ export default function Navbar() {
     checkAlerts();
     const interval = setInterval(checkAlerts, 20000);
     return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  // Same pattern as alerts above, but for Government-issued public
+  // advisories — these are policy-level notices, not emergencies, but
+  // people should still be notified when a new one is issued.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkAdvisories = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/advisories`);
+        const advisories = res.data || [];
+        const fresh = advisories.filter((a) => !seenAdvisoryIds.current.has(a.id));
+
+        if (seenAdvisoryIds.current.size > 0) {
+          fresh.forEach((a) => {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification(`${t("publicAdvisories")}: ${a.title}`, {
+                body: a.message,
+                icon: undefined,
+              });
+            }
+          });
+        }
+        advisories.forEach((a) => seenAdvisoryIds.current.add(a.id));
+      } catch (err) {
+        // silent — backend may just not be running yet
+      }
+    };
+
+    checkAdvisories();
+    const advisoryInterval = setInterval(checkAdvisories, 20000);
+    return () => clearInterval(advisoryInterval);
   }, [isAuthenticated]);
 
   const handleLogout = () => {

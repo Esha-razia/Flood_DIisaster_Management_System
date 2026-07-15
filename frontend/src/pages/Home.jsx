@@ -113,11 +113,13 @@ function HeroSlider({ slides, t }) {
 }
 
 export default function Home() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [networkStats, setNetworkStats] = useState(null);
   const [liveSlide, setLiveSlide] = useState(null);
+  const [advisories, setAdvisories] = useState([]);
 
   useEffect(() => {
+    axios.get(`${API_BASE}/advisories`).then((res) => setAdvisories((res.data || []).slice(0, 3))).catch(() => {});
     Promise.all([
       axios.get(`${API_BASE}/shelters`).catch(() => ({ data: [] })),
       axios.get(`${API_BASE}/hospitals`).catch(() => ({ data: [] })),
@@ -193,6 +195,25 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── PUBLIC ADVISORIES ── */}
+      {advisories.length > 0 && (
+        <section className="py-16 border-b border-white/5">
+          <div className="max-w-6xl mx-auto px-6">
+            <p className="eyebrow text-teal-400 mb-3">{t("officialCommunication")}</p>
+            <h2 className="font-display text-3xl text-parchment mb-8">{t("publicAdvisories")}</h2>
+            <div className="grid md:grid-cols-3 gap-6">
+              {advisories.map((a) => (
+                <div key={a.id} className="dashboard-card p-6">
+                  <h3 className="font-display text-lg text-parchment mb-2">{a.title}</h3>
+                  <p className="text-sm text-muted leading-relaxed mb-3">{a.message}</p>
+                  <p className="text-xs text-muted">{a.region} · {new Date(a.created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── HISTORICAL CONTEXT ── */}
       <section className="py-20 border-b border-white/5 bg-white/[0.02]">

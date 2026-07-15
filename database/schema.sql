@@ -29,6 +29,10 @@ CREATE TABLE alerts (
   id INT IDENTITY(1,1) PRIMARY KEY,
   message TEXT,
   risk_level VARCHAR(10),
+  location VARCHAR(100),
+  status VARCHAR(20),
+  assigned_worker VARCHAR(100),
+  linked_rescue_op_id INT,
   created_at DATETIME DEFAULT GETDATE()
 );
 
@@ -115,6 +119,10 @@ CREATE TABLE blocked_roads (
 );
 
 -- ===== Migration for existing databases (run once if shelters/hospitals already exist) =====
+-- ALTER TABLE alerts ADD location VARCHAR(100);
+-- ALTER TABLE alerts ADD status VARCHAR(20);
+-- ALTER TABLE alerts ADD assigned_worker VARCHAR(100);
+-- ALTER TABLE alerts ADD linked_rescue_op_id INT;
 -- ALTER TABLE predictions ADD user_email VARCHAR(100);
 -- ALTER TABLE shelters ADD latitude FLOAT;
 -- ALTER TABLE shelters ADD longitude FLOAT;
