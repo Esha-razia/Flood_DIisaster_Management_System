@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        var div = document.createElement('div');
+        div.style.position = 'fixed';
+        div.style.top = '0';
+        div.style.left = '0';
+        div.style.width = '100%';
+        div.style.background = 'red';
+        div.style.color = 'white';
+        div.style.padding = '20px';
+        div.style.zIndex = '999999';
+        div.style.wordBreak = 'break-all';
+        div.innerHTML = '<strong>Error:</strong> ' + message + '<br><strong>File:</strong> ' + source + ' (' + lineno + ':' + colno + ')';
+        document.body.appendChild(div);
+        return false;
+      };
+      window.addEventListener('unhandledrejection', function(event) {
+        var div = document.createElement('div');
+        div.style.position = 'fixed';
+        div.style.top = '100px';
+        div.style.left = '0';
+        div.style.width = '100%';
+        div.style.background = 'orange';
+        div.style.color = 'white';
+        div.style.padding = '20px';
+        div.style.zIndex = '999999';
+        div.style.wordBreak = 'break-all';
+        div.innerHTML = '<strong>Unhandled Rejection:</strong> ' + event.reason;
+        document.body.appendChild(div);
+      });
+      window.addEventListener('error', function(event) {
+        if (event.target && (event.target.src || event.target.href)) {
+          var div = document.createElement('div');
+          div.style.position = 'fixed';
+          div.style.bottom = '0';
+          div.style.left = '0';
+          div.style.width = '100%';
+          div.style.background = 'blue';
+          div.style.color = 'white';
+          div.style.padding = '20px';
+          div.style.zIndex = '999999';
+          div.style.wordBreak = 'break-all';
+          div.innerHTML = '<strong>Resource Load Failed:</strong> ' + (event.target.src || event.target.href);
+          document.body.appendChild(div);
+        }
+      }, true);
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0B1220" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flood Disaster Management System</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
