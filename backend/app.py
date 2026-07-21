@@ -183,6 +183,7 @@ def initialize_sqlite_db(cursor, conn):
       status TEXT DEFAULT 'Active',
       is_verified INTEGER DEFAULT 0,
       otp TEXT,
+      on_duty INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -282,7 +283,9 @@ def initialize_sqlite_db(cursor, conn):
       completed_at DATETIME,
       people_rescued INTEGER,
       resources_used TEXT,
-      completion_notes TEXT
+      completion_notes TEXT,
+      needs_backup INTEGER DEFAULT 0,
+      update_log TEXT
     );
     """)
     cursor.execute("""
@@ -312,10 +315,10 @@ def initialize_sqlite_db(cursor, conn):
     # failing to save the newer fields (e.g. alerts.assigned_worker),
     # which is exactly what caused assignments to appear to "not save."
     expected_columns = {
-        "users": ["status", "is_verified", "otp"],
+        "users": ["status", "is_verified", "otp", "on_duty"],
         "predictions": ["user_id", "user_email"],
         "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
-        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes"],
+        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log"],
     }
     for table, columns in expected_columns.items():
         try:
@@ -340,6 +343,7 @@ def initialize_postgresql_db(cursor, conn):
       status TEXT DEFAULT 'Active',
       is_verified INTEGER DEFAULT 0,
       otp TEXT,
+      on_duty INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -408,7 +412,9 @@ def initialize_postgresql_db(cursor, conn):
       completed_at TIMESTAMP NULL,
       people_rescued INTEGER,
       resources_used TEXT,
-      completion_notes TEXT
+      completion_notes TEXT,
+      needs_backup INTEGER DEFAULT 0,
+      update_log TEXT
     );
     """)
     cursor.execute("""
@@ -460,6 +466,32 @@ def initialize_postgresql_db(cursor, conn):
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # Same self-healing migration as the SQLite path above — critical here
+    # because a real, already-deployed PostgreSQL database (like the one on
+    # Render) already has these tables from before these columns existed.
+    # "CREATE TABLE IF NOT EXISTS" only applies to brand-new tables, so
+    # without this, new columns would silently never get added to a
+    # database that's already live.
+    expected_columns_pg = {
+        "users": ["status", "is_verified", "otp", "on_duty"],
+        "predictions": ["user_id", "user_email"],
+        "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
+        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log"],
+    }
+    for table, columns in expected_columns_pg.items():
+        try:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                (table,)
+            )
+            existing = {getattr(row, "column_name", None) for row in cursor.fetchall()}
+            for col in columns:
+                if col not in existing:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} TEXT")
+        except Exception as e:
+            print(f"[MIGRATION] Could not check/update '{table}': {e}")
+
     conn.commit()
 
 DB_AVAILABLE = False
@@ -769,16 +801,18 @@ def get_users():
 
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT id, name, email, role, created_at, status FROM users ORDER BY created_at DESC")
+            cursor.execute("SELECT id, name, email, role, created_at, status, on_duty FROM users ORDER BY created_at DESC")
             rows = cursor.fetchall()
             for row in rows:
                 db_emails.add(row.email)
+                on_duty_val = getattr(row, "on_duty", 1)
                 data.append({
                     "id": row.id,
                     "name": row.name,
                     "email": row.email,
                     "role": row.role,
                     "status": getattr(row, "status", "Active"),
+                    "on_duty": bool(on_duty_val) if on_duty_val is not None else True,
                     "created_at": row.created_at.isoformat() if row.created_at else None
                 })
         except Exception as e:
@@ -892,6 +926,33 @@ def update_own_profile(user_id):
     if not updated_user and not DB_AVAILABLE:
         return jsonify({"message": "User not found"}), 404
     return jsonify({"message": "Profile updated successfully", "name": name, "email": email})
+
+@app.route("/users/<int:user_id>/duty-status", methods=["PUT"])
+def update_duty_status(user_id):
+    """Lets a rescue worker mark themselves On Duty / Off Duty, so
+    Government Officials know who's actually available before assigning
+    them to a new alert."""
+    data = request.json or {}
+    on_duty = 1 if data.get("on_duty") else 0
+
+    found = None
+    for u in MEMORY_USERS:
+        if u["id"] == user_id:
+            u["on_duty"] = bool(on_duty)
+            found = u
+            break
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE users SET on_duty = ? WHERE id = ?", (on_duty, user_id))
+            conn.commit()
+        except Exception as e:
+            log_event("error", f"Failed to update duty status for user {user_id}: {e}")
+
+    if not found and not DB_AVAILABLE:
+        return jsonify({"message": "User not found"}), 404
+    return jsonify({"message": "Duty status updated", "on_duty": bool(on_duty)})
+
 
 @app.route("/users/<int:user_id>/deactivate", methods=["PUT"])
 def deactivate_user(user_id):
@@ -1494,6 +1555,8 @@ def get_rescue_operations():
                     "people_rescued": getattr(row, "people_rescued", None),
                     "resources_used": getattr(row, "resources_used", None),
                     "completion_notes": getattr(row, "completion_notes", None),
+                    "needs_backup": bool(getattr(row, "needs_backup", 0)),
+                    "update_log": json.loads(getattr(row, "update_log", None)) if getattr(row, "update_log", None) else [],
                 })
                 seen_ids.add(row_id)
         except Exception as e:
@@ -1517,6 +1580,8 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
         "created_at": str(datetime.now()),
         "updated_at": str(datetime.now()),
         "completed_at": None,
+        "needs_backup": False,
+        "update_log": [],
     }
     MEMORY_RESCUE_OPS.append(op)
 
@@ -1569,6 +1634,7 @@ def update_rescue_operation_status(op_id):
     resources_used = data.get("resources_used", "") if new_status == "Completed" else None
     completion_notes = data.get("completion_notes", "") if new_status == "Completed" else None
     assigned_team = data.get("assigned_team")
+    needs_backup = data.get("needs_backup")  # True/False/None (None = leave unchanged)
 
     result = None
     for op in MEMORY_RESCUE_OPS:
@@ -1577,6 +1643,8 @@ def update_rescue_operation_status(op_id):
             op["updated_at"] = updated_at
             if assigned_team is not None:
                 op["assigned_team"] = assigned_team or "Unassigned"
+            if needs_backup is not None:
+                op["needs_backup"] = bool(needs_backup)
             if new_status == "Completed":
                 op["completed_at"] = completed_at
                 op["people_rescued"] = people_rescued
@@ -1587,12 +1655,13 @@ def update_rescue_operation_status(op_id):
 
     if DB_AVAILABLE:
         try:
+            needs_backup_db = (1 if needs_backup else 0) if needs_backup is not None else None
             cursor.execute(
                 "UPDATE rescue_operations SET status = ?, updated_at = ?, "
                 "assigned_team = COALESCE(?, assigned_team), completed_at = COALESCE(?, completed_at), "
                 "people_rescued = COALESCE(?, people_rescued), resources_used = COALESCE(?, resources_used), "
-                "completion_notes = COALESCE(?, completion_notes) WHERE id = ?",
-                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, op_id)
+                "completion_notes = COALESCE(?, completion_notes), needs_backup = COALESCE(?, needs_backup) WHERE id = ?",
+                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
             )
             conn.commit()
             if result is None:
@@ -1606,6 +1675,8 @@ def update_rescue_operation_status(op_id):
                         "completed_at": str(row.completed_at) if row.completed_at else None,
                         "people_rescued": row.people_rescued, "resources_used": row.resources_used,
                         "completion_notes": row.completion_notes,
+                        "needs_backup": bool(getattr(row, "needs_backup", False)),
+                        "update_log": getattr(row, "update_log", None),
                     }
         except Exception as db_error:
             log_event("error", f"Failed to update rescue operation in database: {db_error}")
@@ -1613,6 +1684,47 @@ def update_rescue_operation_status(op_id):
     if result is None:
         return jsonify({"message": "Rescue operation not found"}), 404
     return jsonify(result)
+
+
+@app.route("/rescue-operations/<int:op_id>/note", methods=["POST"])
+def add_rescue_operation_note(op_id):
+    """Lets a rescue worker log an in-progress update (e.g. 'en route',
+    'arrived, beginning evacuation') without having to wait until the
+    operation is fully completed to record anything."""
+    data = request.json or {}
+    note_text = (data.get("note") or "").strip()
+    if not note_text:
+        return jsonify({"message": "Note text is required"}), 400
+
+    entry = {"timestamp": str(datetime.now()), "note": note_text}
+    result = None
+
+    for op in MEMORY_RESCUE_OPS:
+        if op["id"] == op_id:
+            existing_log = op.get("update_log")
+            log_list = json.loads(existing_log) if isinstance(existing_log, str) and existing_log else (existing_log or [])
+            log_list.append(entry)
+            op["update_log"] = log_list
+            result = op
+            break
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT update_log FROM rescue_operations WHERE id = ?", (op_id,))
+            row = cursor.fetchone()
+            existing_log = getattr(row, "update_log", None) if row else None
+            log_list = json.loads(existing_log) if existing_log else []
+            log_list.append(entry)
+            cursor.execute("UPDATE rescue_operations SET update_log = ? WHERE id = ?", (json.dumps(log_list), op_id))
+            conn.commit()
+            if result is None and row is not None:
+                result = {"id": op_id, "update_log": log_list}
+        except Exception as db_error:
+            log_event("error", f"Failed to add note to rescue operation: {db_error}")
+
+    if result is None:
+        return jsonify({"message": "Rescue operation not found"}), 404
+    return jsonify({"message": "Note added", "update_log": result.get("update_log", [entry])})
 
 # ---------------- SHELTERS (FR-07) ----------------
 MEMORY_SHELTERS = []

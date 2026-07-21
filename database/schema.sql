@@ -126,6 +126,9 @@ CREATE TABLE blocked_roads (
 -- ALTER TABLE predictions ADD user_email VARCHAR(100);
 -- ALTER TABLE shelters ADD latitude FLOAT;
 -- ALTER TABLE shelters ADD longitude FLOAT;
+-- ALTER TABLE users ADD on_duty INT DEFAULT 1;
+-- ALTER TABLE rescue_operations ADD needs_backup INT DEFAULT 0;
+-- ALTER TABLE rescue_operations ADD update_log TEXT;
 -- ALTER TABLE shelters ADD created_at DATETIME DEFAULT GETDATE();
 -- ALTER TABLE hospitals ADD services TEXT;
 -- ALTER TABLE hospitals ADD latitude FLOAT;
