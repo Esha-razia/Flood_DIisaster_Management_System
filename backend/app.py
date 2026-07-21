@@ -2561,6 +2561,67 @@ MEMORY_ACCURACY_HISTORY = []  # [{timestamp, model, accuracy, training_rows}]
 # emergency triggers.
 MEMORY_ADVISORIES = []
 
+# ---------------- EQUIPMENT / RESOURCE TRACKER (Rescue Worker) ----------------
+MEMORY_EQUIPMENT = [
+    {"id": 1, "name": "Rescue Boat #1", "status": "Available", "notes": ""},
+    {"id": 2, "name": "Rescue Boat #2", "status": "Available", "notes": ""},
+    {"id": 3, "name": "Medical Kit A", "status": "Available", "notes": ""},
+    {"id": 4, "name": "Medical Kit B", "status": "Available", "notes": ""},
+    {"id": 5, "name": "4x4 Rescue Vehicle", "status": "Available", "notes": ""},
+]
+
+@app.route("/equipment", methods=["GET"])
+def get_equipment():
+    return jsonify(MEMORY_EQUIPMENT)
+
+@app.route("/equipment", methods=["POST"])
+def create_equipment():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"message": "Equipment name is required"}), 400
+    item = {
+        "id": (max([e["id"] for e in MEMORY_EQUIPMENT], default=0) + 1),
+        "name": name, "status": "Available", "notes": data.get("notes", ""),
+    }
+    MEMORY_EQUIPMENT.append(item)
+    return jsonify(item), 201
+
+@app.route("/equipment/<int:item_id>", methods=["PUT"])
+def update_equipment(item_id):
+    data = request.json or {}
+    for item in MEMORY_EQUIPMENT:
+        if item["id"] == item_id:
+            if "status" in data:
+                item["status"] = data["status"]  # "Available" / "In Use"
+            if "notes" in data:
+                item["notes"] = data["notes"]
+            return jsonify(item)
+    return jsonify({"message": "Equipment item not found"}), 404
+
+
+# ---------------- SHIFT HANDOVER NOTES (Rescue Worker) ----------------
+MEMORY_HANDOVER_NOTES = []
+
+@app.route("/shift-handover", methods=["GET"])
+def get_handover_notes():
+    return jsonify(list(reversed(MEMORY_HANDOVER_NOTES))[:20])
+
+@app.route("/shift-handover", methods=["POST"])
+def create_handover_note():
+    data = request.json or {}
+    note_text = (data.get("note") or "").strip()
+    if not note_text:
+        return jsonify({"message": "Note text is required"}), 400
+    entry = {
+        "id": (max([n["id"] for n in MEMORY_HANDOVER_NOTES], default=0) + 1),
+        "note": note_text,
+        "author": data.get("author", "Unknown"),
+        "created_at": str(datetime.now()),
+    }
+    MEMORY_HANDOVER_NOTES.append(entry)
+    return jsonify(entry), 201
+
 @app.route("/advisories", methods=["GET"])
 def get_advisories():
     all_advisories = list(MEMORY_ADVISORIES)

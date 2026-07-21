@@ -61,6 +61,10 @@ export default function RescueDashboard() {
   const [rescueWorkers, setRescueWorkers] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [stats, setStats] = useState(null);
+  const [equipment, setEquipment] = useState([]);
+  const [handoverNotes, setHandoverNotes] = useState([]);
+  const [handoverInput, setHandoverInput] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
 
   // "My Operations" — operations where assigned_team matches this worker's
   // own name. assigned_team is a free-text field (it can hold a volunteer
@@ -89,6 +93,33 @@ export default function RescueDashboard() {
     };
   }, [myOperations]);
 
+  // Priority/triage sort — backup requests and High risk operations surface
+  // to the top so a worker glancing at the list sees what's most urgent
+  // first, instead of just whatever order they were created in.
+  const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
+  const sortedOperations = useMemo(() => {
+    return [...operations].sort((a, b) => {
+      if (!!b.needs_backup !== !!a.needs_backup) return (b.needs_backup ? 1 : 0) - (a.needs_backup ? 1 : 0);
+      const scoreA = PRIORITY_SCORE[a.risk_level] || 0;
+      const scoreB = PRIORITY_SCORE[b.risk_level] || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return new Date(b.updated_at) - new Date(a.updated_at);
+    });
+  }, [operations]);
+
+  const onDutyWorkers = useMemo(() => rescueWorkers.filter((w) => w.on_duty !== false), [rescueWorkers]);
+
+  const historicalResults = useMemo(() => {
+    const completed = operations.filter((op) => op.status === "Completed");
+    const query = historySearch.trim().toLowerCase();
+    if (!query) return completed;
+    return completed.filter((op) =>
+      (op.location || "").toLowerCase().includes(query) ||
+      (op.assigned_team || "").toLowerCase().includes(query) ||
+      (op.completion_notes || "").toLowerCase().includes(query)
+    );
+  }, [operations, historySearch]);
+
   const fetchRescueWorkers = async () => {
     try {
       const res = await axios.get(`${API_BASE}/users`);
@@ -116,6 +147,46 @@ export default function RescueDashboard() {
       setStats(res.data);
     } catch (err) {
       console.error("Failed to load rescue stats:", err);
+    }
+  };
+
+  const fetchEquipment = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/equipment`);
+      setEquipment(res.data || []);
+    } catch (err) {
+      console.error("Failed to load equipment:", err);
+    }
+  };
+
+  const fetchHandoverNotes = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/shift-handover`);
+      setHandoverNotes(res.data || []);
+    } catch (err) {
+      console.error("Failed to load handover notes:", err);
+    }
+  };
+
+  const handleToggleEquipment = async (item) => {
+    try {
+      const newStatus = item.status === "Available" ? "In Use" : "Available";
+      await axios.put(`${API_BASE}/equipment/${item.id}`, { status: newStatus });
+      fetchEquipment();
+    } catch (err) {
+      console.error("Failed to update equipment:", err);
+    }
+  };
+
+  const handlePostHandoverNote = async () => {
+    const note = handoverInput.trim();
+    if (!note) return;
+    try {
+      await axios.post(`${API_BASE}/shift-handover`, { note, author: currentUserName || "Unknown" });
+      setHandoverInput("");
+      fetchHandoverNotes();
+    } catch (err) {
+      console.error("Failed to post handover note:", err);
     }
   };
 
@@ -219,6 +290,8 @@ export default function RescueDashboard() {
     fetchRescueWorkers();
     fetchVolunteers();
     fetchStats();
+    fetchEquipment();
+    fetchHandoverNotes();
     const interval = setInterval(() => {
       fetchAlerts();
       fetchPredictions();
@@ -546,6 +619,7 @@ export default function RescueDashboard() {
               { id: "myOps", label: t("tabMyOperations") },
               { id: "team", label: t("tabTeamOverview") },
               { id: "map", label: t("tabMapNavigation") },
+              { id: "team_resources", label: t("tabTeamResources") },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -777,7 +851,7 @@ export default function RescueDashboard() {
               <p className="text-muted text-center py-6">{t('noOperationsFound')}</p>
             ) : (
               <div className="space-y-3">
-                {operations.map((op) => renderOperationCard(op))}
+                {sortedOperations.map((op) => renderOperationCard(op))}
               </div>
             )}
           </div>
@@ -820,6 +894,145 @@ export default function RescueDashboard() {
           </div>
           </>)}
           {/* ============ END TAB: MAP & NAVIGATION ============ */}
+
+          {/* ============ TAB: TEAM & RESOURCES ============ */}
+          {activeTab === "team_resources" && (<>
+          {/* On-Duty Workers */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-emerald-400 mb-2">{t("coordination")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-1">{t("onDutyWorkersTitle")}</h2>
+            <p className="text-sm text-muted mb-4">{t("onDutyWorkersDesc")}</p>
+            {onDutyWorkers.length === 0 ? (
+              <p className="text-sm text-muted">{t("noOneOnDuty")}</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {onDutyWorkers.map((w) => (
+                  <span key={w.id} className="inline-flex items-center gap-1.5 text-sm bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-full px-3 py-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    {w.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Team Roster / Contact Directory */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-4">{t("teamRosterTitle")}</h2>
+            {rescueWorkers.length === 0 ? (
+              <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-muted">
+                      <th className="pb-2">{t("name")}</th>
+                      <th className="pb-2">{t("email")}</th>
+                      <th className="pb-2">{t("statusLabel")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {rescueWorkers.map((w) => (
+                      <tr key={w.id}>
+                        <td className="py-2 text-white">{w.name}</td>
+                        <td className="py-2 text-muted">{w.email}</td>
+                        <td className="py-2">
+                          <span className={w.on_duty !== false ? "text-emerald-300" : "text-muted"}>
+                            {w.on_duty !== false ? t("onDuty") : t("offDuty")}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Equipment / Resource Tracker */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-1">{t("equipmentTrackerTitle")}</h2>
+            <p className="text-sm text-muted mb-4">{t("equipmentTrackerDesc")}</p>
+            <div className="space-y-2">
+              {equipment.map((item) => (
+                <div key={item.id} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-2.5">
+                  <span className="text-sm text-white">{item.name}</span>
+                  <button
+                    onClick={() => handleToggleEquipment(item)}
+                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                      item.status === "Available"
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
+                    }`}
+                  >
+                    {item.status === "Available" ? t("statusAvailable") : t("statusInUse")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Shift Handover Notes */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-red-400 mb-2">{t("continuity")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-1">{t("shiftHandoverTitle")}</h2>
+            <p className="text-sm text-muted mb-4">{t("shiftHandoverDesc")}</p>
+            <div className="flex items-center gap-2 mb-4">
+              <input
+                value={handoverInput}
+                onChange={(e) => setHandoverInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handlePostHandoverNote(); }}
+                placeholder={t("handoverNotePh")}
+                className="field-input flex-1"
+              />
+              <button onClick={handlePostHandoverNote} className="btn-primary shrink-0">{t("post")}</button>
+            </div>
+            {handoverNotes.length === 0 ? (
+              <p className="text-sm text-muted">{t("noHandoverNotesYet")}</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {handoverNotes.map((n) => (
+                  <div key={n.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
+                    <p className="text-white">{n.note}</p>
+                    <p className="text-xs text-muted mt-1">{n.author} · {new Date(n.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Historical Operations Search */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-teal-400 mb-2">{t("recordKeeping")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-1">{t("historicalSearchTitle")}</h2>
+            <p className="text-sm text-muted mb-4">{t("historicalSearchDesc")}</p>
+            <input
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder={t("historicalSearchPh")}
+              className="field-input mb-4"
+            />
+            {historicalResults.length === 0 ? (
+              <p className="text-sm text-muted">{t("noHistoricalResults")}</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {historicalResults.map((op) => (
+                  <div key={op.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white font-medium">{op.location}</span>
+                      <span className="text-xs text-muted">{new Date(op.completed_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</span>
+                    </div>
+                    <p className="text-xs text-muted mt-1">{t("teamLabel")}: {op.assigned_team || t("unassigned")} {op.people_rescued > 0 && `· ${t("peopleRescuedLabel")}: ${op.people_rescued}`}</p>
+                    {op.completion_notes && <p className="text-xs text-muted mt-1">📝 {op.completion_notes}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          </>)}
+          {/* ============ END TAB: TEAM & RESOURCES ============ */}
 
           {/* Completion Report Modal (replaces window.prompt for a proper, on-brand UI) */}
           {completionModal && (
