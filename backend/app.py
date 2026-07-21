@@ -471,21 +471,37 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # 1. Try PostgreSQL if DATABASE_URL is provided (production cloud database)
 if DATABASE_URL:
-    try:
-        import psycopg2
-        raw_conn = psycopg2.connect(DATABASE_URL)
-        raw_conn.autocommit = True  # each statement commits itself — removes any window where
-                                     # execute() succeeds but a later conn.commit() fails on a
-                                     # connection that died in between; also matches the same
-                                     # autocommit fix already used for the SQL Server path.
-        DB_TYPE = "postgresql"
-        conn = CompatibleConnection(raw_conn, "postgresql", database_url=DATABASE_URL)
-        cursor = conn.cursor()
-        DB_AVAILABLE = True
-        initialize_postgresql_db(cursor, conn)
-        print("Database (PostgreSQL) connected and initialized successfully")
-    except Exception as pg_err:
-        print(f"PostgreSQL connection failed: {pg_err}")
+    import time
+    pg_connected = False
+    last_pg_error = None
+    # Retry a few times with a short pause — a single transient failure here
+    # (the managed Postgres instance still waking up, a momentary network
+    # blip) used to fall all the way back to a brand-new, empty SQLite
+    # database instead of trying again, making real data "disappear" after
+    # a redeploy even though it was safe the whole time in PostgreSQL.
+    for attempt in range(1, 4):
+        try:
+            import psycopg2
+            raw_conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+            raw_conn.autocommit = True  # each statement commits itself — removes any window where
+                                         # execute() succeeds but a later conn.commit() fails on a
+                                         # connection that died in between; also matches the same
+                                         # autocommit fix already used for the SQL Server path.
+            DB_TYPE = "postgresql"
+            conn = CompatibleConnection(raw_conn, "postgresql", database_url=DATABASE_URL)
+            cursor = conn.cursor()
+            DB_AVAILABLE = True
+            initialize_postgresql_db(cursor, conn)
+            print("Database (PostgreSQL) connected and initialized successfully")
+            pg_connected = True
+            break
+        except Exception as pg_err:
+            last_pg_error = pg_err
+            print(f"PostgreSQL connection attempt {attempt}/3 failed: {pg_err}")
+            if attempt < 3:
+                time.sleep(3)
+    if not pg_connected:
+        print(f"PostgreSQL connection failed after 3 attempts: {last_pg_error}")
         print("Falling back to other database options...")
 
 # 2. Try SQL Server (local development primary database)
