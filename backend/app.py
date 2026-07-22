@@ -558,6 +558,17 @@ def initialize_postgresql_db(cursor, conn):
     # "CREATE TABLE IF NOT EXISTS" only applies to brand-new tables, so
     # without this, new columns would silently never get added to a
     # database that's already live.
+    #
+    # IMPORTANT: columns not listed here default to TEXT, but a few (marked
+    # below) must be INTEGER — PostgreSQL, unlike SQLite, strictly enforces
+    # column types. Getting this wrong is exactly what caused a real bug:
+    # "needs_backup" got added as TEXT on this database (before this fix),
+    # so every UPDATE ... COALESCE(1, needs_backup) failed with "COALESCE
+    # types integer and text cannot be matched" — silently caught and
+    # reported back to the app as a generic error, which the rescue-operation
+    # update endpoint then misreported as "operation not found" (404),
+    # even though the operation existed the whole time.
+    integer_columns_pg = {"people_rescued", "needs_backup"}
     expected_columns_pg = {
         "users": ["status", "is_verified", "otp", "on_duty"],
         "predictions": ["user_id", "user_email"],
@@ -567,13 +578,21 @@ def initialize_postgresql_db(cursor, conn):
     for table, columns in expected_columns_pg.items():
         try:
             cursor.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = %s",
                 (table,)
             )
-            existing = {getattr(row, "column_name", None) for row in cursor.fetchall()}
+            existing = {}
+            for row in cursor.fetchall():
+                existing[getattr(row, "column_name", None)] = getattr(row, "data_type", None)
             for col in columns:
+                col_type = "INTEGER" if col in integer_columns_pg else "TEXT"
                 if col not in existing:
-                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} TEXT")
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}")
+                elif col in integer_columns_pg and existing[col] not in ("integer", "bigint", "smallint"):
+                    # Repair a column that an earlier, blanket-TEXT version of
+                    # this migration already created with the wrong type.
+                    # NULLIF(..., '') avoids a cast error on empty strings.
+                    cursor.execute(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE INTEGER USING NULLIF({col}, '')::integer")
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
 
