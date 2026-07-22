@@ -1326,25 +1326,27 @@ export default function RescueDashboard() {
                       </div>
                     )}
 
-                    {/* Deploy more units to an operation */}
+                    {/* Deploy more units to an operation.
+                        Grid (not flex) so the row can never grow past the
+                        card's edge no matter how long an operation's name
+                        is — the select column shrinks and truncates with an
+                        ellipsis instead of pushing the Deploy button out. */}
                     {availableQty > 0 && activeOps.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_64px_auto] gap-2 mt-2">
                         <select value={pick.opId}
                           onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, opId: e.target.value } }))}
-                          className="field-input py-1.5 text-xs flex-1 min-w-[140px]">
+                          className="field-input py-1.5 text-xs min-w-0 w-full truncate">
                           <option value="">{t("selectOperationPh")}</option>
                           {activeOps.map((op) => (
                             <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
                           ))}
                         </select>
-                        <div className="flex gap-2 w-full sm:w-auto">
-                          <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
-                            onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
-                            className="field-input py-1.5 text-xs w-16 shrink-0" />
-                          <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 shrink-0 flex-1 sm:flex-none">
-                            {t("deployBtn")}
-                          </button>
-                        </div>
+                        <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
+                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
+                          className="field-input py-1.5 text-xs w-full min-w-0" />
+                        <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 w-full sm:w-auto">
+                          {t("deployBtn")}
+                        </button>
                       </div>
                     )}
                     {activeOps.length === 0 && (
