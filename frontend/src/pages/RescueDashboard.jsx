@@ -180,19 +180,6 @@ export default function RescueDashboard() {
     }
   };
 
-  const handleToggleEquipment = async (item) => {
-    try {
-      const newStatus = item.status === "Available" ? "In Use" : "Available";
-      // Toggling manually (not via the operation-assignment dropdown) should
-      // also clear any stale operation link when freeing it back up.
-      const payload = newStatus === "Available" ? { status: newStatus, assigned_op_id: null } : { status: newStatus };
-      await axios.put(`${API_BASE}/equipment/${item.id}`, payload);
-      fetchEquipment();
-    } catch (err) {
-      console.error("Failed to update equipment:", err);
-    }
-  };
-
   const handleAddEquipment = async (e) => {
     e.preventDefault();
     const name = newEquipment.name.trim();
@@ -207,12 +194,29 @@ export default function RescueDashboard() {
     }
   };
 
-  const handleAssignEquipment = async (item, opId) => {
+  // Deploy N units of an item to a specific operation (only that many count
+  // as "in use" — the rest of the quantity stays available for elsewhere).
+  const [deployPicks, setDeployPicks] = useState({}); // { [equipmentId]: { opId, qty } }
+
+  const handleDeployEquipment = async (item) => {
+    const pick = deployPicks[item.id];
+    if (!pick || !pick.opId || !pick.qty) return;
     try {
-      await axios.put(`${API_BASE}/equipment/${item.id}`, { assigned_op_id: opId || null });
+      await axios.post(`${API_BASE}/equipment/${item.id}/assign`, { op_id: Number(pick.opId), qty: Number(pick.qty) });
+      setDeployPicks((p) => ({ ...p, [item.id]: { opId: "", qty: "" } }));
       fetchEquipment();
     } catch (err) {
-      console.error("Failed to assign equipment:", err);
+      setActionFeedback(err?.response?.data?.message || t("couldNotUpdateOp"));
+      console.error("Failed to deploy equipment:", err);
+    }
+  };
+
+  const handleFreeEquipment = async (item, opId) => {
+    try {
+      await axios.delete(`${API_BASE}/equipment/${item.id}/assign/${opId}`);
+      fetchEquipment();
+    } catch (err) {
+      console.error("Failed to free equipment:", err);
     }
   };
 
@@ -384,10 +388,12 @@ export default function RescueDashboard() {
     fetchEquipment();
     fetchHandoverNotes();
     fetchTeams();
+    fetchCommunityReports();
     const interval = setInterval(() => {
       fetchAlerts();
       fetchPredictions();
       fetchOperations();
+      fetchCommunityReports();
     }, 30000); // Refresh every 30 seconds
 
     return () => clearInterval(interval);
@@ -490,6 +496,30 @@ export default function RescueDashboard() {
       setAlerts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Community-submitted reports — a citizen filing "water rising near me" is
+  // useless if no rescue worker ever sees it. Surfacing it here, with a
+  // one-click dispatch, is what actually connects the report to a response.
+  const [communityReports, setCommunityReports] = useState([]);
+  const fetchCommunityReports = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/community-reports`);
+      setCommunityReports((res.data || []).filter((r) => r.status !== "Resolved"));
+    } catch (err) {
+      console.error("Failed to load community reports:", err);
+    }
+  };
+
+  const handleUpdateReportStatus = async (reportId, status) => {
+    try {
+      await axios.put(`${API_BASE}/community-reports/${reportId}/status`, { status });
+      setActionFeedback(status === "Action Taken" ? t("reportDispatchedMsg") : `${t("operationMarkedAs")} ${status}.`);
+      fetchCommunityReports();
+      if (status === "Action Taken") { fetchOperations(); fetchStats(); }
+    } catch (err) {
+      console.error("Failed to update report status:", err);
     }
   };
 
@@ -856,6 +886,54 @@ export default function RescueDashboard() {
             </div>
           )}
 
+          {/* Community Reports — what a citizen submits on the Community page,
+              made visible here so a rescue worker can actually act on it. */}
+          {communityReports.length > 0 && (
+            <div className="mb-8">
+              <h2 className="font-display text-2xl text-marigold-400 mb-4">{t("communityReportsHeading")}</h2>
+              <div className="grid gap-4">
+                {communityReports.map((r) => (
+                  <div key={r.id} className="dashboard-card border-marigold-500/40 p-6">
+                    <div className="flex justify-between items-start gap-4 flex-wrap">
+                      <div className="flex-1 min-w-[200px]">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-display text-lg text-white">{r.location}</h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-muted font-semibold">{r.trackingId}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                            r.status === "Action Taken" ? "bg-teal-500/15 border-teal-500/40 text-teal-300" :
+                            r.status === "Under Review" ? "bg-marigold-500/15 border-marigold-500/40 text-marigold-300" :
+                            "bg-red-500/15 border-red-500/40 text-red-300"
+                          }`}>{r.status}</span>
+                        </div>
+                        <p className="text-muted mb-1">{r.description}</p>
+                        <p className="text-xs text-muted">{t("reportedByLabel")}: {r.authorName} · {r.contact} · {new Date(r.createdAt).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
+                        {r.linked_rescue_op_id && (
+                          <p className="text-xs text-teal-300 mt-1">{t("linkedOperationLabel")} #{r.linked_rescue_op_id}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        {r.status === "Submitted" && (
+                          <button onClick={() => handleUpdateReportStatus(r.id, "Under Review")} className="btn-secondary text-xs py-2 px-3">
+                            {t("markUnderReview")}
+                          </button>
+                        )}
+                        {r.status !== "Action Taken" && (
+                          <button onClick={() => handleUpdateReportStatus(r.id, "Action Taken")}
+                            className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">
+                            {t("dispatchTeamBtn")}
+                          </button>
+                        )}
+                        <button onClick={() => handleUpdateReportStatus(r.id, "Resolved")} className="btn-secondary text-xs py-2 px-3">
+                          {t("markResolved")}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Affected Areas */}
           <div className="grid md:grid-cols-2 gap-8 mb-8">
             {/* High Risk Areas */}
@@ -1152,6 +1230,45 @@ export default function RescueDashboard() {
             )}
           </div>
 
+          {/* Volunteers — people who registered via the Community page's
+              "Get Involved" form. Previously that registration went nowhere
+              a rescue worker could see; this makes it an actual roster they
+              can browse and dispatch to a nearby operation. */}
+          <div className="dashboard-card p-6 mb-8">
+            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-1">{t("volunteersTitle")}</h2>
+            <p className="text-sm text-muted mb-4">{t("volunteersDesc")}</p>
+            {volunteers.length === 0 ? (
+              <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-3">
+                {volunteers.map((v) => {
+                  const activeOps = operations.filter((o) => o.status !== "Completed");
+                  return (
+                    <div key={v.id} className="bg-white/[0.03] rounded-lg px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="font-semibold text-white">{v.name}</h3>
+                        <span className="text-xs text-muted">{v.city}</span>
+                      </div>
+                      <p className="text-xs text-muted mb-1">{v.phone}</p>
+                      {v.skills && <p className="text-xs text-teal-300 mb-2">{v.skills}</p>}
+                      {activeOps.length > 0 && (
+                        <select defaultValue=""
+                          onChange={(e) => { if (e.target.value) { handleAssignVolunteer(Number(e.target.value), v.name); e.target.value = ""; } }}
+                          className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-muted w-full">
+                          <option value="">{t("assignToOperationDropdown")}</option>
+                          {activeOps.map((op) => (
+                            <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Equipment / Resource Tracker */}
           <div className="dashboard-card p-6 mb-8">
             <div className="flex items-center justify-between mb-1">
@@ -1176,43 +1293,58 @@ export default function RescueDashboard() {
               </form>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {equipment.map((item) => {
-                const assignedOp = operations.find((o) => o.id === item.assigned_op_id);
                 const activeOps = operations.filter((o) => o.status !== "Completed");
+                const availableQty = item.available_qty ?? item.quantity;
+                const pick = deployPicks[item.id] || { opId: "", qty: "" };
                 return (
-                  <div key={item.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5">
+                  <div key={item.id} className="bg-white/[0.03] rounded-lg px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <span className="text-sm text-white">{item.name}</span>
-                        {item.quantity > 1 && <span className="text-xs text-muted ml-2">× {item.quantity}</span>}
-                      </div>
-                      <button
-                        onClick={() => handleToggleEquipment(item)}
-                        className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors shrink-0 ${
-                          item.status === "Available"
-                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                            : "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
-                        }`}
-                      >
-                        {item.status === "Available" ? t("statusAvailable") : t("statusInUse")}
-                      </button>
+                      <span className="text-sm text-white">{item.name}</span>
+                      <span className={`text-xs px-3 py-1 rounded-full border font-semibold shrink-0 ${
+                        availableQty > 0
+                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                          : "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
+                      }`}>
+                        {availableQty}/{item.quantity} {t("availableOfTotal")}
+                      </span>
                     </div>
-                    <div className="mt-2">
-                      <select
-                        value={item.assigned_op_id || ""}
-                        onChange={(e) => handleAssignEquipment(item, e.target.value ? Number(e.target.value) : null)}
-                        className="field-input py-1.5 text-xs"
-                      >
-                        <option value="">{t("unassignedEquipment")}</option>
-                        {activeOps.map((op) => (
-                          <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
+
+                    {/* Where the deployed units currently are */}
+                    {item.assignments && item.assignments.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {item.assignments.map((a) => (
+                          <span key={a.op_id} className="text-xs bg-marigold-500/10 border border-marigold-500/30 text-marigold-300 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1.5">
+                            {a.qty} → {a.location}
+                            <button onClick={() => handleFreeEquipment(item, a.op_id)} className="hover:text-white" title={t("freeUpBtn")}>✕</button>
+                          </span>
                         ))}
-                      </select>
-                      {assignedOp && (
-                        <p className="text-xs text-teal-300 mt-1">{t("assignedToLabel")}: {assignedOp.location}</p>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Deploy more units to an operation */}
+                    {availableQty > 0 && activeOps.length > 0 && (
+                      <div className="flex gap-2 mt-2">
+                        <select value={pick.opId}
+                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, opId: e.target.value } }))}
+                          className="field-input py-1.5 text-xs flex-1">
+                          <option value="">{t("selectOperationPh")}</option>
+                          {activeOps.map((op) => (
+                            <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
+                          ))}
+                        </select>
+                        <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
+                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
+                          className="field-input py-1.5 text-xs w-16 shrink-0" />
+                        <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 shrink-0">
+                          {t("deployBtn")}
+                        </button>
+                      </div>
+                    )}
+                    {activeOps.length === 0 && (
+                      <p className="text-xs text-muted mt-2">{t("noActiveOpsHint")}</p>
+                    )}
                   </div>
                 );
               })}

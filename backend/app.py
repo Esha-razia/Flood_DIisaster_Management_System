@@ -2562,21 +2562,30 @@ MEMORY_ACCURACY_HISTORY = []  # [{timestamp, model, accuracy, training_rows}]
 MEMORY_ADVISORIES = []
 
 # ---------------- EQUIPMENT / RESOURCE TRACKER (Rescue Worker) ----------------
-# assigned_op_id lets a piece of equipment be tied to the rescue operation it's
-# currently deployed to, so "In Use" actually means something instead of being
-# a bare label. quantity supports items that exist in multiples (e.g. 6 life
-# jackets) without needing 6 separate rows.
+# "assignments" lets a portion of a multi-unit item be deployed to one
+# operation while the rest stays available for another — e.g. 4 Medical Kits
+# where 2 go to Lahore and 2 remain free — instead of the whole item flipping
+# to "In Use" the moment any single unit is deployed.
 MEMORY_EQUIPMENT = [
-    {"id": 1, "name": "Rescue Boat #1", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
-    {"id": 2, "name": "Rescue Boat #2", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
-    {"id": 3, "name": "Medical Kit A", "status": "Available", "notes": "", "quantity": 4, "assigned_op_id": None},
-    {"id": 4, "name": "Medical Kit B", "status": "Available", "notes": "", "quantity": 4, "assigned_op_id": None},
-    {"id": 5, "name": "4x4 Rescue Vehicle", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
+    {"id": 1, "name": "Rescue Boat #1", "notes": "", "quantity": 1, "assignments": []},
+    {"id": 2, "name": "Rescue Boat #2", "notes": "", "quantity": 1, "assignments": []},
+    {"id": 3, "name": "Medical Kit A", "notes": "", "quantity": 4, "assignments": []},
+    {"id": 4, "name": "Medical Kit B", "notes": "", "quantity": 4, "assignments": []},
+    {"id": 5, "name": "4x4 Rescue Vehicle", "notes": "", "quantity": 1, "assignments": []},
 ]
+
+def _equipment_with_derived_fields(item):
+    deployed = sum(a["qty"] for a in item["assignments"])
+    available = item["quantity"] - deployed
+    out = dict(item)
+    out["deployed_qty"] = deployed
+    out["available_qty"] = available
+    out["status"] = "Available" if available > 0 else "In Use"
+    return out
 
 @app.route("/equipment", methods=["GET"])
 def get_equipment():
-    return jsonify(MEMORY_EQUIPMENT)
+    return jsonify([_equipment_with_derived_fields(e) for e in MEMORY_EQUIPMENT])
 
 @app.route("/equipment", methods=["POST"])
 def create_equipment():
@@ -2590,33 +2599,68 @@ def create_equipment():
         quantity = 1
     item = {
         "id": (max([e["id"] for e in MEMORY_EQUIPMENT], default=0) + 1),
-        "name": name, "status": "Available", "notes": data.get("notes", ""),
-        "quantity": quantity, "assigned_op_id": None,
+        "name": name, "notes": data.get("notes", ""),
+        "quantity": quantity, "assignments": [],
     }
     MEMORY_EQUIPMENT.append(item)
-    return jsonify(item), 201
+    return jsonify(_equipment_with_derived_fields(item)), 201
 
 @app.route("/equipment/<int:item_id>", methods=["PUT"])
 def update_equipment(item_id):
     data = request.json or {}
     for item in MEMORY_EQUIPMENT:
         if item["id"] == item_id:
-            if "status" in data:
-                item["status"] = data["status"]  # "Available" / "In Use"
             if "notes" in data:
                 item["notes"] = data["notes"]
             if "quantity" in data:
                 try:
-                    item["quantity"] = max(1, int(data["quantity"]))
+                    new_qty = max(1, int(data["quantity"]))
+                    deployed = sum(a["qty"] for a in item["assignments"])
+                    if new_qty < deployed:
+                        return jsonify({"message": f"Can't set quantity below {deployed} — that many are currently deployed"}), 400
+                    item["quantity"] = new_qty
                 except (TypeError, ValueError):
                     pass
-            if "assigned_op_id" in data:
-                # Assigning to an operation automatically marks it In Use;
-                # clearing the assignment (null) frees it back up.
-                op_id = data["assigned_op_id"]
-                item["assigned_op_id"] = op_id
-                item["status"] = "In Use" if op_id else "Available"
-            return jsonify(item)
+            return jsonify(_equipment_with_derived_fields(item))
+    return jsonify({"message": "Equipment item not found"}), 404
+
+@app.route("/equipment/<int:item_id>/assign", methods=["POST"])
+def assign_equipment(item_id):
+    """Deploy a specific quantity of this item to one operation. Calling this
+    again for an operation that's already got some of this item updates that
+    operation's share (rather than adding a duplicate line)."""
+    data = request.json or {}
+    op_id = data.get("op_id")
+    try:
+        qty = int(data.get("qty", 0))
+    except (TypeError, ValueError):
+        qty = 0
+    if not op_id or qty <= 0:
+        return jsonify({"message": "op_id and a positive qty are required"}), 400
+
+    for item in MEMORY_EQUIPMENT:
+        if item["id"] == item_id:
+            other_deployed = sum(a["qty"] for a in item["assignments"] if a["op_id"] != op_id)
+            if other_deployed + qty > item["quantity"]:
+                available = item["quantity"] - other_deployed
+                return jsonify({"message": f"Only {available} of {item['name']} available to deploy"}), 400
+            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
+            op = next((o for o in MEMORY_RESCUE_OPS if o["id"] == op_id), None)
+            item["assignments"].append({
+                "op_id": op_id,
+                "qty": qty,
+                "location": op["location"] if op else f"Operation #{op_id}",
+            })
+            return jsonify(_equipment_with_derived_fields(item))
+    return jsonify({"message": "Equipment item not found"}), 404
+
+@app.route("/equipment/<int:item_id>/assign/<int:op_id>", methods=["DELETE"])
+def unassign_equipment(item_id, op_id):
+    """Free up whatever quantity of this item was deployed to the given operation."""
+    for item in MEMORY_EQUIPMENT:
+        if item["id"] == item_id:
+            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
+            return jsonify(_equipment_with_derived_fields(item))
     return jsonify({"message": "Equipment item not found"}), 404
 
 
