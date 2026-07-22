@@ -185,18 +185,7 @@ export default function GovDashboard() {
   const fetchPredictions = async () => {
     try {
       const res = await axios.get(`${API_BASE}/predictions`);
-      const data = res.data || [];
-      setPredictions((prev) => {
-        // Guard against a transient/empty response (e.g. the backend
-        // momentarily reconnecting to its database) silently wiping out
-        // real data that was already on screen — only accept an empty
-        // result if we didn't have anything loaded yet.
-        if (data.length === 0 && prev.length > 0) {
-          console.warn("Ignored an empty /predictions response — keeping previously loaded data.");
-          return prev;
-        }
-        return data;
-      });
+      setPredictions(res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -207,14 +196,7 @@ export default function GovDashboard() {
   const fetchAlerts = async () => {
     try {
       const res = await axios.get(`${API_BASE}/alerts`);
-      const data = res.data || [];
-      setAlerts((prev) => {
-        if (data.length === 0 && prev.length > 0) {
-          console.warn("Ignored an empty /alerts response — keeping previously loaded data.");
-          return prev;
-        }
-        return data;
-      });
+      setAlerts(res.data || []);
     } catch (err) {
       console.error(err);
     }

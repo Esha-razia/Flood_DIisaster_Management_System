@@ -106,6 +106,29 @@ ADD input_data NVARCHAR(MAX);
 
 
 
+-- FR-05b: Equipment & Resources tracking
+CREATE TABLE equipment_resources (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  name VARCHAR(100),
+  category VARCHAR(50),
+  unit VARCHAR(30),
+  total_quantity INT,
+  available_quantity INT,
+  updated_at DATETIME DEFAULT GETDATE()
+);
+
+-- FR-05c: Shift handover / continuity notes
+CREATE TABLE shift_handover_notes (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  author_name VARCHAR(100),
+  priority VARCHAR(10) DEFAULT 'normal',  -- normal / watch / urgent
+  location VARCHAR(150),
+  note TEXT,
+  acknowledged_by VARCHAR(100),
+  acknowledged_at DATETIME NULL,
+  created_at DATETIME DEFAULT GETDATE()
+);
+
 -- FR-04: Interactive Map — blocked roads
 CREATE TABLE blocked_roads (
   id INT IDENTITY(1,1) PRIMARY KEY,
@@ -126,9 +149,6 @@ CREATE TABLE blocked_roads (
 -- ALTER TABLE predictions ADD user_email VARCHAR(100);
 -- ALTER TABLE shelters ADD latitude FLOAT;
 -- ALTER TABLE shelters ADD longitude FLOAT;
--- ALTER TABLE users ADD on_duty INT DEFAULT 1;
--- ALTER TABLE rescue_operations ADD needs_backup INT DEFAULT 0;
--- ALTER TABLE rescue_operations ADD update_log TEXT;
 -- ALTER TABLE shelters ADD created_at DATETIME DEFAULT GETDATE();
 -- ALTER TABLE hospitals ADD services TEXT;
 -- ALTER TABLE hospitals ADD latitude FLOAT;

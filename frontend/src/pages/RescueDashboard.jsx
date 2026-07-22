@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -9,46 +9,8 @@ import { API_BASE } from "../config";
 const OP_STATUS_KEY_MAP = { "Assigned": "statusAssigned", "In Progress": "statusInProgress", "Completed": "statusCompleted" };
 const RISK_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
 
-// Same 53-city coverage used elsewhere in the app (Citizen Dashboard, Map) —
-// needed here so a rescue worker can get directions to an operation site.
-const OP_CITY_COORDINATES = {
-  "Karachi": [24.8607, 67.0011], "Lahore": [31.5204, 74.3587], "Faisalabad": [31.4504, 73.135],
-  "Rawalpindi": [33.5651, 73.0169], "Multan": [30.1575, 71.5249], "Hyderabad": [25.396, 68.3578],
-  "Gujranwala": [32.1877, 74.1945], "Peshawar": [34.0151, 71.5249], "Quetta": [30.1798, 66.975],
-  "Islamabad": [33.6844, 73.0479], "Sialkot": [32.4945, 74.5229], "Sargodha": [32.0836, 72.6711],
-  "Bahawalpur": [29.3956, 71.6836], "Sukkur": [27.7052, 68.8574], "Larkana": [27.559, 68.2123],
-  "Sheikhupura": [31.7167, 73.985], "Jhang": [31.2704, 72.3181], "Rahim Yar Khan": [28.4202, 70.2952],
-  "Gujrat": [32.5731, 74.0789], "Mardan": [34.1989, 72.0404], "Kasur": [31.118, 74.4467],
-  "Okara": [30.8081, 73.4453], "Sahiwal": [30.6682, 73.1114], "Nawabshah": [26.2442, 68.41],
-  "Mingora": [34.7717, 72.3604], "Dera Ghazi Khan": [30.0561, 70.6345], "Mirpur Khas": [25.5268, 69.0107],
-  "Chiniot": [31.72, 72.9781], "Kamoke": [32.0989, 74.2263], "Mandi Bahauddin": [32.5859, 73.4917],
-  "Jacobabad": [28.2769, 68.4381], "Jhelum": [32.9425, 73.7257], "Kohat": [33.59, 71.44],
-  "Shikarpur": [27.9556, 68.6382], "Khanewal": [30.3015, 71.931], "Muzaffargarh": [30.0725, 71.1932],
-  "Abbottabad": [34.1463, 73.2116], "Muridke": [31.8025, 74.2645], "Bahawalnagar": [29.9989, 73.2578],
-  "Khairpur": [27.5295, 68.7592], "Turbat": [26.0031, 63.0483], "Dadu": [26.7308, 67.7761],
-  "Chaman": [30.921, 66.4597], "Charsadda": [34.15, 71.74], "Nowshera": [34.015, 71.975],
-  "Swabi": [34.12, 72.47], "Bannu": [32.988, 70.603], "Dera Ismail Khan": [31.831, 70.901],
-  "Muzaffarabad": [34.37, 73.47], "Mirpur": [33.1478, 73.7508], "Gilgit": [35.9208, 74.3144],
-  "Skardu": [35.2971, 75.6333], "Gwadar": [25.1264, 62.3225],
-};
-
-function resolveCityCoordsForOp(location) {
-  if (!location) return null;
-  const loc = location.trim().toLowerCase();
-  const match = Object.keys(OP_CITY_COORDINATES).find(
-    (city) => city.toLowerCase() === loc || city.toLowerCase().includes(loc) || loc.includes(city.toLowerCase())
-  );
-  return match ? { lat: OP_CITY_COORDINATES[match][0], lon: OP_CITY_COORDINATES[match][1] } : null;
-}
-
 export default function RescueDashboard() {
   const { t, lang } = useLanguage();
-  const currentUserName = localStorage.getItem("userName") || "";
-  const currentUserId = localStorage.getItem("userId");
-  const [activeTab, setActiveTab] = useState("myOps");
-  const [onDuty, setOnDuty] = useState(true);
-  const [noteInputs, setNoteInputs] = useState({}); // opId -> draft note text
-  const [routeInfo, setRouteInfo] = useState(null); // { opId, distanceKm, durationMin } | null
   const [alerts, setAlerts] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,76 +19,34 @@ export default function RescueDashboard() {
   const [actionFeedback, setActionFeedback] = useState("");
 
   const [operations, setOperations] = useState([]);
-  const [opForm, setOpForm] = useState({ location: "", description: "", risk_level: "High", assigned_team: "" });
+  // A rescue almost never works with one person, so a new operation is built
+  // with a roster (team_members: array of worker names) instead of a single
+  // assignee — this gets joined into the assigned_team text field on submit.
+  const [opForm, setOpForm] = useState({ location: "", description: "", risk_level: "High", team_members: [] });
   const [rescueWorkers, setRescueWorkers] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [stats, setStats] = useState(null);
+
+  // Equipment & Resources (FR-05b)
   const [equipment, setEquipment] = useState([]);
+  const [equipCategory, setEquipCategory] = useState("all");
+  const [allocateForm, setAllocateForm] = useState({ item_id: "", op_id: "", quantity: 1 });
+  const [showAddEquipment, setShowAddEquipment] = useState(false);
+  const [newEquipForm, setNewEquipForm] = useState({ name: "", category: "Supplies", unit: "units", total_quantity: "" });
+
+  // Shift handover / continuity notes (FR-05c)
   const [handoverNotes, setHandoverNotes] = useState([]);
-  const [handoverInput, setHandoverInput] = useState("");
-  const [historySearch, setHistorySearch] = useState("");
+  const [handoverForm, setHandoverForm] = useState({ note: "", priority: "normal", location: "" });
 
-  // "My Operations" — operations where assigned_team matches this worker's
-  // own name. assigned_team is a free-text field (it can hold a volunteer
-  // name too, appended with "+"), so this does a loose contains-check
-  // rather than requiring an exact match.
-  const myOperations = useMemo(() => {
-    if (!currentUserName) return [];
-    return operations.filter((op) =>
-      (op.assigned_team || "").toLowerCase().includes(currentUserName.toLowerCase())
-    );
-  }, [operations, currentUserName]);
-
-  const myStats = useMemo(() => {
-    const completed = myOperations.filter((op) => op.status === "Completed");
-    const totalRescued = completed.reduce((sum, op) => sum + (op.people_rescued || 0), 0);
-    const durations = completed
-      .filter((op) => op.completed_at)
-      .map((op) => Math.max(0, (new Date(op.completed_at) - new Date(op.created_at)) / 60000));
-    const avgMinutes = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
-    return {
-      total: myOperations.length,
-      completed: completed.length,
-      active: myOperations.length - completed.length,
-      peopleRescued: totalRescued,
-      avgMinutes,
-    };
-  }, [myOperations]);
-
-  // Priority/triage sort — backup requests and High risk operations surface
-  // to the top so a worker glancing at the list sees what's most urgent
-  // first, instead of just whatever order they were created in.
-  const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
-  const sortedOperations = useMemo(() => {
-    return [...operations].sort((a, b) => {
-      if (!!b.needs_backup !== !!a.needs_backup) return (b.needs_backup ? 1 : 0) - (a.needs_backup ? 1 : 0);
-      const scoreA = PRIORITY_SCORE[a.risk_level] || 0;
-      const scoreB = PRIORITY_SCORE[b.risk_level] || 0;
-      if (scoreB !== scoreA) return scoreB - scoreA;
-      return new Date(b.updated_at) - new Date(a.updated_at);
-    });
-  }, [operations]);
-
-  const onDutyWorkers = useMemo(() => rescueWorkers.filter((w) => w.on_duty !== false), [rescueWorkers]);
-
-  const historicalResults = useMemo(() => {
-    const completed = operations.filter((op) => op.status === "Completed");
-    const query = historySearch.trim().toLowerCase();
-    if (!query) return completed;
-    return completed.filter((op) =>
-      (op.location || "").toLowerCase().includes(query) ||
-      (op.assigned_team || "").toLowerCase().includes(query) ||
-      (op.completion_notes || "").toLowerCase().includes(query)
-    );
-  }, [operations, historySearch]);
+  // Per-operation "manage team" popover — lets a coordinator add/remove a
+  // responder from an already-created operation's roster.
+  const [manageTeamOpId, setManageTeamOpId] = useState(null);
+  const [manageTeamPick, setManageTeamPick] = useState("");
 
   const fetchRescueWorkers = async () => {
     try {
       const res = await axios.get(`${API_BASE}/users`);
-      const workers = (res.data || []).filter((u) => u.role === "rescue_worker" && u.status === "Active");
-      setRescueWorkers(workers);
-      const me = workers.find((w) => w.id === Number(currentUserId) || w.email === localStorage.getItem("userEmail"));
-      if (me && typeof me.on_duty === "boolean") setOnDuty(me.on_duty);
+      setRescueWorkers((res.data || []).filter((u) => u.role === "rescue_worker" && u.status === "Active"));
     } catch (err) {
       console.error("Failed to load rescue workers:", err);
     }
@@ -152,10 +72,10 @@ export default function RescueDashboard() {
 
   const fetchEquipment = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/equipment`);
+      const res = await axios.get(`${API_BASE}/equipment-resources`);
       setEquipment(res.data || []);
     } catch (err) {
-      console.error("Failed to load equipment:", err);
+      console.error("Failed to load equipment resources:", err);
     }
   };
 
@@ -164,29 +84,7 @@ export default function RescueDashboard() {
       const res = await axios.get(`${API_BASE}/shift-handover`);
       setHandoverNotes(res.data || []);
     } catch (err) {
-      console.error("Failed to load handover notes:", err);
-    }
-  };
-
-  const handleToggleEquipment = async (item) => {
-    try {
-      const newStatus = item.status === "Available" ? "In Use" : "Available";
-      await axios.put(`${API_BASE}/equipment/${item.id}`, { status: newStatus });
-      fetchEquipment();
-    } catch (err) {
-      console.error("Failed to update equipment:", err);
-    }
-  };
-
-  const handlePostHandoverNote = async () => {
-    const note = handoverInput.trim();
-    if (!note) return;
-    try {
-      await axios.post(`${API_BASE}/shift-handover`, { note, author: currentUserName || "Unknown" });
-      setHandoverInput("");
-      fetchHandoverNotes();
-    } catch (err) {
-      console.error("Failed to post handover note:", err);
+      console.error("Failed to load shift handover notes:", err);
     }
   };
 
@@ -208,70 +106,13 @@ export default function RescueDashboard() {
       // the existing data model simple while still being genuinely useful.
       const op = operations.find((o) => o.id === opId);
       const newTeam = op?.assigned_team && op.assigned_team !== "Unassigned"
-        ? `${op.assigned_team} + ${volunteerName}`
+        ? `${op.assigned_team}, ${volunteerName}`
         : volunteerName;
       await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status: op.status, assigned_team: newTeam });
       fetchOperations();
     } catch (err) {
       console.error("Failed to assign volunteer:", err);
     }
-  };
-
-  const handleToggleDuty = async () => {
-    const newValue = !onDuty;
-    setOnDuty(newValue); // optimistic
-    try {
-      if (currentUserId) {
-        await axios.put(`${API_BASE}/users/${currentUserId}/duty-status`, { on_duty: newValue });
-      }
-    } catch (err) {
-      console.error("Failed to update duty status:", err);
-      setOnDuty(!newValue); // revert on failure
-    }
-  };
-
-  const handleAddNote = async (opId) => {
-    const note = (noteInputs[opId] || "").trim();
-    if (!note) return;
-    try {
-      await axios.post(`${API_BASE}/rescue-operations/${opId}/note`, { note });
-      setNoteInputs((prev) => ({ ...prev, [opId]: "" }));
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to add note:", err);
-    }
-  };
-
-  const handleRequestBackup = async (op) => {
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${op.id}/status`, { status: op.status, needs_backup: true });
-      setActionFeedback(t("backupRequestedMsg"));
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to request backup:", err);
-    }
-  };
-
-  const handleGetRoute = (op) => {
-    const dest = resolveCityCoordsForOp(op.location);
-    if (!dest) {
-      setActionFeedback(t("locationNotResolvable"));
-      return;
-    }
-    if (!navigator.geolocation) {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`, "_blank");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        window.open(`https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${dest.lat},${dest.lon}`, "_blank");
-      },
-      () => {
-        // Location permission denied — still open a route, just without a fixed origin (Google Maps will ask/use its own location)
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`, "_blank");
-      }
-    );
   };
 
   const formatDuration = (start, end) => {
@@ -296,6 +137,8 @@ export default function RescueDashboard() {
       fetchAlerts();
       fetchPredictions();
       fetchOperations();
+      fetchEquipment();
+      fetchHandoverNotes();
     }, 30000); // Refresh every 30 seconds
 
     return () => clearInterval(interval);
@@ -311,18 +154,65 @@ export default function RescueDashboard() {
     }
   };
 
+  const toggleOpFormMember = (name) => {
+    setOpForm((p) => ({
+      ...p,
+      team_members: p.team_members.includes(name)
+        ? p.team_members.filter((n) => n !== name)
+        : [...p.team_members, name],
+    }));
+  };
+
   const handleCreateOperation = async (e) => {
     e.preventDefault();
     if (!opForm.location.trim()) return;
     try {
-      await axios.post(`${API_BASE}/rescue-operations`, opForm);
-      setOpForm({ location: "", description: "", risk_level: "High", assigned_team: "" });
+      const assigned_team = opForm.team_members.length > 0 ? opForm.team_members.join(", ") : "Unassigned";
+      await axios.post(`${API_BASE}/rescue-operations`, {
+        location: opForm.location, description: opForm.description, risk_level: opForm.risk_level, assigned_team,
+      });
+      setOpForm({ location: "", description: "", risk_level: "High", team_members: [] });
       setShowOpForm(false);
       setActionFeedback("Rescue operation created and team notified.");
       fetchOperations();
     } catch (err) {
       console.error("Failed to create rescue operation:", err);
       setActionFeedback("Could not create rescue operation.");
+    }
+  };
+
+  // Add or remove a single responder from an operation's roster after it's
+  // already been created — the roster lives in assigned_team as a comma
+  // separated list, same field the create-form writes to.
+  const opTeamMembers = (op) => {
+    if (!op.assigned_team || op.assigned_team === "Unassigned") return [];
+    return op.assigned_team.split(",").map((n) => n.trim()).filter(Boolean);
+  };
+
+  const handleAddTeamMember = async (opId, name) => {
+    if (!name) return;
+    try {
+      const op = operations.find((o) => o.id === opId);
+      const current = opTeamMembers(op);
+      if (current.includes(name)) return;
+      const newTeam = [...current, name].join(", ");
+      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status: op.status, assigned_team: newTeam });
+      setManageTeamPick("");
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to add team member:", err);
+    }
+  };
+
+  const handleRemoveTeamMember = async (opId, name) => {
+    try {
+      const op = operations.find((o) => o.id === opId);
+      const remaining = opTeamMembers(op).filter((n) => n !== name);
+      const newTeam = remaining.length > 0 ? remaining.join(", ") : "Unassigned";
+      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status: op.status, assigned_team: newTeam });
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to remove team member:", err);
     }
   };
 
@@ -344,6 +234,91 @@ export default function RescueDashboard() {
       console.error("Failed to update operation status:", err);
       setActionFeedback(t("couldNotUpdateOp"));
     }
+  };
+
+  // ---------------- Equipment & Resources ----------------
+  const handleAllocateEquipment = async (e) => {
+    e.preventDefault();
+    const { item_id, op_id, quantity } = allocateForm;
+    const qty = parseInt(quantity, 10) || 0;
+    if (!item_id || !op_id || qty <= 0) return;
+    try {
+      await axios.put(`${API_BASE}/equipment-resources/${item_id}/adjust`, { delta: -qty });
+      const item = equipment.find((eq) => String(eq.id) === String(item_id));
+      const op = operations.find((o) => String(o.id) === String(op_id));
+      if (op) {
+        const tag = `${qty} ${item?.unit || "units"} ${item?.name || ""}`.trim();
+        const newResources = op.resources_used ? `${op.resources_used}, ${tag}` : tag;
+        await axios.put(`${API_BASE}/rescue-operations/${op_id}/status`, { status: op.status, resources_used: newResources });
+      }
+      setActionFeedback(t("equipAllocatedMsg"));
+      setAllocateForm({ item_id: "", op_id: "", quantity: 1 });
+      fetchEquipment();
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to allocate equipment:", err);
+      setActionFeedback(t("equipNotEnoughMsg"));
+    }
+  };
+
+  const handleReturnEquipment = async (itemId, quantity = 1) => {
+    try {
+      await axios.put(`${API_BASE}/equipment-resources/${itemId}/adjust`, { delta: quantity });
+      setActionFeedback(t("equipReturnedMsg"));
+      fetchEquipment();
+    } catch (err) {
+      console.error("Failed to return equipment:", err);
+    }
+  };
+
+  const handleAddEquipment = async (e) => {
+    e.preventDefault();
+    if (!newEquipForm.name.trim()) return;
+    try {
+      await axios.post(`${API_BASE}/equipment-resources`, {
+        ...newEquipForm,
+        total_quantity: parseInt(newEquipForm.total_quantity, 10) || 0,
+      });
+      setNewEquipForm({ name: "", category: "Supplies", unit: "units", total_quantity: "" });
+      setShowAddEquipment(false);
+      fetchEquipment();
+    } catch (err) {
+      console.error("Failed to add equipment:", err);
+    }
+  };
+
+  const equipmentCategories = ["all", ...Array.from(new Set(equipment.map((e) => e.category).filter(Boolean)))];
+  const visibleEquipment = equipCategory === "all" ? equipment : equipment.filter((e) => e.category === equipCategory);
+
+  // ---------------- Shift handover / continuity notes ----------------
+  const handlePostHandoverNote = async (e) => {
+    e.preventDefault();
+    if (!handoverForm.note.trim()) return;
+    try {
+      const author_name = localStorage.getItem("userName") || "Rescue coordinator";
+      await axios.post(`${API_BASE}/shift-handover`, { ...handoverForm, author_name });
+      setHandoverForm({ note: "", priority: "normal", location: "" });
+      setActionFeedback(t("handoverPostedMsg"));
+      fetchHandoverNotes();
+    } catch (err) {
+      console.error("Failed to post handover note:", err);
+    }
+  };
+
+  const handleAcknowledgeNote = async (noteId) => {
+    try {
+      const acknowledged_by = localStorage.getItem("userName") || "Next shift";
+      await axios.put(`${API_BASE}/shift-handover/${noteId}/acknowledge`, { acknowledged_by });
+      fetchHandoverNotes();
+    } catch (err) {
+      console.error("Failed to acknowledge handover note:", err);
+    }
+  };
+
+  const handoverPriorityStyle = (priority) => {
+    if (priority === "urgent") return "bg-red-500/20 border-red-500/50 text-red-300";
+    if (priority === "watch") return "bg-amber-500/20 border-amber-500/50 text-amber-300";
+    return "bg-white/5 border-white/10 text-muted";
   };
 
   const handleSubmitCompletion = async (e) => {
@@ -483,205 +458,45 @@ export default function RescueDashboard() {
   };
 
 
-  const renderOperationCard = (op) => (
-    <div key={op.id} className={`bg-ink-soft/60 rounded-lg p-4 ${opRiskStyles(op.risk_level)}`}>
-      <div className="flex justify-between items-start gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-semibold text-white">{op.location}</h4>
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${opStatusStyles(op.status)}`}>{t(OP_STATUS_KEY_MAP[op.status] || op.status)}</span>
-            <span className="text-xs text-muted">{t(RISK_KEY_MAP[op.risk_level] || op.risk_level)} {t("riskLabel").toLowerCase()}</span>
-            {op.needs_backup && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/50 text-red-300 font-semibold">🆘 {t("backupNeeded")}</span>
-            )}
-          </div>
-          {op.description && <p className="text-sm text-muted mb-1">{op.description}</p>}
-          <p className="text-xs text-slate-500">{t("teamLabel")}: {op.assigned_team || t("unassigned")} · {t("updatedLabel")} {new Date(op.updated_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-
-          {op.status === "Completed" && op.completed_at && (
-            <div className="mt-2 space-y-1">
-              <p className="text-xs text-emerald-400">
-                {t("completedIn")} {formatDuration(new Date(op.created_at), new Date(op.completed_at))}
-              </p>
-              {(op.people_rescued > 0 || op.resources_used || op.completion_notes) && (
-                <div className="text-xs text-muted bg-white/[0.03] rounded-lg p-2 mt-1 space-y-0.5">
-                  {op.people_rescued > 0 && <p>👥 {t("peopleRescuedLabel")}: <span className="text-white">{op.people_rescued}</span></p>}
-                  {op.resources_used && <p>🧰 {t("resourcesUsedLabel")}: {op.resources_used}</p>}
-                  {op.completion_notes && <p>📝 {op.completion_notes}</p>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* In-progress update log */}
-          {op.update_log && (Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).length > 0 && (
-            <div className="mt-2 bg-white/[0.03] rounded-lg p-2 space-y-1 text-xs text-muted max-h-24 overflow-y-auto">
-              {(Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).map((entry, i) => (
-                <p key={i}><span className="opacity-60">{new Date(entry.timestamp).toLocaleTimeString(lang === "ur" ? "ur-PK" : undefined)}</span> — {entry.note}</p>
-              ))}
-            </div>
-          )}
-
-          {nearbyFacilities[op.id] && (nearbyFacilities[op.id].shelter || nearbyFacilities[op.id].hospital) && (
-            <div className="flex flex-wrap gap-3 mt-2 text-xs">
-              {nearbyFacilities[op.id].shelter && (
-                <span className="text-teal-300">🏠 {t("nearestShelter")}: {lang === "ur" && nearbyFacilities[op.id].shelter.name_ur ? nearbyFacilities[op.id].shelter.name_ur : nearbyFacilities[op.id].shelter.name}</span>
-              )}
-              {nearbyFacilities[op.id].hospital && (
-                <span className="text-marigold-300">🏥 {t("nearestHospital")}: {lang === "ur" && nearbyFacilities[op.id].hospital.name_ur ? nearbyFacilities[op.id].hospital.name_ur : nearbyFacilities[op.id].hospital.name}</span>
-              )}
-            </div>
-          )}
-
-          {op.status !== "Completed" && (
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              {volunteers.length > 0 && (
-                <select
-                  defaultValue=""
-                  onChange={(e) => { if (e.target.value) { handleAssignVolunteer(op.id, e.target.value); e.target.value = ""; } }}
-                  className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-muted"
-                >
-                  <option value="">{t("assignVolunteerLabel")}</option>
-                  {volunteers.map((v) => <option key={v.id} value={v.name}>{v.name} ({v.city})</option>)}
-                </select>
-              )}
-              <button onClick={() => handleGetRoute(op)}
-                className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-teal-300">
-                🧭 {t("getRoute")}
-              </button>
-              {!op.needs_backup && (
-                <button onClick={() => handleRequestBackup(op)}
-                  className="text-xs bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg px-2 py-1.5 text-red-300">
-                  🆘 {t("requestBackup")}
-                </button>
-              )}
-            </div>
-          )}
-
-          {op.status !== "Completed" && (
-            <div className="flex items-center gap-2 mt-2">
-              <input
-                value={noteInputs[op.id] || ""}
-                onChange={(e) => setNoteInputs((prev) => ({ ...prev, [op.id]: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddNote(op.id); }}
-                placeholder={t("addUpdateNotePh")}
-                className="field-input text-xs py-2 flex-1"
-              />
-              <button onClick={() => handleAddNote(op.id)} className="btn-secondary text-xs py-2 px-3 shrink-0">
-                {t("post")}
-              </button>
-            </div>
-          )}
-        </div>
-        {op.status !== "Completed" && (
-          <div className="flex gap-2 shrink-0">
-            {op.status === "Assigned" && (
-              <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
-                className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("start")}</button>
-            )}
-            <button onClick={() => handleUpdateOpStatus(op.id, "Completed")}
-              className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("markComplete")}</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-ink via-ink-soft to-ink text-parchment font-sans">
       <Navbar />
       <div className="pt-24 pb-16">
         <div className="max-w-7xl mx-auto px-6">
           {/* Header */}
-          <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="eyebrow text-teal-400 mb-3">{t("rescueCoordination")}</p>
-              <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("operationsCenter")}</h1>
-              <p className="text-muted max-w-lg">{t("operationsCenterDesc")}</p>
-            </div>
-            <button
-              onClick={handleToggleDuty}
-              className={`shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold border transition-colors ${
-                onDuty
-                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                  : "bg-white/5 border-white/15 text-muted"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${onDuty ? "bg-emerald-400" : "bg-slate-500"}`}></span>
-              {onDuty ? t("onDuty") : t("offDuty")}
-            </button>
+          <div className="mb-10">
+            <p className="eyebrow text-teal-400 mb-3">{t("rescueCoordination")}</p>
+            <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("operationsCenter")}</h1>
+            <p className="text-muted max-w-lg">{t("operationsCenterDesc")}</p>
           </div>
 
-          {/* Tab Navigation — separates "my own work" from full team
-              oversight and the map, instead of one long scrolling page. */}
-          <div className="flex flex-wrap gap-2 mb-8 border-b border-white/10 pb-1">
-            {[
-              { id: "myOps", label: t("tabMyOperations") },
-              { id: "team", label: t("tabTeamOverview") },
-              { id: "map", label: t("tabMapNavigation") },
-              { id: "team_resources", label: t("tabTeamResources") },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-white/10 text-teal-300 border-b-2 border-teal-400"
-                    : "text-muted hover:text-parchment hover:bg-white/5"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ============ TAB: MY OPERATIONS ============ */}
-          {activeTab === "myOps" && (<>
-          {/* My Performance Stats */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("myPerformance")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("myStatsTitle")}</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{myStats.total}</div>
-                <div className="eyebrow text-muted">{t("totalOperationsLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-teal-400">{myStats.active}</div>
-                <div className="eyebrow text-muted">{t("activeLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-emerald-400">{myStats.completed}</div>
-                <div className="eyebrow text-muted">{t("completedLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-marigold-400">{myStats.peopleRescued}</div>
-                <div className="eyebrow text-muted">{t("peopleRescuedLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{myStats.avgMinutes ?? "—"}</div>
-                <div className="eyebrow text-muted">{t("avgMinutesLabel")}</div>
+          {/* Operations Overview — placed above Emergency Status so coordinators
+              see the big-picture numbers before the live threat level. */}
+          {stats && (
+            <div className="dashboard-card p-6 mb-8">
+              <p className="eyebrow text-marigold-400 mb-2">{t("rescueStatsLabel")}</p>
+              <h2 className="font-display text-2xl text-parchment mb-4">{t("operationsOverviewLabel")}</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="stat-tile text-center">
+                  <div className="font-display text-2xl text-parchment">{stats.total_operations}</div>
+                  <div className="eyebrow text-muted">{t("totalOperationsLabel")}</div>
+                </div>
+                <div className="stat-tile text-center">
+                  <div className="font-display text-2xl text-emerald-400">{stats.completed_operations}</div>
+                  <div className="eyebrow text-muted">{t("completedLabel")}</div>
+                </div>
+                <div className="stat-tile text-center">
+                  <div className="font-display text-2xl text-teal-400">{stats.total_people_rescued}</div>
+                  <div className="eyebrow text-muted">{t("peopleRescuedLabel")}</div>
+                </div>
+                <div className="stat-tile text-center">
+                  <div className="font-display text-2xl text-marigold-400">{stats.avg_completion_minutes ?? "—"}</div>
+                  <div className="eyebrow text-muted">{t("avgMinutesLabel")}</div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* My Operations List */}
-          <div className="dashboard-card p-6 mb-8">
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("myAssignedOperations")}</h2>
-            <p className="text-sm text-muted mb-6">{t("myAssignedOperationsDesc")}</p>
-            {myOperations.length === 0 ? (
-              <p className="text-muted text-center py-6">{t("noOperationsAssignedToMe")}</p>
-            ) : (
-              <div className="space-y-3">
-                {myOperations.map((op) => renderOperationCard(op))}
-              </div>
-            )}
-          </div>
-          </>)}
-          {/* ============ END TAB: MY OPERATIONS ============ */}
-
-          {/* ============ TAB: TEAM OVERVIEW ============ */}
-          {activeTab === "team" && (<>
           {/* Emergency Status Panel */}
           <div className={`dashboard-card p-6 ${getEmergencyStatusColor()}`}>
             <div className="flex items-center justify-between">
@@ -826,17 +641,31 @@ export default function RescueDashboard() {
                   <input value={opForm.description} onChange={(e) => setOpForm((p) => ({ ...p, description: e.target.value }))}
                     className="field-input mt-1 py-2.5" placeholder={t("whatNeedsToHappen")} />
                 </label>
-                <label className="block">
-                  <span className="text-sm text-muted">{t("assignWorker")}</span>
-                  <select value={opForm.assigned_team} onChange={(e) => setOpForm((p) => ({ ...p, assigned_team: e.target.value }))}
-                    className="field-input mt-1 py-2.5">
-                    <option value="">{t("unassigned")}</option>
-                    {rescueWorkers.map((w) => (
-                      <option key={w.id} value={w.name}>{w.name} ({w.email})</option>
-                    ))}
-                  </select>
-                  {rescueWorkers.length === 0 && (
-                    <p className="text-xs text-muted mt-1">No registered rescue workers yet — they show up here once they register with the "Rescue Worker" role.</p>
+                <label className="block md:col-span-2">
+                  <span className="text-sm text-muted">{t("assignTeamMembers")}</span>
+                  <p className="text-xs text-muted mt-0.5 mb-2">{t("teamMembersHelp")}</p>
+                  {rescueWorkers.length === 0 ? (
+                    <p className="text-xs text-muted">No registered rescue workers yet — they show up here once they register with the "Rescue Worker" role.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {rescueWorkers.map((w) => {
+                        const picked = opForm.team_members.includes(w.name);
+                        return (
+                          <button
+                            type="button" key={w.id}
+                            onClick={() => toggleOpFormMember(w.name)}
+                            className={`text-xs px-3 py-2 rounded-lg border transition-colors ${picked
+                              ? "bg-teal-600/80 border-teal-500 text-white"
+                              : "bg-white/5 border-white/10 text-muted hover:border-white/30"}`}
+                          >
+                            {picked ? "✓ " : "+ "}{w.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {opForm.team_members.length > 0 && (
+                    <p className="text-xs text-teal-300 mt-2">{t("teamOf")} {opForm.team_members.length} {opForm.team_members.length === 1 ? t("member") : t("members")}: {opForm.team_members.join(", ")}</p>
                   )}
                 </label>
                 <div className="md:col-span-2 flex justify-end">
@@ -851,188 +680,310 @@ export default function RescueDashboard() {
               <p className="text-muted text-center py-6">{t('noOperationsFound')}</p>
             ) : (
               <div className="space-y-3">
-                {sortedOperations.map((op) => renderOperationCard(op))}
+                {operations.map((op) => (
+                  <div key={op.id} className={`bg-ink-soft/60 rounded-lg p-4 ${opRiskStyles(op.risk_level)}`}>
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-white">{op.location}</h4>
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${opStatusStyles(op.status)}`}>{t(OP_STATUS_KEY_MAP[op.status] || op.status)}</span>
+                          <span className="text-xs text-muted">{t(RISK_KEY_MAP[op.risk_level] || op.risk_level)} {t("riskLabel").toLowerCase()}</span>
+                        </div>
+                        {op.description && <p className="text-sm text-muted mb-1">{op.description}</p>}
+                        <p className="text-xs text-slate-500 mb-1.5">{t("updatedLabel")} {new Date(op.updated_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
+
+                        {/* Team roster — a rescue op almost always needs more
+                            than one responder, so this shows everyone
+                            assigned as removable chips, not a single name. */}
+                        <div className="mb-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-muted">{t("teamRosterLabel")}:</span>
+                            {opTeamMembers(op).length === 0 ? (
+                              <span className="text-xs text-muted italic">{t("unassigned")}</span>
+                            ) : (
+                              opTeamMembers(op).map((name) => (
+                                <span key={name} className="text-xs bg-teal-500/15 border border-teal-500/30 text-teal-200 rounded-full px-2 py-0.5 flex items-center gap-1">
+                                  {name}
+                                  {op.status !== "Completed" && (
+                                    <button type="button" onClick={() => handleRemoveTeamMember(op.id, name)}
+                                      title={t("removeMember")} className="text-teal-300/70 hover:text-red-300">×</button>
+                                  )}
+                                </span>
+                              ))
+                            )}
+                            {opTeamMembers(op).length > 0 && (
+                              <span className="text-xs text-muted">
+                                ({opTeamMembers(op).length} {opTeamMembers(op).length === 1 ? t("member") : t("members")})
+                              </span>
+                            )}
+                            {op.status !== "Completed" && (
+                              <button type="button"
+                                onClick={() => setManageTeamOpId(manageTeamOpId === op.id ? null : op.id)}
+                                className="text-xs text-marigold-300 hover:text-marigold-200 underline underline-offset-2">
+                                {t("manageTeam")}
+                              </button>
+                            )}
+                          </div>
+                          {manageTeamOpId === op.id && (
+                            <div className="mt-2 flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg p-2">
+                              <select value={manageTeamPick} onChange={(e) => setManageTeamPick(e.target.value)}
+                                className="field-input py-1.5 text-xs flex-1">
+                                <option value="">{t("assignTeamMembers")}…</option>
+                                {rescueWorkers.filter((w) => !opTeamMembers(op).includes(w.name)).map((w) => (
+                                  <option key={w.id} value={w.name}>{w.name}</option>
+                                ))}
+                              </select>
+                              <button type="button"
+                                onClick={() => handleAddTeamMember(op.id, manageTeamPick)}
+                                disabled={!manageTeamPick}
+                                className="btn-secondary text-xs py-1.5 px-3 disabled:opacity-40">
+                                {t("addMember")}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {op.status === "Completed" && op.completed_at && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-xs text-emerald-400">
+                              {t("completedIn")} {formatDuration(new Date(op.created_at), new Date(op.completed_at))}
+                            </p>
+                            {(op.people_rescued > 0 || op.resources_used || op.completion_notes) && (
+                              <div className="text-xs text-muted bg-white/[0.03] rounded-lg p-2 mt-1 space-y-0.5">
+                                {op.people_rescued > 0 && <p>👥 {t("peopleRescuedLabel")}: <span className="text-white">{op.people_rescued}</span></p>}
+                                {op.resources_used && <p>🧰 {t("resourcesUsedLabel")}: {op.resources_used}</p>}
+                                {op.completion_notes && <p>📝 {op.completion_notes}</p>}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {nearbyFacilities[op.id] && (nearbyFacilities[op.id].shelter || nearbyFacilities[op.id].hospital) && (
+                          <div className="flex flex-wrap gap-3 mt-2 text-xs">
+                            {nearbyFacilities[op.id].shelter && (
+                              <span className="text-teal-300">🏠 {t("nearestShelter")}: {lang === "ur" && nearbyFacilities[op.id].shelter.name_ur ? nearbyFacilities[op.id].shelter.name_ur : nearbyFacilities[op.id].shelter.name}</span>
+                            )}
+                            {nearbyFacilities[op.id].hospital && (
+                              <span className="text-marigold-300">🏥 {t("nearestHospital")}: {lang === "ur" && nearbyFacilities[op.id].hospital.name_ur ? nearbyFacilities[op.id].hospital.name_ur : nearbyFacilities[op.id].hospital.name}</span>
+                            )}
+                          </div>
+                        )}
+
+                        {op.status !== "Completed" && volunteers.length > 0 && (
+                          <select
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) { handleAssignVolunteer(op.id, e.target.value); e.target.value = ""; } }}
+                            className="mt-2 text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-muted"
+                          >
+                            <option value="">{t("assignVolunteerLabel")}</option>
+                            {volunteers.map((v) => <option key={v.id} value={v.name}>{v.name} ({v.city})</option>)}
+                          </select>
+                        )}
+                      </div>
+                      {op.status !== "Completed" && (
+                        <div className="flex gap-2 shrink-0">
+                          {op.status === "Assigned" && (
+                            <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
+                              className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("start")}</button>
+                          )}
+                          <button onClick={() => handleUpdateOpStatus(op.id, "Completed")}
+                            className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("markComplete")}</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Rescue Stats */}
-          {stats && (
-            <div className="dashboard-card p-6 mb-8">
-              <p className="eyebrow text-marigold-400 mb-2">{t("rescueStatsLabel")}</p>
-              <h2 className="font-display text-2xl text-parchment mb-4">{t("operationsOverviewLabel")}</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-parchment">{stats.total_operations}</div>
-                  <div className="eyebrow text-muted">{t("totalOperationsLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-emerald-400">{stats.completed_operations}</div>
-                  <div className="eyebrow text-muted">{t("completedLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-teal-400">{stats.total_people_rescued}</div>
-                  <div className="eyebrow text-muted">{t("peopleRescuedLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-marigold-400">{stats.avg_completion_minutes ?? "—"}</div>
-                  <div className="eyebrow text-muted">{t("avgMinutesLabel")}</div>
-                </div>
+          {/* Equipment & Resources (FR-05b) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex items-center justify-between mb-1 flex-wrap gap-3">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">{t("equipmentResourcesLabel")}</h2>
+                <p className="text-sm text-muted">{t("equipmentResourcesDesc")}</p>
               </div>
+              <button onClick={() => setShowAddEquipment((v) => !v)} className="btn-secondary text-sm py-2.5">
+                {showAddEquipment ? t("cancel") : t("equipAddNew")}
+              </button>
             </div>
-          )}
-          </>)}
-          {/* ============ END TAB: TEAM OVERVIEW ============ */}
 
-          {/* ============ TAB: MAP & NAVIGATION ============ */}
-          {activeTab === "map" && (<>
+            {showAddEquipment && (
+              <form onSubmit={handleAddEquipment} className="grid gap-3 md:grid-cols-4 bg-ink-soft/60 rounded-xl p-4 my-4 border border-white/10">
+                <input value={newEquipForm.name} onChange={(e) => setNewEquipForm((p) => ({ ...p, name: e.target.value }))}
+                  required placeholder={t("equipNamePh")} className="field-input py-2 text-sm md:col-span-2" />
+                <input value={newEquipForm.category} onChange={(e) => setNewEquipForm((p) => ({ ...p, category: e.target.value }))}
+                  placeholder={t("equipCategoryAll")} className="field-input py-2 text-sm" />
+                <input value={newEquipForm.unit} onChange={(e) => setNewEquipForm((p) => ({ ...p, unit: e.target.value }))}
+                  placeholder={t("equipUnitPh")} className="field-input py-2 text-sm" />
+                <input type="number" min="0" value={newEquipForm.total_quantity}
+                  onChange={(e) => setNewEquipForm((p) => ({ ...p, total_quantity: e.target.value }))}
+                  placeholder={t("equipTotalQty")} className="field-input py-2 text-sm" />
+                <div className="md:col-span-3 flex justify-end">
+                  <button type="submit" className="btn-primary text-sm py-2">{t("equipAddBtn")}</button>
+                </div>
+              </form>
+            )}
+
+            {/* Category filter */}
+            {equipment.length > 0 && (
+              <div className="flex flex-wrap gap-2 my-4">
+                {equipmentCategories.map((cat) => (
+                  <button key={cat} onClick={() => setEquipCategory(cat)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${equipCategory === cat
+                      ? "bg-teal-600/80 border-teal-500 text-white"
+                      : "bg-white/5 border-white/10 text-muted hover:border-white/30"}`}>
+                    {cat === "all" ? t("equipCategoryAll") : cat}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Inventory grid */}
+            {visibleEquipment.length === 0 ? (
+              <p className="text-muted text-center py-6">—</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-6">
+                {visibleEquipment.map((item) => {
+                  const ratio = item.total_quantity > 0 ? item.available_quantity / item.total_quantity : 0;
+                  const badge = item.status === "Out of stock" ? "bg-red-500/20 border-red-500/50 text-red-300"
+                    : item.status === "Low" ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                    : "bg-emerald-500/20 border-emerald-500/50 text-emerald-300";
+                  const badgeText = item.status === "Out of stock" ? t("equipOut") : item.status === "Low" ? t("equipLow") : t("equipAvailable");
+                  return (
+                    <div key={item.id} className="bg-ink-soft/60 rounded-lg p-4 border border-white/10">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h4 className="font-semibold text-white text-sm">{item.name}</h4>
+                          <p className="text-xs text-muted">{item.category}</p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${badge}`}>{badgeText}</span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="font-display text-xl text-parchment">{item.available_quantity}</span>
+                        <span className="text-xs text-muted">{t("ofTotal")} {item.total_quantity} {item.unit}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%` }} />
+                      </div>
+                      {item.available_quantity < item.total_quantity && (
+                        <button onClick={() => handleReturnEquipment(item.id, 1)}
+                          className="text-xs text-teal-300 hover:text-teal-200 mt-2 underline underline-offset-2">
+                          {t("equipReturnBtn")} 1 {item.unit}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Allocate to an operation */}
+            {equipment.length > 0 && (
+              <form onSubmit={handleAllocateEquipment} className="grid gap-3 md:grid-cols-4 items-end bg-ink-soft/60 rounded-xl p-4 border border-white/10">
+                <label className="block md:col-span-2">
+                  <span className="text-xs text-muted">{t("equipAllocateTo")}</span>
+                  <select value={allocateForm.op_id} onChange={(e) => setAllocateForm((p) => ({ ...p, op_id: e.target.value }))}
+                    className="field-input mt-1 py-2 text-sm">
+                    <option value="">{t("equipSelectOp")}</option>
+                    {operations.filter((o) => o.status !== "Completed").map((o) => (
+                      <option key={o.id} value={o.id}>{o.location} ({t(RISK_KEY_MAP[o.risk_level] || o.risk_level)})</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-muted">{t("equipSelectItem")}</span>
+                  <select value={allocateForm.item_id} onChange={(e) => setAllocateForm((p) => ({ ...p, item_id: e.target.value }))}
+                    className="field-input mt-1 py-2 text-sm">
+                    <option value="">{t("equipSelectItem")}</option>
+                    {equipment.map((item) => (
+                      <option key={item.id} value={item.id} disabled={item.available_quantity <= 0}>
+                        {item.name} ({item.available_quantity} {t("equipAvailable").toLowerCase()})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-muted">{t("equipQuantity")}</span>
+                  <input type="number" min="1" value={allocateForm.quantity}
+                    onChange={(e) => setAllocateForm((p) => ({ ...p, quantity: e.target.value }))}
+                    className="field-input mt-1 py-2 text-sm" />
+                </label>
+                <div className="md:col-span-4 flex justify-end">
+                  <button type="submit" className="btn-primary text-sm py-2">{t("equipAllocateBtn")}</button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          {/* Shift Handover / Continuity Notes (FR-05c) */}
+          <div className="dashboard-card p-6 mb-8">
+            <h2 className="font-display text-2xl text-parchment">{t("shiftHandoverLabel")}</h2>
+            <p className="text-sm text-muted mb-4">{t("shiftHandoverDesc")}</p>
+
+            <form onSubmit={handlePostHandoverNote} className="bg-ink-soft/60 rounded-xl p-4 border border-white/10 mb-5">
+              <textarea rows={3} value={handoverForm.note} required
+                onChange={(e) => setHandoverForm((p) => ({ ...p, note: e.target.value }))}
+                placeholder={t("handoverNotePh")} className="field-input resize-none text-sm" />
+              <div className="grid gap-3 md:grid-cols-3 mt-3">
+                <label className="block">
+                  <span className="text-xs text-muted">{t("handoverPriority")}</span>
+                  <select value={handoverForm.priority} onChange={(e) => setHandoverForm((p) => ({ ...p, priority: e.target.value }))}
+                    className="field-input mt-1 py-2 text-sm">
+                    <option value="normal">{t("handoverNormal")}</option>
+                    <option value="watch">{t("handoverWatch")}</option>
+                    <option value="urgent">{t("handoverUrgent")}</option>
+                  </select>
+                </label>
+                <label className="block md:col-span-2">
+                  <span className="text-xs text-muted">{t("location2")}</span>
+                  <input value={handoverForm.location} onChange={(e) => setHandoverForm((p) => ({ ...p, location: e.target.value }))}
+                    placeholder={t("handoverLocationPh")} className="field-input mt-1 py-2 text-sm" />
+                </label>
+              </div>
+              <div className="flex justify-end mt-3">
+                <button type="submit" className="btn-primary text-sm py-2">{t("postHandoverNote")}</button>
+              </div>
+            </form>
+
+            {handoverNotes.length === 0 ? (
+              <p className="text-muted text-center py-6">{t("noHandoverNotes")}</p>
+            ) : (
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {handoverNotes.map((n) => (
+                  <div key={n.id} className={`rounded-lg p-3 border ${handoverPriorityStyle(n.priority)}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm flex-1">{n.note}</p>
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border shrink-0 opacity-80">
+                        {n.priority === "urgent" ? t("handoverUrgent") : n.priority === "watch" ? t("handoverWatch") : t("handoverNormal")}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+                      <p className="text-xs text-muted">
+                        {t("postedBy")} <span className="text-white/80">{n.author_name}</span>
+                        {n.location && <> · {n.location}</>} · {new Date(n.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}
+                      </p>
+                      {n.acknowledged_by ? (
+                        <span className="text-xs text-emerald-300">✓ {t("acknowledgedBy")} {n.acknowledged_by}</span>
+                      ) : (
+                        <button onClick={() => handleAcknowledgeNote(n.id)} className="text-xs text-marigold-300 hover:text-marigold-200 underline underline-offset-2">
+                          {t("acknowledgeNote")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Interactive Map (FR-04) */}
           <div className="mb-8">
             <p className="eyebrow text-teal-400 mb-3">{t("liveMap")}</p>
             <h2 className="font-display text-2xl text-parchment mb-4">{t("activeOpsBlockedRoads")}</h2>
             <FloodMap height={460} canEdit={true} />
           </div>
-          </>)}
-          {/* ============ END TAB: MAP & NAVIGATION ============ */}
-
-          {/* ============ TAB: TEAM & RESOURCES ============ */}
-          {activeTab === "team_resources" && (<>
-          {/* On-Duty Workers */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-emerald-400 mb-2">{t("coordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("onDutyWorkersTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("onDutyWorkersDesc")}</p>
-            {onDutyWorkers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noOneOnDuty")}</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {onDutyWorkers.map((w) => (
-                  <span key={w.id} className="inline-flex items-center gap-1.5 text-sm bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-full px-3 py-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    {w.name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Team Roster / Contact Directory */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("teamRosterTitle")}</h2>
-            {rescueWorkers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-2">{t("name")}</th>
-                      <th className="pb-2">{t("email")}</th>
-                      <th className="pb-2">{t("statusLabel")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {rescueWorkers.map((w) => (
-                      <tr key={w.id}>
-                        <td className="py-2 text-white">{w.name}</td>
-                        <td className="py-2 text-muted">{w.email}</td>
-                        <td className="py-2">
-                          <span className={w.on_duty !== false ? "text-emerald-300" : "text-muted"}>
-                            {w.on_duty !== false ? t("onDuty") : t("offDuty")}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Equipment / Resource Tracker */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("equipmentTrackerTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("equipmentTrackerDesc")}</p>
-            <div className="space-y-2">
-              {equipment.map((item) => (
-                <div key={item.id} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-2.5">
-                  <span className="text-sm text-white">{item.name}</span>
-                  <button
-                    onClick={() => handleToggleEquipment(item)}
-                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
-                      item.status === "Available"
-                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                        : "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
-                    }`}
-                  >
-                    {item.status === "Available" ? t("statusAvailable") : t("statusInUse")}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Shift Handover Notes */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-red-400 mb-2">{t("continuity")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("shiftHandoverTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("shiftHandoverDesc")}</p>
-            <div className="flex items-center gap-2 mb-4">
-              <input
-                value={handoverInput}
-                onChange={(e) => setHandoverInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handlePostHandoverNote(); }}
-                placeholder={t("handoverNotePh")}
-                className="field-input flex-1"
-              />
-              <button onClick={handlePostHandoverNote} className="btn-primary shrink-0">{t("post")}</button>
-            </div>
-            {handoverNotes.length === 0 ? (
-              <p className="text-sm text-muted">{t("noHandoverNotesYet")}</p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {handoverNotes.map((n) => (
-                  <div key={n.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
-                    <p className="text-white">{n.note}</p>
-                    <p className="text-xs text-muted mt-1">{n.author} · {new Date(n.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Historical Operations Search */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("recordKeeping")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("historicalSearchTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("historicalSearchDesc")}</p>
-            <input
-              value={historySearch}
-              onChange={(e) => setHistorySearch(e.target.value)}
-              placeholder={t("historicalSearchPh")}
-              className="field-input mb-4"
-            />
-            {historicalResults.length === 0 ? (
-              <p className="text-sm text-muted">{t("noHistoricalResults")}</p>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {historicalResults.map((op) => (
-                  <div key={op.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-white font-medium">{op.location}</span>
-                      <span className="text-xs text-muted">{new Date(op.completed_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</span>
-                    </div>
-                    <p className="text-xs text-muted mt-1">{t("teamLabel")}: {op.assigned_team || t("unassigned")} {op.people_rescued > 0 && `· ${t("peopleRescuedLabel")}: ${op.people_rescued}`}</p>
-                    {op.completion_notes && <p className="text-xs text-muted mt-1">📝 {op.completion_notes}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          </>)}
-          {/* ============ END TAB: TEAM & RESOURCES ============ */}
 
           {/* Completion Report Modal (replaces window.prompt for a proper, on-brand UI) */}
           {completionModal && (
