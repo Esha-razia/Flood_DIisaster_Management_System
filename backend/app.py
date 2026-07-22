@@ -1716,6 +1716,29 @@ def update_rescue_operation_status(op_id):
     return jsonify(result)
 
 
+@app.route("/rescue-operations/<int:op_id>", methods=["DELETE"])
+def delete_rescue_operation(op_id):
+    """Removes an operation entirely — for stuck/duplicate test entries
+    (e.g. ones left over from an earlier id-mismatch bug) that a coordinator
+    wants off the board rather than something to keep acting on."""
+    global MEMORY_RESCUE_OPS
+    before = len(MEMORY_RESCUE_OPS)
+    MEMORY_RESCUE_OPS = [o for o in MEMORY_RESCUE_OPS if o["id"] != op_id]
+    removed_from_memory = len(MEMORY_RESCUE_OPS) != before
+
+    removed_from_db = False
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("DELETE FROM rescue_operations WHERE id = ?", (op_id,))
+            removed_from_db = cursor.rowcount > 0
+            conn.commit()
+        except Exception as db_error:
+            log_event("error", f"Failed to delete rescue operation from database: {db_error}")
+
+    if not removed_from_memory and not removed_from_db:
+        return jsonify({"message": "Rescue operation not found"}), 404
+    return jsonify({"message": "Rescue operation deleted"})
+
 @app.route("/rescue-operations/<int:op_id>/note", methods=["POST"])
 def add_rescue_operation_note(op_id):
     """Lets a rescue worker log an in-progress update (e.g. 'en route',

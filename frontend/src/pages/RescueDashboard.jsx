@@ -427,6 +427,19 @@ export default function RescueDashboard() {
   const [completionModal, setCompletionModal] = useState(null); // { opId } | null
   const [completionForm, setCompletionForm] = useState({ people_rescued: "", resources_used: "", completion_notes: "" });
 
+  const handleDeleteOperation = async (opId) => {
+    if (!window.confirm(t("confirmDeleteOperation"))) return;
+    try {
+      await axios.delete(`${API_BASE}/rescue-operations/${opId}`);
+      setActionFeedback(t("operationDeletedMsg"));
+      fetchOperations();
+      fetchStats();
+    } catch (err) {
+      console.error("Failed to delete rescue operation:", err);
+      setActionFeedback(t("couldNotUpdateOp"));
+    }
+  };
+
   const handleUpdateOpStatus = async (opId, status) => {
     if (status === "Completed") {
       setCompletionForm({ people_rescued: "", resources_used: "", completion_notes: "" });
@@ -698,16 +711,18 @@ export default function RescueDashboard() {
             </div>
           )}
         </div>
-        {op.status !== "Completed" && (
-          <div className="flex gap-2 shrink-0">
-            {op.status === "Assigned" && (
-              <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
-                className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("start")}</button>
-            )}
+        <div className="flex gap-2 shrink-0">
+          {op.status !== "Completed" && op.status === "Assigned" && (
+            <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
+              className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("start")}</button>
+          )}
+          {op.status !== "Completed" && (
             <button onClick={() => handleUpdateOpStatus(op.id, "Completed")}
               className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("markComplete")}</button>
-          </div>
-        )}
+          )}
+          <button onClick={() => handleDeleteOperation(op.id)}
+            className="bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 text-xs px-3 py-2 rounded-lg transition-colors">{t("deleteOperationBtn")}</button>
+        </div>
       </div>
     </div>
   );
