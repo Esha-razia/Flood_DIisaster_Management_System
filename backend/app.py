@@ -172,21 +172,6 @@ class CompatibleConnection:
     def __getattr__(self, name):
         return getattr(self.real_conn, name)
 
-# FR-05b: Equipment & Resources — starting inventory seeded on first run.
-# (name, category, unit, total_quantity)
-DEFAULT_EQUIPMENT = [
-    ("Rescue Boat", "Transport", "boats", 8),
-    ("Life Jackets", "Safety Gear", "units", 150),
-    ("Medical Kit", "Medical", "kits", 25),
-    ("Ration Packs", "Supplies", "packs", 300),
-    ("Drinking Water", "Supplies", "cartons", 200),
-    ("Rope & Harness Set", "Tools", "sets", 40),
-    ("Portable Generator", "Equipment", "units", 6),
-    ("Water Pump", "Equipment", "units", 10),
-    ("Tents", "Shelter", "units", 60),
-    ("First Responders (spare)", "Personnel", "people", 15),
-]
-
 def initialize_sqlite_db(cursor, conn):
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -198,6 +183,7 @@ def initialize_sqlite_db(cursor, conn):
       status TEXT DEFAULT 'Active',
       is_verified INTEGER DEFAULT 0,
       otp TEXT,
+      on_duty INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -297,7 +283,9 @@ def initialize_sqlite_db(cursor, conn):
       completed_at DATETIME,
       people_rescued INTEGER,
       resources_used TEXT,
-      completion_notes TEXT
+      completion_notes TEXT,
+      needs_backup INTEGER DEFAULT 0,
+      update_log TEXT
     );
     """)
     cursor.execute("""
@@ -318,36 +306,6 @@ def initialize_sqlite_db(cursor, conn):
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS equipment_resources (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      category TEXT,
-      unit TEXT,
-      total_quantity INTEGER,
-      available_quantity INTEGER,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS shift_handover_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      author_name TEXT,
-      priority TEXT DEFAULT 'normal',
-      location TEXT,
-      note TEXT,
-      acknowledged_by TEXT,
-      acknowledged_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cursor.execute("SELECT COUNT(*) as c FROM equipment_resources")
-    if (cursor.fetchone().c or 0) == 0:
-        for name, category, unit, qty in DEFAULT_EQUIPMENT:
-            cursor.execute(
-                "INSERT INTO equipment_resources (name, category, unit, total_quantity, available_quantity) VALUES (?, ?, ?, ?, ?)",
-                (name, category, unit, qty, qty)
-            )
 
     # Self-healing migration: a database.db created in an earlier session
     # (before some of these columns existed) keeps its OLD schema forever,
@@ -357,10 +315,10 @@ def initialize_sqlite_db(cursor, conn):
     # failing to save the newer fields (e.g. alerts.assigned_worker),
     # which is exactly what caused assignments to appear to "not save."
     expected_columns = {
-        "users": ["status", "is_verified", "otp"],
+        "users": ["status", "is_verified", "otp", "on_duty"],
         "predictions": ["user_id", "user_email"],
         "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
-        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes"],
+        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log"],
     }
     for table, columns in expected_columns.items():
         try:
@@ -385,6 +343,7 @@ def initialize_postgresql_db(cursor, conn):
       status TEXT DEFAULT 'Active',
       is_verified INTEGER DEFAULT 0,
       otp TEXT,
+      on_duty INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -453,7 +412,9 @@ def initialize_postgresql_db(cursor, conn):
       completed_at TIMESTAMP NULL,
       people_rescued INTEGER,
       resources_used TEXT,
-      completion_notes TEXT
+      completion_notes TEXT,
+      needs_backup INTEGER DEFAULT 0,
+      update_log TEXT
     );
     """)
     cursor.execute("""
@@ -505,36 +466,32 @@ def initialize_postgresql_db(cursor, conn):
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS equipment_resources (
-      id SERIAL PRIMARY KEY,
-      name TEXT,
-      category TEXT,
-      unit TEXT,
-      total_quantity INTEGER,
-      available_quantity INTEGER,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS shift_handover_notes (
-      id SERIAL PRIMARY KEY,
-      author_name TEXT,
-      priority TEXT DEFAULT 'normal',
-      location TEXT,
-      note TEXT,
-      acknowledged_by TEXT,
-      acknowledged_at TIMESTAMP,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cursor.execute("SELECT COUNT(*) as c FROM equipment_resources")
-    if (cursor.fetchone().c or 0) == 0:
-        for name, category, unit, qty in DEFAULT_EQUIPMENT:
+
+    # Same self-healing migration as the SQLite path above — critical here
+    # because a real, already-deployed PostgreSQL database (like the one on
+    # Render) already has these tables from before these columns existed.
+    # "CREATE TABLE IF NOT EXISTS" only applies to brand-new tables, so
+    # without this, new columns would silently never get added to a
+    # database that's already live.
+    expected_columns_pg = {
+        "users": ["status", "is_verified", "otp", "on_duty"],
+        "predictions": ["user_id", "user_email"],
+        "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
+        "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log"],
+    }
+    for table, columns in expected_columns_pg.items():
+        try:
             cursor.execute(
-                "INSERT INTO equipment_resources (name, category, unit, total_quantity, available_quantity) VALUES (?, ?, ?, ?, ?)",
-                (name, category, unit, qty, qty)
+                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                (table,)
             )
+            existing = {getattr(row, "column_name", None) for row in cursor.fetchall()}
+            for col in columns:
+                if col not in existing:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} TEXT")
+        except Exception as e:
+            print(f"[MIGRATION] Could not check/update '{table}': {e}")
+
     conn.commit()
 
 DB_AVAILABLE = False
@@ -546,21 +503,37 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # 1. Try PostgreSQL if DATABASE_URL is provided (production cloud database)
 if DATABASE_URL:
-    try:
-        import psycopg2
-        raw_conn = psycopg2.connect(DATABASE_URL)
-        raw_conn.autocommit = True  # each statement commits itself — removes any window where
-                                     # execute() succeeds but a later conn.commit() fails on a
-                                     # connection that died in between; also matches the same
-                                     # autocommit fix already used for the SQL Server path.
-        DB_TYPE = "postgresql"
-        conn = CompatibleConnection(raw_conn, "postgresql", database_url=DATABASE_URL)
-        cursor = conn.cursor()
-        DB_AVAILABLE = True
-        initialize_postgresql_db(cursor, conn)
-        print("Database (PostgreSQL) connected and initialized successfully")
-    except Exception as pg_err:
-        print(f"PostgreSQL connection failed: {pg_err}")
+    import time
+    pg_connected = False
+    last_pg_error = None
+    # Retry a few times with a short pause — a single transient failure here
+    # (the managed Postgres instance still waking up, a momentary network
+    # blip) used to fall all the way back to a brand-new, empty SQLite
+    # database instead of trying again, making real data "disappear" after
+    # a redeploy even though it was safe the whole time in PostgreSQL.
+    for attempt in range(1, 4):
+        try:
+            import psycopg2
+            raw_conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+            raw_conn.autocommit = True  # each statement commits itself — removes any window where
+                                         # execute() succeeds but a later conn.commit() fails on a
+                                         # connection that died in between; also matches the same
+                                         # autocommit fix already used for the SQL Server path.
+            DB_TYPE = "postgresql"
+            conn = CompatibleConnection(raw_conn, "postgresql", database_url=DATABASE_URL)
+            cursor = conn.cursor()
+            DB_AVAILABLE = True
+            initialize_postgresql_db(cursor, conn)
+            print("Database (PostgreSQL) connected and initialized successfully")
+            pg_connected = True
+            break
+        except Exception as pg_err:
+            last_pg_error = pg_err
+            print(f"PostgreSQL connection attempt {attempt}/3 failed: {pg_err}")
+            if attempt < 3:
+                time.sleep(3)
+    if not pg_connected:
+        print(f"PostgreSQL connection failed after 3 attempts: {last_pg_error}")
         print("Falling back to other database options...")
 
 # 2. Try SQL Server (local development primary database)
@@ -828,16 +801,18 @@ def get_users():
 
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT id, name, email, role, created_at, status FROM users ORDER BY created_at DESC")
+            cursor.execute("SELECT id, name, email, role, created_at, status, on_duty FROM users ORDER BY created_at DESC")
             rows = cursor.fetchall()
             for row in rows:
                 db_emails.add(row.email)
+                on_duty_val = getattr(row, "on_duty", 1)
                 data.append({
                     "id": row.id,
                     "name": row.name,
                     "email": row.email,
                     "role": row.role,
                     "status": getattr(row, "status", "Active"),
+                    "on_duty": bool(on_duty_val) if on_duty_val is not None else True,
                     "created_at": row.created_at.isoformat() if row.created_at else None
                 })
         except Exception as e:
@@ -951,6 +926,33 @@ def update_own_profile(user_id):
     if not updated_user and not DB_AVAILABLE:
         return jsonify({"message": "User not found"}), 404
     return jsonify({"message": "Profile updated successfully", "name": name, "email": email})
+
+@app.route("/users/<int:user_id>/duty-status", methods=["PUT"])
+def update_duty_status(user_id):
+    """Lets a rescue worker mark themselves On Duty / Off Duty, so
+    Government Officials know who's actually available before assigning
+    them to a new alert."""
+    data = request.json or {}
+    on_duty = 1 if data.get("on_duty") else 0
+
+    found = None
+    for u in MEMORY_USERS:
+        if u["id"] == user_id:
+            u["on_duty"] = bool(on_duty)
+            found = u
+            break
+
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE users SET on_duty = ? WHERE id = ?", (on_duty, user_id))
+            conn.commit()
+        except Exception as e:
+            log_event("error", f"Failed to update duty status for user {user_id}: {e}")
+
+    if not found and not DB_AVAILABLE:
+        return jsonify({"message": "User not found"}), 404
+    return jsonify({"message": "Duty status updated", "on_duty": bool(on_duty)})
+
 
 @app.route("/users/<int:user_id>/deactivate", methods=["PUT"])
 def deactivate_user(user_id):
@@ -1553,6 +1555,8 @@ def get_rescue_operations():
                     "people_rescued": getattr(row, "people_rescued", None),
                     "resources_used": getattr(row, "resources_used", None),
                     "completion_notes": getattr(row, "completion_notes", None),
+                    "needs_backup": bool(getattr(row, "needs_backup", 0)),
+                    "update_log": json.loads(getattr(row, "update_log", None)) if getattr(row, "update_log", None) else [],
                 })
                 seen_ids.add(row_id)
         except Exception as e:
@@ -1576,6 +1580,8 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
         "created_at": str(datetime.now()),
         "updated_at": str(datetime.now()),
         "completed_at": None,
+        "needs_backup": False,
+        "update_log": [],
     }
     MEMORY_RESCUE_OPS.append(op)
 
@@ -1628,6 +1634,7 @@ def update_rescue_operation_status(op_id):
     resources_used = data.get("resources_used", "") if new_status == "Completed" else None
     completion_notes = data.get("completion_notes", "") if new_status == "Completed" else None
     assigned_team = data.get("assigned_team")
+    needs_backup = data.get("needs_backup")  # True/False/None (None = leave unchanged)
 
     result = None
     for op in MEMORY_RESCUE_OPS:
@@ -1636,6 +1643,8 @@ def update_rescue_operation_status(op_id):
             op["updated_at"] = updated_at
             if assigned_team is not None:
                 op["assigned_team"] = assigned_team or "Unassigned"
+            if needs_backup is not None:
+                op["needs_backup"] = bool(needs_backup)
             if new_status == "Completed":
                 op["completed_at"] = completed_at
                 op["people_rescued"] = people_rescued
@@ -1646,12 +1655,13 @@ def update_rescue_operation_status(op_id):
 
     if DB_AVAILABLE:
         try:
+            needs_backup_db = (1 if needs_backup else 0) if needs_backup is not None else None
             cursor.execute(
                 "UPDATE rescue_operations SET status = ?, updated_at = ?, "
                 "assigned_team = COALESCE(?, assigned_team), completed_at = COALESCE(?, completed_at), "
                 "people_rescued = COALESCE(?, people_rescued), resources_used = COALESCE(?, resources_used), "
-                "completion_notes = COALESCE(?, completion_notes) WHERE id = ?",
-                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, op_id)
+                "completion_notes = COALESCE(?, completion_notes), needs_backup = COALESCE(?, needs_backup) WHERE id = ?",
+                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
             )
             conn.commit()
             if result is None:
@@ -1665,6 +1675,8 @@ def update_rescue_operation_status(op_id):
                         "completed_at": str(row.completed_at) if row.completed_at else None,
                         "people_rescued": row.people_rescued, "resources_used": row.resources_used,
                         "completion_notes": row.completion_notes,
+                        "needs_backup": bool(getattr(row, "needs_backup", False)),
+                        "update_log": getattr(row, "update_log", None),
                     }
         except Exception as db_error:
             log_event("error", f"Failed to update rescue operation in database: {db_error}")
@@ -1673,245 +1685,46 @@ def update_rescue_operation_status(op_id):
         return jsonify({"message": "Rescue operation not found"}), 404
     return jsonify(result)
 
-# ---------------- EQUIPMENT & RESOURCES (FR-05b) ----------------
-# In-memory fallback so the panel still works if a database isn't reachable.
-MEMORY_EQUIPMENT = [
-    {"id": i + 1, "name": name, "category": category, "unit": unit,
-     "total_quantity": qty, "available_quantity": qty, "updated_at": str(datetime.now())}
-    for i, (name, category, unit, qty) in enumerate(DEFAULT_EQUIPMENT)
-]
 
-def _equipment_status(item):
-    total = item.get("total_quantity") or 0
-    available = item.get("available_quantity") or 0
-    if total <= 0:
-        return "Unknown"
-    ratio = available / total
-    if available <= 0:
-        return "Out of stock"
-    if ratio <= 0.2:
-        return "Low"
-    return "Available"
-
-@app.route("/equipment-resources", methods=["GET"])
-def get_equipment_resources():
-    items = []
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("SELECT * FROM equipment_resources ORDER BY category, name")
-            for row in cursor.fetchall():
-                items.append({
-                    "id": row.id, "name": row.name, "category": row.category, "unit": row.unit,
-                    "total_quantity": row.total_quantity, "available_quantity": row.available_quantity,
-                    "updated_at": str(getattr(row, "updated_at", "")),
-                })
-        except Exception as e:
-            log_event("error", f"Failed to fetch equipment resources: {e}")
-
-    if not items:
-        items = list(MEMORY_EQUIPMENT)
-
-    for item in items:
-        item["status"] = _equipment_status(item)
-    items.sort(key=lambda i: (i["category"] or "", i["name"] or ""))
-    return jsonify(items)
-
-@app.route("/equipment-resources", methods=["POST"])
-def create_equipment_resource():
-    data = request.json or {}
-    name = (data.get("name") or "").strip()
-    if not name:
-        return jsonify({"message": "Equipment name is required"}), 400
-    category = data.get("category") or "Supplies"
-    unit = data.get("unit") or "units"
-    try:
-        total_quantity = max(0, int(data.get("total_quantity") or 0))
-    except (TypeError, ValueError):
-        total_quantity = 0
-
-    new_item = {
-        "id": (max([e["id"] for e in MEMORY_EQUIPMENT], default=0) + 1),
-        "name": name, "category": category, "unit": unit,
-        "total_quantity": total_quantity, "available_quantity": total_quantity,
-        "updated_at": str(datetime.now()),
-    }
-    MEMORY_EQUIPMENT.append(new_item)
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute(
-                "INSERT INTO equipment_resources (name, category, unit, total_quantity, available_quantity, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (name, category, unit, total_quantity, total_quantity, new_item["updated_at"])
-            )
-            conn.commit()
-            cursor.execute("SELECT id FROM equipment_resources WHERE name = ? AND updated_at = ? ORDER BY id DESC", (name, new_item["updated_at"]))
-            row = cursor.fetchone()
-            if row:
-                new_item["id"] = row.id if hasattr(row, "id") else row[0]
-        except Exception as db_error:
-            log_event("error", f"Failed to save equipment resource to database: {db_error}")
-
-    new_item["status"] = _equipment_status(new_item)
-    return jsonify(new_item), 201
-
-@app.route("/equipment-resources/<int:item_id>/adjust", methods=["PUT"])
-def adjust_equipment_resource(item_id):
-    """Allocate (negative delta) or return (positive delta) equipment.
-    Used when a rescue team takes gear out to a flooded area, and again
-    when it comes back after the operation wraps up."""
-    data = request.json or {}
-    try:
-        delta = int(data.get("delta", 0))
-    except (TypeError, ValueError):
-        return jsonify({"message": "delta must be an integer"}), 400
-
-    updated_at = str(datetime.now())
-    result = None
-
-    for item in MEMORY_EQUIPMENT:
-        if item["id"] == item_id:
-            new_available = item["available_quantity"] + delta
-            if new_available < 0 or new_available > item["total_quantity"]:
-                return jsonify({"message": "Not enough equipment available"}), 400
-            item["available_quantity"] = new_available
-            item["updated_at"] = updated_at
-            result = item
-            break
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("SELECT * FROM equipment_resources WHERE id = ?", (item_id,))
-            row = cursor.fetchone()
-            if row:
-                new_available = (row.available_quantity or 0) + delta
-                if new_available < 0 or new_available > (row.total_quantity or 0):
-                    return jsonify({"message": "Not enough equipment available"}), 400
-                cursor.execute(
-                    "UPDATE equipment_resources SET available_quantity = ?, updated_at = ? WHERE id = ?",
-                    (new_available, updated_at, item_id)
-                )
-                conn.commit()
-                result = {
-                    "id": row.id, "name": row.name, "category": row.category, "unit": row.unit,
-                    "total_quantity": row.total_quantity, "available_quantity": new_available,
-                    "updated_at": updated_at,
-                }
-        except Exception as db_error:
-            log_event("error", f"Failed to adjust equipment resource in database: {db_error}")
-
-    if result is None:
-        return jsonify({"message": "Equipment item not found"}), 404
-    result["status"] = _equipment_status(result)
-    return jsonify(result)
-
-# ---------------- SHIFT HANDOVER NOTES (FR-05c) ----------------
-MEMORY_HANDOVER_NOTES = []
-
-@app.route("/shift-handover", methods=["GET"])
-def get_shift_handover_notes():
-    notes = list(MEMORY_HANDOVER_NOTES)
-    seen_ids = {n["id"] for n in notes}
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("SELECT * FROM shift_handover_notes ORDER BY created_at DESC")
-            for row in cursor.fetchall():
-                row_id = getattr(row, "id", None)
-                if row_id in seen_ids:
-                    continue
-                notes.append({
-                    "id": row_id,
-                    "author_name": getattr(row, "author_name", None),
-                    "priority": getattr(row, "priority", None) or "normal",
-                    "location": getattr(row, "location", None),
-                    "note": getattr(row, "note", None),
-                    "acknowledged_by": getattr(row, "acknowledged_by", None),
-                    "acknowledged_at": str(getattr(row, "acknowledged_at", None)) if getattr(row, "acknowledged_at", None) else None,
-                    "created_at": str(getattr(row, "created_at", None)),
-                })
-                seen_ids.add(row_id)
-        except Exception as e:
-            log_event("error", f"Failed to fetch shift handover notes: {e}")
-
-    notes.sort(key=lambda n: n["created_at"], reverse=True)
-    return jsonify(notes[:100])
-
-@app.route("/shift-handover", methods=["POST"])
-def create_shift_handover_note():
+@app.route("/rescue-operations/<int:op_id>/note", methods=["POST"])
+def add_rescue_operation_note(op_id):
+    """Lets a rescue worker log an in-progress update (e.g. 'en route',
+    'arrived, beginning evacuation') without having to wait until the
+    operation is fully completed to record anything."""
     data = request.json or {}
     note_text = (data.get("note") or "").strip()
     if not note_text:
         return jsonify({"message": "Note text is required"}), 400
 
-    author_name = (data.get("author_name") or "").strip() or "Unnamed responder"
-    priority = data.get("priority") if data.get("priority") in ("normal", "watch", "urgent") else "normal"
-    location = data.get("location") or ""
-    created_at = str(datetime.now())
-
-    note = {
-        "id": (max([n["id"] for n in MEMORY_HANDOVER_NOTES], default=0) + 1),
-        "author_name": author_name, "priority": priority, "location": location,
-        "note": note_text, "acknowledged_by": None, "acknowledged_at": None,
-        "created_at": created_at,
-    }
-    MEMORY_HANDOVER_NOTES.append(note)
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute(
-                "INSERT INTO shift_handover_notes (author_name, priority, location, note, created_at) VALUES (?, ?, ?, ?, ?)",
-                (author_name, priority, location, note_text, created_at)
-            )
-            conn.commit()
-            cursor.execute(
-                "SELECT id FROM shift_handover_notes WHERE author_name = ? AND created_at = ? ORDER BY id DESC",
-                (author_name, created_at)
-            )
-            row = cursor.fetchone()
-            if row:
-                note["id"] = row.id if hasattr(row, "id") else row[0]
-        except Exception as db_error:
-            log_event("error", f"Failed to save shift handover note to database: {db_error}")
-
-    return jsonify(note), 201
-
-@app.route("/shift-handover/<int:note_id>/acknowledge", methods=["PUT"])
-def acknowledge_shift_handover_note(note_id):
-    data = request.json or {}
-    acknowledged_by = (data.get("acknowledged_by") or "").strip() or "Next shift"
-    acknowledged_at = str(datetime.now())
+    entry = {"timestamp": str(datetime.now()), "note": note_text}
     result = None
 
-    for note in MEMORY_HANDOVER_NOTES:
-        if note["id"] == note_id:
-            note["acknowledged_by"] = acknowledged_by
-            note["acknowledged_at"] = acknowledged_at
-            result = note
+    for op in MEMORY_RESCUE_OPS:
+        if op["id"] == op_id:
+            existing_log = op.get("update_log")
+            log_list = json.loads(existing_log) if isinstance(existing_log, str) and existing_log else (existing_log or [])
+            log_list.append(entry)
+            op["update_log"] = log_list
+            result = op
             break
 
     if DB_AVAILABLE:
         try:
-            cursor.execute(
-                "UPDATE shift_handover_notes SET acknowledged_by = ?, acknowledged_at = ? WHERE id = ?",
-                (acknowledged_by, acknowledged_at, note_id)
-            )
-            conn.commit()
-            cursor.execute("SELECT * FROM shift_handover_notes WHERE id = ?", (note_id,))
+            cursor.execute("SELECT update_log FROM rescue_operations WHERE id = ?", (op_id,))
             row = cursor.fetchone()
-            if row:
-                result = {
-                    "id": row.id, "author_name": row.author_name, "priority": row.priority or "normal",
-                    "location": row.location, "note": row.note,
-                    "acknowledged_by": row.acknowledged_by, "acknowledged_at": str(row.acknowledged_at) if row.acknowledged_at else None,
-                    "created_at": str(row.created_at),
-                }
+            existing_log = getattr(row, "update_log", None) if row else None
+            log_list = json.loads(existing_log) if existing_log else []
+            log_list.append(entry)
+            cursor.execute("UPDATE rescue_operations SET update_log = ? WHERE id = ?", (json.dumps(log_list), op_id))
+            conn.commit()
+            if result is None and row is not None:
+                result = {"id": op_id, "update_log": log_list}
         except Exception as db_error:
-            log_event("error", f"Failed to acknowledge shift handover note in database: {db_error}")
+            log_event("error", f"Failed to add note to rescue operation: {db_error}")
 
     if result is None:
-        return jsonify({"message": "Handover note not found"}), 404
-    return jsonify(result)
+        return jsonify({"message": "Rescue operation not found"}), 404
+    return jsonify({"message": "Note added", "update_log": result.get("update_log", [entry])})
 
 # ---------------- SHELTERS (FR-07) ----------------
 MEMORY_SHELTERS = []
@@ -2747,6 +2560,159 @@ MEMORY_ACCURACY_HISTORY = []  # [{timestamp, model, accuracy, training_rows}]
 # policy-level public communications (e.g. seasonal guidance), not
 # emergency triggers.
 MEMORY_ADVISORIES = []
+
+# ---------------- EQUIPMENT / RESOURCE TRACKER (Rescue Worker) ----------------
+# assigned_op_id lets a piece of equipment be tied to the rescue operation it's
+# currently deployed to, so "In Use" actually means something instead of being
+# a bare label. quantity supports items that exist in multiples (e.g. 6 life
+# jackets) without needing 6 separate rows.
+MEMORY_EQUIPMENT = [
+    {"id": 1, "name": "Rescue Boat #1", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
+    {"id": 2, "name": "Rescue Boat #2", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
+    {"id": 3, "name": "Medical Kit A", "status": "Available", "notes": "", "quantity": 4, "assigned_op_id": None},
+    {"id": 4, "name": "Medical Kit B", "status": "Available", "notes": "", "quantity": 4, "assigned_op_id": None},
+    {"id": 5, "name": "4x4 Rescue Vehicle", "status": "Available", "notes": "", "quantity": 1, "assigned_op_id": None},
+]
+
+@app.route("/equipment", methods=["GET"])
+def get_equipment():
+    return jsonify(MEMORY_EQUIPMENT)
+
+@app.route("/equipment", methods=["POST"])
+def create_equipment():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"message": "Equipment name is required"}), 400
+    try:
+        quantity = max(1, int(data.get("quantity", 1)))
+    except (TypeError, ValueError):
+        quantity = 1
+    item = {
+        "id": (max([e["id"] for e in MEMORY_EQUIPMENT], default=0) + 1),
+        "name": name, "status": "Available", "notes": data.get("notes", ""),
+        "quantity": quantity, "assigned_op_id": None,
+    }
+    MEMORY_EQUIPMENT.append(item)
+    return jsonify(item), 201
+
+@app.route("/equipment/<int:item_id>", methods=["PUT"])
+def update_equipment(item_id):
+    data = request.json or {}
+    for item in MEMORY_EQUIPMENT:
+        if item["id"] == item_id:
+            if "status" in data:
+                item["status"] = data["status"]  # "Available" / "In Use"
+            if "notes" in data:
+                item["notes"] = data["notes"]
+            if "quantity" in data:
+                try:
+                    item["quantity"] = max(1, int(data["quantity"]))
+                except (TypeError, ValueError):
+                    pass
+            if "assigned_op_id" in data:
+                # Assigning to an operation automatically marks it In Use;
+                # clearing the assignment (null) frees it back up.
+                op_id = data["assigned_op_id"]
+                item["assigned_op_id"] = op_id
+                item["status"] = "In Use" if op_id else "Available"
+            return jsonify(item)
+    return jsonify({"message": "Equipment item not found"}), 404
+
+
+# ---------------- SHIFT HANDOVER NOTES (Rescue Worker) ----------------
+# priority + resolved turn this from a flat chat log into an actual handover
+# tool: the next shift can tell at a glance what's urgent and still open vs.
+# what's already been dealt with.
+MEMORY_HANDOVER_NOTES = []
+
+@app.route("/shift-handover", methods=["GET"])
+def get_handover_notes():
+    notes = list(reversed(MEMORY_HANDOVER_NOTES))[:40]
+    # Unresolved notes first (most urgent priority first within that group),
+    # so a new shift sees what still needs attention before the closed-out history.
+    priority_rank = {"Urgent": 0, "Watch": 1, "Normal": 2}
+    notes.sort(key=lambda n: (n.get("resolved", False), priority_rank.get(n.get("priority", "Normal"), 2)))
+    return jsonify(notes)
+
+@app.route("/shift-handover", methods=["POST"])
+def create_handover_note():
+    data = request.json or {}
+    note_text = (data.get("note") or "").strip()
+    if not note_text:
+        return jsonify({"message": "Note text is required"}), 400
+    priority = data.get("priority") if data.get("priority") in ("Normal", "Watch", "Urgent") else "Normal"
+    entry = {
+        "id": (max([n["id"] for n in MEMORY_HANDOVER_NOTES], default=0) + 1),
+        "note": note_text,
+        "author": data.get("author", "Unknown"),
+        "location": (data.get("location") or "").strip(),
+        "priority": priority,
+        "resolved": False,
+        "created_at": str(datetime.now()),
+    }
+    MEMORY_HANDOVER_NOTES.append(entry)
+    return jsonify(entry), 201
+
+@app.route("/shift-handover/<int:note_id>", methods=["PUT"])
+def update_handover_note(note_id):
+    data = request.json or {}
+    for note in MEMORY_HANDOVER_NOTES:
+        if note["id"] == note_id:
+            if "resolved" in data:
+                note["resolved"] = bool(data["resolved"])
+            return jsonify(note)
+    return jsonify({"message": "Handover note not found"}), 404
+
+
+# ---------------- RESCUE TEAMS (Rescue Worker) ----------------
+# A named group of rescue workers (e.g. 3-4 people) that can be assigned to
+# an operation as a unit, instead of an operation only ever having one
+# assigned person.
+MEMORY_TEAMS = []
+
+@app.route("/teams", methods=["GET"])
+def get_teams():
+    return jsonify(MEMORY_TEAMS)
+
+@app.route("/teams", methods=["POST"])
+def create_team():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    member_ids = data.get("member_ids") or []
+    if not name:
+        return jsonify({"message": "Team name is required"}), 400
+    if len(member_ids) < 2:
+        return jsonify({"message": "A rescue team needs at least 2 members"}), 400
+    team = {
+        "id": (max([tm["id"] for tm in MEMORY_TEAMS], default=0) + 1),
+        "name": name,
+        "member_ids": member_ids,
+        "created_at": str(datetime.now()),
+    }
+    MEMORY_TEAMS.append(team)
+    return jsonify(team), 201
+
+@app.route("/teams/<int:team_id>", methods=["PUT"])
+def update_team(team_id):
+    data = request.json or {}
+    for team in MEMORY_TEAMS:
+        if team["id"] == team_id:
+            if "name" in data and (data["name"] or "").strip():
+                team["name"] = data["name"].strip()
+            if "member_ids" in data:
+                team["member_ids"] = data["member_ids"]
+            return jsonify(team)
+    return jsonify({"message": "Team not found"}), 404
+
+@app.route("/teams/<int:team_id>", methods=["DELETE"])
+def delete_team(team_id):
+    global MEMORY_TEAMS
+    before = len(MEMORY_TEAMS)
+    MEMORY_TEAMS = [tm for tm in MEMORY_TEAMS if tm["id"] != team_id]
+    if len(MEMORY_TEAMS) == before:
+        return jsonify({"message": "Team not found"}), 404
+    return jsonify({"message": "Team deleted"})
 
 @app.route("/advisories", methods=["GET"])
 def get_advisories():
