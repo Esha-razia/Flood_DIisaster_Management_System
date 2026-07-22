@@ -1587,19 +1587,46 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
 
     if DB_AVAILABLE:
         try:
-            cursor.execute("""
-                INSERT INTO rescue_operations (location, description, risk_level, assigned_team, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"]))
-            conn.commit()
-            # Adopt the database's own auto-increment id so /rescue-operations
-            # (which reads from the DB first) can find this exact record.
-            cursor.execute("SELECT id FROM rescue_operations WHERE location = ? AND created_at = ? ORDER BY id DESC", (op["location"], op["created_at"]))
-            row = cursor.fetchone()
-            if row:
-                op["id"] = row.id if hasattr(row, "id") else row[0]
+            db_type = getattr(cursor, "db_type", "sqlite")
+            if db_type == "postgresql":
+                # RETURNING id is atomic and exact — no risk of matching the
+                # wrong row. The old approach (INSERT, then SELECT id WHERE
+                # location = ? AND created_at = ?) could silently fail to
+                # match if the timestamp string didn't compare equal to what
+                # Postgres stored, leaving this operation's id as the
+                # memory-only counter value — which then doesn't correspond
+                # to any real row, so every later action on it (mark
+                # complete, request backup) 404'd with "not found" even
+                # though the operation was sitting right there in the list.
+                cursor.execute("""
+                    INSERT INTO rescue_operations (location, description, risk_level, assigned_team, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
+                """, (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"]))
+                row = cursor.fetchone()
+                conn.commit()
+                if row:
+                    op["id"] = row.id if hasattr(row, "id") else row[0]
+                else:
+                    raise RuntimeError("INSERT ... RETURNING id returned no row")
+            else:
+                cursor.execute("""
+                    INSERT INTO rescue_operations (location, description, risk_level, assigned_team, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"]))
+                conn.commit()
+                cursor.execute("SELECT last_insert_rowid() AS new_id")
+                row = cursor.fetchone()
+                if row:
+                    op["id"] = row.new_id if hasattr(row, "new_id") else row[0]
+                else:
+                    raise RuntimeError("last_insert_rowid() returned no row")
         except Exception as db_error:
+            # If we couldn't confirm the real database id, don't silently
+            # keep a memory-only id that will 404 on every future action —
+            # surface it so the operation isn't created in a half-broken state.
             log_event("error", f"Failed to save rescue operation to database: {db_error}")
+            MEMORY_RESCUE_OPS.remove(op)
+            raise
 
     print(f"[NOTIFY] Rescue team '{op['assigned_team']}' assigned to {op['location']} ({op['risk_level']} risk)")
     return op
@@ -1612,10 +1639,13 @@ def create_rescue_operation():
     if not location:
         return jsonify({"message": "Location is required"}), 400
 
-    op = _create_rescue_op_internal(
-        location=location, description=data.get("description", ""),
-        risk_level=data.get("risk_level", "Medium"), assigned_team=data.get("assigned_team", "Unassigned"),
-    )
+    try:
+        op = _create_rescue_op_internal(
+            location=location, description=data.get("description", ""),
+            risk_level=data.get("risk_level", "Medium"), assigned_team=data.get("assigned_team", "Unassigned"),
+        )
+    except Exception:
+        return jsonify({"message": "Could not save the operation to the database — please try again."}), 503
     # FR05-03: notify relevant rescue teams when a new operation is created.
     # No real push/SMS gateway is wired up yet, so this is logged server-side;
     # swap this for a real notification service (e.g. Twilio/email) when ready.
@@ -2007,12 +2037,16 @@ def update_community_report_status(report_id):
             # instead of just flipping a status label. If one's already
             # linked (e.g. re-clicking), it's reused rather than duplicated.
             if new_status == "Action Taken" and not r.get("linked_rescue_op_id"):
-                linked_op = _create_rescue_op_internal(
-                    location=r["location"],
-                    description=f"Community report {r['trackingId']}: {r['description']}",
-                    risk_level=r.get("severity", "Medium"),
-                    assigned_team=data.get("assigned_team", "Unassigned"),
-                )
+                try:
+                    linked_op = _create_rescue_op_internal(
+                        location=r["location"],
+                        description=f"Community report {r['trackingId']}: {r['description']}",
+                        risk_level=r.get("severity", "Medium"),
+                        assigned_team=data.get("assigned_team", "Unassigned"),
+                    )
+                except Exception:
+                    r["status"] = "Submitted"  # roll back — dispatch didn't actually succeed
+                    return jsonify({"message": "Could not create the rescue operation — please try again."}), 503
                 r["linked_rescue_op_id"] = linked_op["id"]
                 r["notes"] = f"Action taken — Rescue Operation #{linked_op['id']} created and dispatched to {r['location']}."
             else:
