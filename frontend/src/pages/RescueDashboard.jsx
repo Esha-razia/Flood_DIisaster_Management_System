@@ -492,8 +492,10 @@ export default function RescueDashboard() {
         setEmergencyStatus(mediumRiskAlerts.length > 0 ? "elevated" : "normal");
       }
     } catch (err) {
+      // Don't wipe the alerts list on a transient failure (e.g. the free-tier
+      // backend cold-starting after being idle) — keep showing the last known
+      // good data instead of flashing everything to zero every ~30s.
       console.error("Error fetching alerts:", err);
-      setAlerts([]);
     } finally {
       setLoading(false);
     }
@@ -530,8 +532,9 @@ export default function RescueDashboard() {
       console.log("Predictions response:", res.data);
       setPredictions(res.data || []);
     } catch (err) {
+      // Same fix as alerts — keep the last good predictions instead of
+      // blanking the High/Medium risk area lists on a transient hiccup.
       console.error("Error fetching predictions:", err);
-      setPredictions([]);
     }
   };
 
@@ -1325,21 +1328,23 @@ export default function RescueDashboard() {
 
                     {/* Deploy more units to an operation */}
                     {availableQty > 0 && activeOps.length > 0 && (
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex flex-wrap gap-2 mt-2">
                         <select value={pick.opId}
                           onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, opId: e.target.value } }))}
-                          className="field-input py-1.5 text-xs flex-1">
+                          className="field-input py-1.5 text-xs flex-1 min-w-[140px]">
                           <option value="">{t("selectOperationPh")}</option>
                           {activeOps.map((op) => (
                             <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
                           ))}
                         </select>
-                        <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
-                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
-                          className="field-input py-1.5 text-xs w-16 shrink-0" />
-                        <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 shrink-0">
-                          {t("deployBtn")}
-                        </button>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
+                            onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
+                            className="field-input py-1.5 text-xs w-16 shrink-0" />
+                          <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 shrink-0 flex-1 sm:flex-none">
+                            {t("deployBtn")}
+                          </button>
+                        </div>
                       </div>
                     )}
                     {activeOps.length === 0 && (
