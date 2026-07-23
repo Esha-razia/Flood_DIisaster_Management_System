@@ -6,6 +6,27 @@ import FloodMap from "../components/FloodMap";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 
+// Render's free tier puts the backend to sleep after inactivity — the first
+// request after that can take up to ~50s to respond, well past axios's
+// default timeout. Without this, that first request just fails and the
+// dashboard shows empty sections until the person manually refreshes a few
+// times. Retrying quietly in the background covers that wake-up window
+// automatically instead.
+const fetchWithRetry = async (requestFn, { retries = 5, delayMs = 4000 } = {}) => {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await requestFn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError;
+};
+
 const OP_STATUS_KEY_MAP = { "Assigned": "statusAssigned", "In Progress": "statusInProgress", "Completed": "statusCompleted" };
 const RISK_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
 
@@ -134,7 +155,7 @@ export default function RescueDashboard() {
 
   const fetchRescueWorkers = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/users`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/users`));
       const workers = (res.data || []).filter((u) => u.role === "rescue_worker" && u.status === "Active");
       setRescueWorkers(workers);
       const me = workers.find((w) => w.id === Number(currentUserId) || w.email === localStorage.getItem("userEmail"));
@@ -146,7 +167,7 @@ export default function RescueDashboard() {
 
   const fetchVolunteers = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/volunteers`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/volunteers`));
       setVolunteers(res.data || []);
     } catch (err) {
       console.error("Failed to load volunteers:", err);
@@ -155,7 +176,7 @@ export default function RescueDashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/rescue-operations/stats`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/rescue-operations/stats`));
       setStats(res.data);
     } catch (err) {
       console.error("Failed to load rescue stats:", err);
@@ -164,7 +185,7 @@ export default function RescueDashboard() {
 
   const fetchEquipment = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/equipment`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/equipment`));
       setEquipment(res.data || []);
     } catch (err) {
       console.error("Failed to load equipment:", err);
@@ -173,7 +194,7 @@ export default function RescueDashboard() {
 
   const fetchHandoverNotes = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/shift-handover`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shift-handover`));
       setHandoverNotes(res.data || []);
     } catch (err) {
       console.error("Failed to load handover notes:", err);
@@ -244,7 +265,7 @@ export default function RescueDashboard() {
 
   const fetchTeams = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/teams`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/teams`));
       setTeams(res.data || []);
     } catch (err) {
       console.error("Failed to load rescue teams:", err);
@@ -401,7 +422,7 @@ export default function RescueDashboard() {
 
   const fetchOperations = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/rescue-operations`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/rescue-operations`));
       setOperations(res.data || []);
       (res.data || []).forEach((op) => fetchNearbyForOp(op));
     } catch (err) {
@@ -492,7 +513,7 @@ export default function RescueDashboard() {
   const fetchAlerts = async () => {
     try {
       console.log("Fetching alerts from Rescue Dashboard...");
-      const res = await axios.get(`${API_BASE}/alerts`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/alerts`));
       console.log("Alerts response:", res.data);
       setAlerts(res.data || []);
       
@@ -520,7 +541,7 @@ export default function RescueDashboard() {
   const [communityReports, setCommunityReports] = useState([]);
   const fetchCommunityReports = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/community-reports`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/community-reports`));
       setCommunityReports((res.data || []).filter((r) => r.status !== "Resolved"));
     } catch (err) {
       console.error("Failed to load community reports:", err);
@@ -541,7 +562,7 @@ export default function RescueDashboard() {
   const fetchPredictions = async () => {
     try {
       console.log("Fetching predictions from Rescue Dashboard...");
-      const res = await axios.get(`${API_BASE}/predictions`);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/predictions`));
       console.log("Predictions response:", res.data);
       setPredictions(res.data || []);
     } catch (err) {
@@ -751,6 +772,13 @@ export default function RescueDashboard() {
               {onDuty ? t("onDuty") : t("offDuty")}
             </button>
           </div>
+
+          {loading && (
+            <div className="mb-8 flex items-center gap-3 bg-teal-500/10 border border-teal-500/30 rounded-xl px-4 py-3 text-sm text-teal-200">
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-teal-300 border-t-transparent animate-spin shrink-0"></span>
+              {t("connectingToServerMsg")}
+            </div>
+          )}
 
           {/* Tab Navigation — separates "my own work" from full team
               oversight and the map, instead of one long scrolling page. */}
