@@ -2854,30 +2854,63 @@ def update_equipment(item_id):
 
 @app.route("/equipment/<int:item_id>/assign", methods=["POST"])
 def assign_equipment(item_id):
-    """Deploy a specific quantity of this item to one operation. Calling this
-    again for an operation that's already got some of this item updates that
-    operation's share (rather than adding a duplicate line)."""
+    """Deploy a specific quantity of this item either to an operation or
+    directly to a specific rescue worker (e.g. handing someone a radio
+    regardless of which operation they're on). Calling this again for the
+    same target updates that target's share instead of duplicating it."""
     data = request.json or {}
-    op_id = data.get("op_id")
+    target_type = data.get("target_type", "operation")
+    target_id = data.get("target_id", data.get("op_id"))  # op_id kept for backward compatibility
+    try:
+        target_id = int(target_id)
+    except (TypeError, ValueError):
+        target_id = None
     try:
         qty = int(data.get("qty", 0))
     except (TypeError, ValueError):
         qty = 0
-    if not op_id or qty <= 0:
-        return jsonify({"message": "op_id and a positive qty are required"}), 400
+    if target_type not in ("operation", "worker") or not target_id or qty <= 0:
+        return jsonify({"message": "target_type, target_id and a positive qty are required"}), 400
+
+    def _label_for(t_type, t_id):
+        if t_type == "operation":
+            op = next((o for o in MEMORY_RESCUE_OPS if o["id"] == t_id), None)
+            if op:
+                return op["location"]
+            if DB_AVAILABLE:
+                try:
+                    cursor.execute("SELECT location FROM rescue_operations WHERE id = ?", (t_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return row.location
+                except Exception:
+                    pass
+            return f"Operation #{t_id}"
+        else:
+            if DB_AVAILABLE:
+                try:
+                    cursor.execute("SELECT name FROM users WHERE id = ?", (t_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return row.name
+                except Exception:
+                    pass
+            return f"Worker #{t_id}"
+
+    def _same_target(a, t_type, t_id):
+        return a.get("target_type", "operation") == t_type and (a.get("target_id", a.get("op_id"))) == t_id
 
     if DB_AVAILABLE:
         try:
             item = _get_equipment_row(item_id)
             if item is None:
                 return jsonify({"message": "Equipment item not found"}), 404
-            other_deployed = sum(a["qty"] for a in item["assignments"] if a["op_id"] != op_id)
+            other_deployed = sum(a["qty"] for a in item["assignments"] if not _same_target(a, target_type, target_id))
             if other_deployed + qty > item["quantity"]:
                 available = item["quantity"] - other_deployed
                 return jsonify({"message": f"Only {available} of {item['name']} available to deploy"}), 400
-            op = next((o for o in MEMORY_RESCUE_OPS if o["id"] == op_id), None)
-            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
-            item["assignments"].append({"op_id": op_id, "qty": qty, "location": op["location"] if op else f"Operation #{op_id}"})
+            item["assignments"] = [a for a in item["assignments"] if not _same_target(a, target_type, target_id)]
+            item["assignments"].append({"target_type": target_type, "target_id": target_id, "qty": qty, "label": _label_for(target_type, target_id)})
             cursor.execute("UPDATE equipment_items SET assignments = ? WHERE id = ?", (json.dumps(item["assignments"]), item_id))
             conn.commit()
             return jsonify(_equipment_with_derived_fields(item))
@@ -2887,29 +2920,27 @@ def assign_equipment(item_id):
 
     for item in MEMORY_EQUIPMENT:
         if item["id"] == item_id:
-            other_deployed = sum(a["qty"] for a in item["assignments"] if a["op_id"] != op_id)
+            other_deployed = sum(a["qty"] for a in item["assignments"] if not _same_target(a, target_type, target_id))
             if other_deployed + qty > item["quantity"]:
                 available = item["quantity"] - other_deployed
                 return jsonify({"message": f"Only {available} of {item['name']} available to deploy"}), 400
-            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
-            op = next((o for o in MEMORY_RESCUE_OPS if o["id"] == op_id), None)
-            item["assignments"].append({
-                "op_id": op_id,
-                "qty": qty,
-                "location": op["location"] if op else f"Operation #{op_id}",
-            })
+            item["assignments"] = [a for a in item["assignments"] if not _same_target(a, target_type, target_id)]
+            item["assignments"].append({"target_type": target_type, "target_id": target_id, "qty": qty, "label": _label_for(target_type, target_id)})
             return jsonify(_equipment_with_derived_fields(item))
     return jsonify({"message": "Equipment item not found"}), 404
 
-@app.route("/equipment/<int:item_id>/assign/<int:op_id>", methods=["DELETE"])
-def unassign_equipment(item_id, op_id):
-    """Free up whatever quantity of this item was deployed to the given operation."""
+@app.route("/equipment/<int:item_id>/assign/<string:target_type>/<int:target_id>", methods=["DELETE"])
+def unassign_equipment(item_id, target_type, target_id):
+    """Free up whatever quantity of this item was deployed to the given operation or worker."""
+    def _matches(a):
+        return a.get("target_type", "operation") == target_type and (a.get("target_id", a.get("op_id"))) == target_id
+
     if DB_AVAILABLE:
         try:
             item = _get_equipment_row(item_id)
             if item is None:
                 return jsonify({"message": "Equipment item not found"}), 404
-            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
+            item["assignments"] = [a for a in item["assignments"] if not _matches(a)]
             cursor.execute("UPDATE equipment_items SET assignments = ? WHERE id = ?", (json.dumps(item["assignments"]), item_id))
             conn.commit()
             return jsonify(_equipment_with_derived_fields(item))
@@ -2919,7 +2950,7 @@ def unassign_equipment(item_id, op_id):
 
     for item in MEMORY_EQUIPMENT:
         if item["id"] == item_id:
-            item["assignments"] = [a for a in item["assignments"] if a["op_id"] != op_id]
+            item["assignments"] = [a for a in item["assignments"] if not _matches(a)]
             return jsonify(_equipment_with_derived_fields(item))
     return jsonify({"message": "Equipment item not found"}), 404
 

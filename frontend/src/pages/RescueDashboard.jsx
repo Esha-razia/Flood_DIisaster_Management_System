@@ -215,16 +215,19 @@ export default function RescueDashboard() {
     }
   };
 
-  // Deploy N units of an item to a specific operation (only that many count
-  // as "in use" — the rest of the quantity stays available for elsewhere).
-  const [deployPicks, setDeployPicks] = useState({}); // { [equipmentId]: { opId, qty } }
+  // Deploy N units of an item to a specific operation OR directly to a
+  // specific worker (only that many count as "in use" — the rest stays
+  // available for elsewhere).
+  const [deployPicks, setDeployPicks] = useState({}); // { [equipmentId]: { targetType, targetId, qty } }
 
   const handleDeployEquipment = async (item) => {
     const pick = deployPicks[item.id];
-    if (!pick || !pick.opId || !pick.qty) return;
+    if (!pick || !pick.targetId || !pick.qty) return;
     try {
-      await axios.post(`${API_BASE}/equipment/${item.id}/assign`, { op_id: Number(pick.opId), qty: Number(pick.qty) });
-      setDeployPicks((p) => ({ ...p, [item.id]: { opId: "", qty: "" } }));
+      await axios.post(`${API_BASE}/equipment/${item.id}/assign`, {
+        target_type: pick.targetType || "operation", target_id: Number(pick.targetId), qty: Number(pick.qty),
+      });
+      setDeployPicks((p) => ({ ...p, [item.id]: { ...p[item.id], targetId: "", qty: "" } }));
       fetchEquipment();
     } catch (err) {
       setActionFeedback(err?.response?.data?.message || t("couldNotUpdateOp"));
@@ -232,9 +235,9 @@ export default function RescueDashboard() {
     }
   };
 
-  const handleFreeEquipment = async (item, opId) => {
+  const handleFreeEquipment = async (item, targetType, targetId) => {
     try {
-      await axios.delete(`${API_BASE}/equipment/${item.id}/assign/${opId}`);
+      await axios.delete(`${API_BASE}/equipment/${item.id}/assign/${targetType}/${targetId}`);
       fetchEquipment();
     } catch (err) {
       console.error("Failed to free equipment:", err);
@@ -1343,7 +1346,8 @@ export default function RescueDashboard() {
               {equipment.map((item) => {
                 const activeOps = operations.filter((o) => o.status !== "Completed");
                 const availableQty = item.available_qty ?? item.quantity;
-                const pick = deployPicks[item.id] || { opId: "", qty: "" };
+                const pick = deployPicks[item.id] || { targetType: "operation", targetId: "", qty: "" };
+                const targetList = pick.targetType === "worker" ? rescueWorkers : activeOps;
                 return (
                   <div key={item.id} className="bg-white/[0.03] rounded-lg px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
@@ -1357,43 +1361,64 @@ export default function RescueDashboard() {
                       </span>
                     </div>
 
-                    {/* Where the deployed units currently are */}
+                    {/* Where the deployed units currently are (operation or worker) */}
                     {item.assignments && item.assignments.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {item.assignments.map((a) => (
-                          <span key={a.op_id} className="text-xs bg-marigold-500/10 border border-marigold-500/30 text-marigold-300 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1.5">
-                            {a.qty} → {a.location}
-                            <button onClick={() => handleFreeEquipment(item, a.op_id)} className="hover:text-white" title={t("freeUpBtn")}>✕</button>
-                          </span>
-                        ))}
+                        {item.assignments.map((a, i) => {
+                          const aType = a.target_type || "operation";
+                          const aId = a.target_id ?? a.op_id;
+                          const aLabel = a.label ?? a.location;
+                          return (
+                            <span key={`${aType}-${aId}-${i}`} className="text-xs bg-marigold-500/10 border border-marigold-500/30 text-marigold-300 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1.5">
+                              {aType === "worker" ? "👤" : "📍"} {a.qty} → {aLabel}
+                              <button onClick={() => handleFreeEquipment(item, aType, aId)} className="hover:text-white" title={t("freeUpBtn")}>✕</button>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
-                    {/* Deploy more units to an operation.
-                        Grid (not flex) so the row can never grow past the
-                        card's edge no matter how long an operation's name
+                    {/* Deploy more units — to an operation, or directly to a
+                        specific worker. Grid (not flex) so the row can never
+                        grow past the card's edge no matter how long a name
                         is — the select column shrinks and truncates with an
                         ellipsis instead of pushing the Deploy button out. */}
-                    {availableQty > 0 && activeOps.length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_64px_auto] gap-2 mt-2">
-                        <select value={pick.opId}
-                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, opId: e.target.value } }))}
-                          className="field-input py-1.5 text-xs min-w-0 w-full truncate">
-                          <option value="">{t("selectOperationPh")}</option>
-                          {activeOps.map((op) => (
-                            <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
-                          ))}
-                        </select>
-                        <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
-                          onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
-                          className="field-input py-1.5 text-xs w-full min-w-0" />
-                        <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 w-full sm:w-auto">
-                          {t("deployBtn")}
-                        </button>
-                      </div>
-                    )}
-                    {activeOps.length === 0 && (
-                      <p className="text-xs text-muted mt-2">{t("noActiveOpsHint")}</p>
+                    {availableQty > 0 && (
+                      <>
+                        <div className="flex gap-2 mt-2">
+                          <button type="button"
+                            onClick={() => setDeployPicks((p) => ({ ...p, [item.id]: { targetType: "operation", targetId: "", qty: pick.qty } }))}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${(pick.targetType || "operation") === "operation" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
+                            {t("deployToOperation")}
+                          </button>
+                          <button type="button"
+                            onClick={() => setDeployPicks((p) => ({ ...p, [item.id]: { targetType: "worker", targetId: "", qty: pick.qty } }))}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${pick.targetType === "worker" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
+                            {t("deployToWorker")}
+                          </button>
+                        </div>
+                        {targetList.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_64px_auto] gap-2 mt-2">
+                            <select value={pick.targetId}
+                              onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, targetId: e.target.value } }))}
+                              className="field-input py-1.5 text-xs min-w-0 w-full truncate">
+                              <option value="">{pick.targetType === "worker" ? t("selectWorkerPh") : t("selectOperationPh")}</option>
+                              {pick.targetType === "worker"
+                                ? rescueWorkers.map((w) => (<option key={w.id} value={w.id}>{w.name}</option>))
+                                : activeOps.map((op) => (<option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>))
+                              }
+                            </select>
+                            <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
+                              onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
+                              className="field-input py-1.5 text-xs w-full min-w-0" />
+                            <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 w-full sm:w-auto">
+                              {t("deployBtn")}
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted mt-2">{pick.targetType === "worker" ? t("noWorkersHint") : t("noActiveOpsHint")}</p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
