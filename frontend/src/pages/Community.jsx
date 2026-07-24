@@ -225,11 +225,11 @@ export default function Community() {
                 <div className="space-y-4">
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("activeIncidents")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{reports.length}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{reports.filter((r) => r.status !== "Resolved").length}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("monitoredRegions")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{new Set(reports.map((r) => r.region)).size}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{new Set(reports.filter((r) => r.status !== "Resolved").map((r) => r.region)).size}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("statusLabel")}</p>
