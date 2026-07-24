@@ -1634,8 +1634,13 @@ def update_alert(alert_id):
 MEMORY_RESCUE_OPS = []
 RISK_PRIORITY = {"High": 1, "Medium": 2, "Low": 3}
 
-@app.route("/rescue-operations", methods=["GET"])
-def get_rescue_operations():
+def _get_all_rescue_operations():
+    """Merges in-memory operations (this session's) with everything in the
+    database (the real source of truth once available), de-duplicated by id.
+    Shared by GET /rescue-operations and /rescue-operations/stats — the stats
+    endpoint used to read only MEMORY_RESCUE_OPS directly, which meant it
+    showed 0/wrong totals after any restart wiped that list clean, even
+    though the operations themselves were safely sitting in the database."""
     all_ops = list(MEMORY_RESCUE_OPS)
     seen_ids = {o["id"] for o in all_ops}
 
@@ -1666,6 +1671,11 @@ def get_rescue_operations():
         except Exception as e:
             log_event("error", f"Failed to fetch rescue operations: {e}")
 
+    return all_ops
+
+@app.route("/rescue-operations", methods=["GET"])
+def get_rescue_operations():
+    all_ops = _get_all_rescue_operations()
     # FR05-07: prioritize by risk level, most urgent first; then newest first
     ops = sorted(all_ops, key=lambda o: o["created_at"], reverse=True)
     ops = sorted(ops, key=lambda o: RISK_PRIORITY.get(o["risk_level"], 9))
@@ -2083,13 +2093,23 @@ def _next_tracking_id():
 
 @app.route("/community-reports", methods=["GET"])
 def get_community_reports():
+    # Previously this appended DB rows on top of MEMORY_COMMUNITY_REPORTS with
+    # no de-duplication — and since a freshly-created report's memory copy and
+    # database row didn't share the same id (see the old create_community_report),
+    # the exact same report showed up twice, sometimes with two different
+    # statuses depending on which copy a later action happened to update.
+    # Ids are now kept in sync at creation time (see below), so a simple
+    # "skip if already seen" here is enough to guarantee one entry per report.
     data = list(MEMORY_COMMUNITY_REPORTS)
+    seen_ids = {r["id"] for r in data}
     if DB_AVAILABLE:
         try:
             cursor.execute("""SELECT id, tracking_id, location, region, incident_type, severity, status,
                                author_name, author_email, description, contact, image_url, notes, created_at
                                FROM community_reports ORDER BY created_at DESC""")
             for row in cursor.fetchall():
+                if row.id in seen_ids:
+                    continue
                 data.append({
                     "id": row.id, "trackingId": row.tracking_id, "location": row.location,
                     "region": row.region, "type": row.incident_type, "severity": row.severity,
@@ -2098,6 +2118,7 @@ def get_community_reports():
                     "notes": row.notes, "createdAt": row.created_at.isoformat() if row.created_at else None,
                     "confirmedBy": [],
                 })
+                seen_ids.add(row.id)
         except Exception as e:
             print("COMMUNITY REPORTS DB ERROR:", e)
     return jsonify(data)
@@ -2129,18 +2150,23 @@ def create_community_report():
         "createdAt": str(datetime.now()),
         "confirmedBy": [],
     }
-    MEMORY_COMMUNITY_REPORTS.append(report)
 
     if DB_AVAILABLE:
         try:
-            cursor.execute("""INSERT INTO community_reports
-                (tracking_id, location, region, incident_type, severity, status, author_name, author_email,
-                 description, contact, image_url, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            # Using the same real-id-from-the-database approach as rescue
+            # operations/teams/volunteers — the id kept here IS the DB row's
+            # id, so GET never sees two different ids for the same report.
+            report["id"] = _db_insert_get_id(
+                "INSERT INTO community_reports (tracking_id, location, region, incident_type, severity, status, "
+                "author_name, author_email, description, contact, image_url, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (tracking_id, location, report["region"], report["type"], report["severity"], report["status"],
-                 report["authorName"], report["authorEmail"], description, contact, report["imageUrl"], report["notes"]))
-            conn.commit()
-        except Exception as e:
-            print("Failed to save community report to database:", e)
+                 report["authorName"], report["authorEmail"], description, contact, report["imageUrl"], report["notes"])
+            )
+        except Exception as db_error:
+            log_event("error", f"Failed to save community report to database: {db_error}")
+            return jsonify({"message": "Could not save the report — please try again."}), 503
+    else:
+        MEMORY_COMMUNITY_REPORTS.append(report)
 
     # FR06-03: acknowledgment happens via the tracking_id returned in this response
     return jsonify(report), 201
@@ -2152,17 +2178,29 @@ def update_community_report_status(report_id):
     if new_status not in ("Submitted", "Under Review", "Action Taken", "Resolved"):
         return jsonify({"message": "Invalid status"}), 400
 
-    updated = None
-    linked_op = None
-    for r in MEMORY_COMMUNITY_REPORTS:
-        if r["id"] == report_id:
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("""SELECT id, tracking_id, location, region, incident_type, severity, status,
+                               author_name, author_email, description, contact, image_url, notes, created_at
+                               FROM community_reports WHERE id = ?""", (report_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({"message": "Report not found"}), 404
+            r = {
+                "id": row.id, "trackingId": row.tracking_id, "location": row.location,
+                "region": row.region, "type": row.incident_type, "severity": row.severity,
+                "status": row.status, "authorName": row.author_name, "authorEmail": row.author_email,
+                "description": row.description, "contact": row.contact, "imageUrl": row.image_url,
+                "notes": row.notes, "createdAt": row.created_at.isoformat() if row.created_at else None,
+                "confirmedBy": [],
+            }
             r["status"] = new_status
+            linked_op = None
 
             # FR06-04 made real: moving a report to "Action Taken" creates an
             # actual Rescue Operation (FR-05) linked back to this report,
-            # instead of just flipping a status label. If one's already
-            # linked (e.g. re-clicking), it's reused rather than duplicated.
-            if new_status == "Action Taken" and not r.get("linked_rescue_op_id"):
+            # instead of just flipping a status label.
+            if new_status == "Action Taken":
                 try:
                     linked_op = _create_rescue_op_internal(
                         location=r["location"],
@@ -2171,30 +2209,39 @@ def update_community_report_status(report_id):
                         assigned_team=data.get("assigned_team", "Unassigned"),
                     )
                 except Exception:
-                    r["status"] = "Submitted"  # roll back — dispatch didn't actually succeed
                     return jsonify({"message": "Could not create the rescue operation — please try again."}), 503
-                r["linked_rescue_op_id"] = linked_op["id"]
                 r["notes"] = f"Action taken — Rescue Operation #{linked_op['id']} created and dispatched to {r['location']}."
             else:
                 r["notes"] = f"Status updated to {new_status}."
 
-            updated = r
-            break
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("UPDATE community_reports SET status=?, notes=? WHERE id=?",
-                            (new_status, (updated or {}).get("notes", f"Status updated to {new_status}."), report_id))
+            cursor.execute("UPDATE community_reports SET status = ?, notes = ? WHERE id = ?", (r["status"], r["notes"], report_id))
             conn.commit()
+            if linked_op:
+                r["linked_rescue_op"] = linked_op
+            return jsonify(r)
         except Exception as e:
-            print("Failed to update community report in database:", e)
+            log_event("error", f"Failed to update community report in database: {e}")
+            return jsonify({"message": "Could not update the report — please try again."}), 503
 
-    if not updated and not DB_AVAILABLE:
-        return jsonify({"message": "Report not found"}), 404
-    result = dict(updated or {"id": report_id, "status": new_status})
-    if linked_op:
-        result["linked_rescue_op"] = linked_op
-    return jsonify(result)
+    for r in MEMORY_COMMUNITY_REPORTS:
+        if r["id"] == report_id:
+            r["status"] = new_status
+            if new_status == "Action Taken" and not r.get("linked_rescue_op_id"):
+                try:
+                    linked_op = _create_rescue_op_internal(
+                        location=r["location"], description=f"Community report {r['trackingId']}: {r['description']}",
+                        risk_level=r.get("severity", "Medium"), assigned_team=data.get("assigned_team", "Unassigned"),
+                    )
+                except Exception:
+                    r["status"] = "Submitted"
+                    return jsonify({"message": "Could not create the rescue operation — please try again."}), 503
+                r["linked_rescue_op_id"] = linked_op["id"]
+                r["notes"] = f"Action taken — Rescue Operation #{linked_op['id']} created and dispatched to {r['location']}."
+                r["linked_rescue_op"] = linked_op
+            else:
+                r["notes"] = f"Status updated to {new_status}."
+            return jsonify(r)
+    return jsonify({"message": "Report not found"}), 404
 
 # ---------------- BLOCKED ROADS (FR-04) ----------------
 MEMORY_BLOCKED_ROADS = []
@@ -2692,6 +2739,26 @@ def get_logs():
     return jsonify(list(reversed(all_logs))[:100] if all_logs is MEMORY_LOGS else all_logs[:100])
 
 # ---------------- COMMUNITY REPORT CONFIRMATIONS ----------------
+@app.route("/community-reports/<int:report_id>", methods=["DELETE"])
+def delete_community_report(report_id):
+    global MEMORY_COMMUNITY_REPORTS
+    before = len(MEMORY_COMMUNITY_REPORTS)
+    MEMORY_COMMUNITY_REPORTS = [r for r in MEMORY_COMMUNITY_REPORTS if r["id"] != report_id]
+    removed_from_memory = len(MEMORY_COMMUNITY_REPORTS) != before
+
+    removed_from_db = False
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("DELETE FROM community_reports WHERE id = ?", (report_id,))
+            removed_from_db = cursor.rowcount > 0
+            conn.commit()
+        except Exception as e:
+            log_event("error", f"Failed to delete community report from database: {e}")
+
+    if not removed_from_memory and not removed_from_db:
+        return jsonify({"message": "Report not found"}), 404
+    return jsonify({"message": "Report deleted"})
+
 @app.route("/community-reports/<int:report_id>/confirm", methods=["POST"])
 def confirm_community_report(report_id):
     """Lets other citizens confirm a report is accurate (one confirmation per email)."""
@@ -3306,7 +3373,7 @@ def get_nearest_facilities():
 # ---------------- RESCUE STATS (for rescue team dashboard) ----------------
 @app.route("/rescue-operations/stats", methods=["GET"])
 def get_rescue_stats():
-    ops = MEMORY_RESCUE_OPS
+    ops = _get_all_rescue_operations()
     completed = [o for o in ops if o["status"] == "Completed"]
 
     durations = []

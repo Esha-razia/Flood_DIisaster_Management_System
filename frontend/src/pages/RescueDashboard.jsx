@@ -562,6 +562,17 @@ export default function RescueDashboard() {
     }
   };
 
+  const handleDeleteReport = async (reportId) => {
+    if (!window.confirm(t("confirmDeleteReport"))) return;
+    try {
+      await axios.delete(`${API_BASE}/community-reports/${reportId}`);
+      setActionFeedback(t("reportDeletedMsg"));
+      fetchCommunityReports();
+    } catch (err) {
+      console.error("Failed to delete community report:", err);
+    }
+  };
+
   const fetchPredictions = async () => {
     try {
       console.log("Fetching predictions from Rescue Dashboard...");
@@ -974,6 +985,10 @@ export default function RescueDashboard() {
                         )}
                         <button onClick={() => handleUpdateReportStatus(r.id, "Resolved")} className="btn-secondary text-xs py-2 px-3">
                           {t("markResolved")}
+                        </button>
+                        <button onClick={() => handleDeleteReport(r.id)}
+                          className="bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 text-xs px-3 py-2 rounded-lg transition-colors">
+                          {t("deleteOperationBtn")}
                         </button>
                       </div>
                     </div>

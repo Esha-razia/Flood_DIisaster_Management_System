@@ -82,9 +82,15 @@ export default function Community() {
   }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), 6000); return () => clearTimeout(timer); }, [toast]);
 
-  const currentReport = useMemo(() => reports.find((r) => r.id === activeReportId) || reports[0] || null, [activeReportId, reports]);
   const filteredReports = useMemo(() => reports.filter((r) => (filters.severity === "All" || r.severity === filters.severity) && (filters.status === "All" || r.status === filters.status) && (filters.region === "All" || r.region === filters.region)), [filters, reports]);
-  const visibleReports = useMemo(() => isCitizen ? reports.filter((r) => r.authorEmail === userEmail) : filteredReports, [isCitizen, reports, userEmail, filteredReports]);
+  // A citizen's own report list only shows what's still open — once a rescue
+  // worker marks it Resolved, it's done and drops out of view here (and out
+  // of the timeline below) instead of lingering as a "resolved" entry forever.
+  const visibleReports = useMemo(() => isCitizen ? reports.filter((r) => r.authorEmail === userEmail && r.status !== "Resolved") : filteredReports, [isCitizen, reports, userEmail, filteredReports]);
+  const currentReport = useMemo(() => {
+    const pool = isCitizen ? visibleReports : reports;
+    return pool.find((r) => r.id === activeReportId) || pool[0] || null;
+  }, [activeReportId, reports, isCitizen, visibleReports]);
   const handleFormChange = (field, value) => setFormState((prev) => ({ ...prev, [field]: value }));
   const handleFileSelect = (file) => {
     if (!file) return;
