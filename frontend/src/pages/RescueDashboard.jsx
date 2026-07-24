@@ -562,6 +562,24 @@ export default function RescueDashboard() {
     }
   };
 
+  // A report's "Dispatch team" action needed a way to actually pick which
+  // team responds — previously it always dispatched as "Unassigned".
+  const [reportTeamPicks, setReportTeamPicks] = useState({}); // { [reportId]: assigned_team string }
+  const handleDispatchReport = async (reportId) => {
+    try {
+      await axios.put(`${API_BASE}/community-reports/${reportId}/status`, {
+        status: "Action Taken",
+        assigned_team: reportTeamPicks[reportId] || "Unassigned",
+      });
+      setActionFeedback(t("reportDispatchedMsg"));
+      fetchCommunityReports();
+      fetchOperations();
+      fetchStats();
+    } catch (err) {
+      console.error("Failed to dispatch report:", err);
+    }
+  };
+
   const handleDeleteReport = async (reportId) => {
     if (!window.confirm(t("confirmDeleteReport"))) return;
     try {
@@ -954,43 +972,59 @@ export default function RescueDashboard() {
               <div className="grid gap-4">
                 {communityReports.map((r) => (
                   <div key={r.id} className="dashboard-card border-marigold-500/40 p-6">
-                    <div className="flex justify-between items-start gap-4 flex-wrap">
-                      <div className="flex-1 min-w-[200px]">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-display text-lg text-white">{r.location}</h3>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-muted font-semibold">{r.trackingId}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                            r.status === "Action Taken" ? "bg-teal-500/15 border-teal-500/40 text-teal-300" :
-                            r.status === "Under Review" ? "bg-marigold-500/15 border-marigold-500/40 text-marigold-300" :
-                            "bg-red-500/15 border-red-500/40 text-red-300"
-                          }`}>{r.status}</span>
-                        </div>
-                        <p className="text-muted mb-1">{r.description}</p>
-                        <p className="text-xs text-muted">{t("reportedByLabel")}: {r.authorName} · {r.contact} · {new Date(r.createdAt).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-                        {r.linked_rescue_op_id && (
-                          <p className="text-xs text-teal-300 mt-1">{t("linkedOperationLabel")} #{r.linked_rescue_op_id}</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        {r.status === "Submitted" && (
-                          <button onClick={() => handleUpdateReportStatus(r.id, "Under Review")} className="btn-secondary text-xs py-2 px-3">
-                            {t("markUnderReview")}
-                          </button>
-                        )}
-                        {r.status !== "Action Taken" && (
-                          <button onClick={() => handleUpdateReportStatus(r.id, "Action Taken")}
-                            className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">
-                            {t("dispatchTeamBtn")}
-                          </button>
-                        )}
-                        <button onClick={() => handleUpdateReportStatus(r.id, "Resolved")} className="btn-secondary text-xs py-2 px-3">
-                          {t("markResolved")}
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="font-display text-lg text-white">{r.location}</h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-muted font-semibold">{r.trackingId}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                        r.status === "Action Taken" ? "bg-teal-500/15 border-teal-500/40 text-teal-300" :
+                        r.status === "Under Review" ? "bg-marigold-500/15 border-marigold-500/40 text-marigold-300" :
+                        "bg-red-500/15 border-red-500/40 text-red-300"
+                      }`}>{r.status}</span>
+                    </div>
+                    <p className="text-muted mb-1">{r.description}</p>
+                    <p className="text-xs text-muted">{t("reportedByLabel")}: {r.authorName} · {r.contact} · {new Date(r.createdAt).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
+                    {r.linked_rescue_op_id && (
+                      <p className="text-xs text-teal-300 mt-1">{t("linkedOperationLabel")} #{r.linked_rescue_op_id}</p>
+                    )}
+
+                    {/* Primary response action — pick a team, then dispatch.
+                        Kept separate from the housekeeping actions below so
+                        the one thing that actually matters (getting a team
+                        out the door) isn't buried in a row of equal-weight
+                        buttons. */}
+                    {r.status !== "Action Taken" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 mt-4">
+                        <select value={reportTeamPicks[r.id] || ""}
+                          onChange={(e) => setReportTeamPicks((p) => ({ ...p, [r.id]: e.target.value }))}
+                          className="field-input py-2 text-sm min-w-0 w-full truncate">
+                          <option value="">{t("unassigned")}</option>
+                          {teams.map((team) => (
+                            <option key={team.id} value={`${team.name}: ${teamMemberNames(team).join(", ")}`}>
+                              {team.name} ({teamMemberNames(team).length} {t("membersLabel")})
+                            </option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleDispatchReport(r.id)}
+                          className="bg-teal-600/80 hover:bg-teal-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors w-full sm:w-auto">
+                          {t("dispatchTeamBtn")}
                         </button>
-                        <button onClick={() => handleDeleteReport(r.id)}
-                          className="bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-300 text-xs px-3 py-2 rounded-lg transition-colors">
-                          {t("deleteOperationBtn")}
-                        </button>
                       </div>
+                    )}
+
+                    {/* Housekeeping actions — smaller and visually secondary
+                        to the dispatch action above. */}
+                    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
+                      {r.status === "Submitted" && (
+                        <button onClick={() => handleUpdateReportStatus(r.id, "Under Review")} className="text-xs text-muted hover:text-teal-300 transition-colors">
+                          {t("markUnderReview")}
+                        </button>
+                      )}
+                      <button onClick={() => handleUpdateReportStatus(r.id, "Resolved")} className="text-xs text-muted hover:text-emerald-300 transition-colors">
+                        {t("markResolved")}
+                      </button>
+                      <button onClick={() => handleDeleteReport(r.id)} className="text-xs text-muted hover:text-red-300 transition-colors ml-auto">
+                        {t("deleteOperationBtn")}
+                      </button>
                     </div>
                   </div>
                 ))}
