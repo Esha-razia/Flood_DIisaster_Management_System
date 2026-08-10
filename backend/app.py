@@ -2334,7 +2334,8 @@ def create_community_report():
 def update_community_report_status(report_id):
     data = request.json or {}
     new_status = data.get("status")
-    if new_status not in ("Submitted", "Under Review", "Action Taken", "Resolved"):
+    valid_statuses = ("Submitted", "Under Review", "Action Taken", "Resolved", "Approved", "Rejected", "Spam", "Converted to Alert", "Converted to Rescue Op")
+    if new_status not in valid_statuses:
         return jsonify({"message": "Invalid status"}), 400
 
     if DB_AVAILABLE:

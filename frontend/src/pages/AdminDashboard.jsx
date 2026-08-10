@@ -17,8 +17,6 @@ const AdminDashboard = () => {
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "citizen" });
   const [newAlert, setNewAlert] = useState({ message: "", location: "", risk: "Medium" });
-  const [selectedUser, setSelectedUser] = useState(null);
-
   const [shelters, setShelters] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [showShelterForm, setShowShelterForm] = useState(false);
@@ -38,6 +36,10 @@ const AdminDashboard = () => {
   const [donations, setDonations] = useState([]);
   const [showQrFor, setShowQrFor] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [communityReports, setCommunityReports] = useState([]);
+  const [reportsFilter, setReportsFilter] = useState("All");
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [convertModal, setConvertModal] = useState({ open: false, report: null, type: "" });
 
   useEffect(() => {
     fetchUsers();
@@ -49,7 +51,55 @@ const AdminDashboard = () => {
     fetchConfidenceTrend();
     fetchVolunteers();
     fetchDonations();
+    fetchCommunityReports();
   }, []);
+
+  const fetchCommunityReports = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/community-reports`);
+      setCommunityReports(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleReportStatus = async (reportId, status) => {
+    try {
+      await axios.put(`${API_BASE}/community-reports/${reportId}/status`, { status });
+      fetchCommunityReports();
+    } catch (err) {
+      alert("Failed to update report status.");
+    }
+  };
+
+  const handleConvertToAlert = async (report) => {
+    try {
+      await axios.post(`${API_BASE}/alerts`, {
+        message: `[Community Report] ${report.type || "Incident"} at ${report.location}: ${report.description}`,
+        location: report.location,
+        risk: report.severity || "High",
+        status: "Active"
+      });
+      await handleReportStatus(report.id, "Converted to Alert");
+      setConvertModal({ open: false, report: null, type: "" });
+      fetchAlerts();
+      alert("Emergency Alert created successfully!");
+    } catch (err) {
+      alert("Failed to create alert.");
+    }
+  };
+
+  const handleConvertToRescueOp = async (report) => {
+    try {
+      await axios.put(`${API_BASE}/community-reports/${report.id}/status`, {
+        status: "Action Taken",
+        assigned_team: "Unassigned"
+      });
+      setConvertModal({ open: false, report: null, type: "" });
+      fetchCommunityReports();
+      alert("Rescue Operation launched successfully!");
+    } catch (err) {
+      alert("Failed to launch rescue operation.");
+    }
+  };
 
   const fetchAccuracyHistory = async () => {
     try {
@@ -513,19 +563,19 @@ const AdminDashboard = () => {
                     <th className="pb-3 text-muted">{t("email")}</th>
                     <th className="pb-3 text-muted">{t("role")}</th>
                     <th className="pb-3 text-muted">{t("status")}</th>
-                    <th className="pb-3 text-muted">{t("actions")}</th>
+                    <th className="pb-3 text-muted">Joined</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredUsers.map((user, index) => (
                     <tr key={index} className="border-b border-white/10">
                       <td className="py-3">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-sm font-bold">
                             {user.name.charAt(0).toUpperCase()}
                           </div>
+                          <span className="text-white">{user.name}</span>
                         </div>
-                        <span className="ml-3 text-white">{user.name}</span>
                       </td>
                       <td className="py-3 text-muted">{user.email}</td>
                       <td className="py-3">
@@ -538,34 +588,15 @@ const AdminDashboard = () => {
                           const isActive = user.status ? user.status === "Active" : user.active !== false;
                           return (
                             <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              isActive ? "bg-green-500/20 text-green-400 border-green-500/50" : "bg-red-500/20 text-red-400 border-red-500/50"
+                              isActive ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
                             }`}>
                               {isActive ? t("active") : t("inactive")}
                             </span>
                           );
                         })()}
                       </td>
-                      <td className="py-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <button 
-                            onClick={() => setSelectedUser(user)}
-                            className="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            {t("view")}
-                          </button>
-                          <button 
-                            onClick={() => handleToggleUserStatus(user)}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            {user.status ? (user.status === "Active" ? t("deactivate") : t("activate")) : (user.active !== false ? t("deactivate") : t("activate"))}
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            {t("delete")}
-                          </button>
-                        </div>
+                      <td className="py-3 text-muted text-sm">
+                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
                       </td>
                     </tr>
                   ))}
@@ -574,50 +605,143 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* User Detail Modal */}
-          {selectedUser && (
-            <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-4">
-              <div className="w-full max-w-xl rounded-3xl bg-ink-soft border border-white/10 p-8 shadow-2xl">
-                <div className="flex items-start justify-between gap-4 mb-6">
-                  <div>
-                    <h2 className="font-display text-2xl text-parchment">{t("userDetails")}</h2>
-                    <p className="text-muted text-sm">{t("reviewUserNote")}</p>
-                  </div>
-                  <button onClick={() => setSelectedUser(null)} className="text-muted hover:text-white">{t("close")}</button>
+          {/* Citizen Reports Moderation */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🗂️ Citizen Reports Moderation</h2>
+                <p className="text-sm text-muted mt-1">Review, approve, reject or convert citizen-submitted incident reports into emergency alerts or rescue operations.</p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {["All", "Submitted", "Approved", "Rejected", "Spam", "Converted to Alert", "Converted to Rescue Op", "Action Taken"].map(f => (
+                  <button key={f} onClick={() => setReportsFilter(f)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                      reportsFilter === f
+                        ? "bg-teal-500 border-teal-400 text-white"
+                        : "bg-white/5 border-white/20 text-muted hover:bg-white/10"
+                    }`}>{f}</button>
+                ))}
+              </div>
+            </div>
+
+            {communityReports.filter(r => reportsFilter === "All" || r.status === reportsFilter).length === 0 ? (
+              <div className="text-center py-10 text-muted">
+                <div className="text-4xl mb-3">📋</div>
+                <p>No reports found for this filter.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {communityReports
+                  .filter(r => reportsFilter === "All" || r.status === reportsFilter)
+                  .map((report, i) => {
+                    const severityColor = report.severity === "High" || report.severity === "Critical"
+                      ? "text-red-400 bg-red-500/10 border-red-500/30"
+                      : report.severity === "Medium"
+                      ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
+                      : "text-green-400 bg-green-500/10 border-green-500/30";
+
+                    const statusColor = report.status === "Approved" ? "text-green-400"
+                      : report.status === "Rejected" || report.status === "Spam" ? "text-red-400"
+                      : report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" || report.status === "Action Taken" ? "text-teal-400"
+                      : "text-yellow-400";
+
+                    return (
+                      <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
+                        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                          {/* Report Info */}
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <span className="text-xs text-muted font-mono">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${severityColor}`}>
+                                {report.severity || "—"}
+                              </span>
+                              <span className={`text-xs font-semibold ${statusColor}`}>
+                                ● {report.status}
+                              </span>
+                            </div>
+                            <h4 className="text-white font-semibold text-lg mb-1">
+                              {report.type || report.incident_type || "Incident"} — {report.location}
+                            </h4>
+                            <p className="text-muted text-sm mb-2 line-clamp-2">{report.description}</p>
+                            <div className="flex flex-wrap gap-4 text-xs text-muted">
+                              <span>👤 {report.authorName || report.author_name || "Anonymous"}</span>
+                              <span>📧 {report.authorEmail || report.author_email || "—"}</span>
+                              <span>📍 {report.region || "—"}</span>
+                              <span>🕐 {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleString() : "—"}</span>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex flex-col gap-2 min-w-[160px]">
+                            {report.status === "Submitted" || report.status === "Under Review" ? (
+                              <>
+                                <button
+                                  onClick={() => handleReportStatus(report.id, "Approved")}
+                                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >✅ Approve</button>
+                                <button
+                                  onClick={() => handleReportStatus(report.id, "Rejected")}
+                                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >❌ Reject</button>
+                                <button
+                                  onClick={() => handleReportStatus(report.id, "Spam")}
+                                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >🚫 Mark Spam</button>
+                              </>
+                            ) : null}
+                            {(report.status === "Approved" || report.status === "Submitted") && (
+                              <>
+                                <button
+                                  onClick={() => setConvertModal({ open: true, report, type: "alert" })}
+                                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >🚨 Create Alert</button>
+                                <button
+                                  onClick={() => setConvertModal({ open: true, report, type: "rescue" })}
+                                  className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >🚁 Launch Rescue Op</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Conversion Confirmation Modal */}
+          {convertModal.open && convertModal.report && (
+            <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-ink-soft border border-white/10 rounded-2xl p-6 shadow-2xl">
+                <h3 className="font-display text-xl text-parchment mb-2">
+                  {convertModal.type === "alert" ? "🚨 Create Emergency Alert" : "🚁 Launch Rescue Operation"}
+                </h3>
+                <p className="text-muted text-sm mb-4">
+                  {convertModal.type === "alert"
+                    ? "An emergency alert will be broadcast to all users based on this report."
+                    : "A rescue operation will be immediately created and assigned for this report location."}
+                </p>
+                <div className="bg-white/5 rounded-lg p-4 mb-5 space-y-1 text-sm">
+                  <p><span className="text-muted">Location:</span> <span className="text-white">{convertModal.report.location}</span></p>
+                  <p><span className="text-muted">Type:</span> <span className="text-white">{convertModal.report.type || convertModal.report.incident_type}</span></p>
+                  <p><span className="text-muted">Severity:</span> <span className="text-white">{convertModal.report.severity}</span></p>
+                  <p><span className="text-muted">Description:</span> <span className="text-white">{convertModal.report.description}</span></p>
                 </div>
-                <div className="grid sm:grid-cols-2 gap-4 mb-6">
-                  <div className="space-y-2">
-                    <p className="text-muted text-sm">{t("name")}</p>
-                    <p className="text-white font-semibold">{selectedUser.name}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-muted text-sm">{t("email")}</p>
-                    <p className="text-white font-semibold">{selectedUser.email}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-muted text-sm">{t("role")}</p>
-                    <p className="text-white font-semibold">{getRoleDisplayName(selectedUser.role)}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-muted text-sm">{t("status")}</p>
-                    <p className="text-white font-semibold">{selectedUser.status || (selectedUser.active !== false ? "Active" : "Inactive")}</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <button 
-                    onClick={() => {
-                      handleToggleUserStatus(selectedUser);
-                      setSelectedUser(null);
-                    }}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-3 rounded-xl transition-colors"
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => convertModal.type === "alert" ? handleConvertToAlert(convertModal.report) : handleConvertToRescueOp(convertModal.report)}
+                    className={`flex-1 py-2.5 rounded-xl font-semibold text-white transition-colors ${
+                      convertModal.type === "alert" ? "bg-yellow-600 hover:bg-yellow-700" : "bg-teal-600 hover:bg-teal-700"
+                    }`}
                   >
-                    {selectedUser.status ? (selectedUser.status === "Active" ? "Deactivate" : "Activate") : (selectedUser.active !== false ? "Deactivate" : "Activate")}
+                    {convertModal.type === "alert" ? "Confirm & Create Alert" : "Confirm & Launch Rescue Op"}
                   </button>
-                  <button 
-                    onClick={() => setSelectedUser(null)}
-                    className="bg-white/10 hover:bg-white/20 text-white px-5 py-3 rounded-xl transition-colors"
+                  <button
+                    onClick={() => setConvertModal({ open: false, report: null, type: "" })}
+                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
                   >
-                    Close
+                    Cancel
                   </button>
                 </div>
               </div>
