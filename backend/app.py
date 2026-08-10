@@ -615,9 +615,27 @@ def initialize_postgresql_db(cursor, conn):
                     # Repair a column that an earlier, blanket-TEXT version of
                     # this migration already created with the wrong type.
                     # NULLIF(..., '') avoids a cast error on empty strings.
-                    cursor.execute(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE INTEGER USING NULLIF({col}, '')::integer")
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
+
+    # Seed default accounts in PostgreSQL so login works immediately
+    try:
+        default_users = [
+            ("Admin User", "admin@example.com", "admin123", "admin"),
+            ("Gov Official", "gov@example.com", "gov123", "government_official"),
+            ("Rescue Worker", "rescue@example.com", "rescue123", "rescue_worker"),
+            ("Citizen User", "citizen@example.com", "citizen123", "citizen")
+        ]
+        for name, uemail, upass, urole in default_users:
+            cursor.execute("SELECT email FROM users WHERE LOWER(email) = %s", (uemail.lower(),))
+            if not cursor.fetchone():
+                cursor.execute(
+                    "INSERT INTO users (name, email, password, role, status) VALUES (%s, %s, %s, %s, 'Active')",
+                    (name, uemail.lower(), upass, urole)
+                )
+        conn.commit()
+    except Exception as seed_err:
+        print(f"[SEED] Could not seed default users: {seed_err}")
 
     conn.commit()
 
