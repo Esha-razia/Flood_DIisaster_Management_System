@@ -1,0 +1,12 @@
+flask
+flask-cors
+pyodbc
+joblib
+numpy
+xgboost
+shap
+scikit-learn
+pandas
+fpdf2
+psycopg2-binary
+gunicorn

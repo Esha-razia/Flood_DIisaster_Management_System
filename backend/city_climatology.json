@@ -1,0 +1,862 @@
+{
+  "Faisalabad": {
+    "1": {
+      "humidity": 43.533,
+      "wind_speed": 1.297,
+      "soil_moisture_top": 0.211,
+      "soil_7day_avg": 0.208,
+      "temperature": 12.575
+    },
+    "2": {
+      "humidity": 43.892,
+      "wind_speed": 1.421,
+      "soil_moisture_top": 0.216,
+      "soil_7day_avg": 0.216,
+      "temperature": 15.893
+    },
+    "3": {
+      "humidity": 39.071,
+      "wind_speed": 1.512,
+      "soil_moisture_top": 0.212,
+      "soil_7day_avg": 0.214,
+      "temperature": 22.204
+    },
+    "4": {
+      "humidity": 31.496,
+      "wind_speed": 1.696,
+      "soil_moisture_top": 0.173,
+      "soil_7day_avg": 0.177,
+      "temperature": 28.654
+    },
+    "5": {
+      "humidity": 23.235,
+      "wind_speed": 1.813,
+      "soil_moisture_top": 0.158,
+      "soil_7day_avg": 0.158,
+      "temperature": 34.714
+    },
+    "6": {
+      "humidity": 28.838,
+      "wind_speed": 1.886,
+      "soil_moisture_top": 0.181,
+      "soil_7day_avg": 0.175,
+      "temperature": 37.296
+    },
+    "7": {
+      "humidity": 46.319,
+      "wind_speed": 1.84,
+      "soil_moisture_top": 0.252,
+      "soil_7day_avg": 0.247,
+      "temperature": 35.647
+    },
+    "8": {
+      "humidity": 50.333,
+      "wind_speed": 1.708,
+      "soil_moisture_top": 0.26,
+      "soil_7day_avg": 0.263,
+      "temperature": 34.191
+    },
+    "9": {
+      "humidity": 46.718,
+      "wind_speed": 1.386,
+      "soil_moisture_top": 0.229,
+      "soil_7day_avg": 0.233,
+      "temperature": 31.695
+    },
+    "10": {
+      "humidity": 34.781,
+      "wind_speed": 1.235,
+      "soil_moisture_top": 0.171,
+      "soil_7day_avg": 0.174,
+      "temperature": 26.873
+    },
+    "11": {
+      "humidity": 34.378,
+      "wind_speed": 1.298,
+      "soil_moisture_top": 0.17,
+      "soil_7day_avg": 0.17,
+      "temperature": 20.078
+    },
+    "12": {
+      "humidity": 36.502,
+      "wind_speed": 1.29,
+      "soil_moisture_top": 0.173,
+      "soil_7day_avg": 0.171,
+      "temperature": 14.665
+    }
+  },
+  "Gujranwala": {
+    "1": {
+      "humidity": 49.228,
+      "wind_speed": 1.354,
+      "soil_moisture_top": 0.249,
+      "soil_7day_avg": 0.244,
+      "temperature": 12.317
+    },
+    "2": {
+      "humidity": 50.221,
+      "wind_speed": 1.466,
+      "soil_moisture_top": 0.264,
+      "soil_7day_avg": 0.265,
+      "temperature": 15.501
+    },
+    "3": {
+      "humidity": 44.699,
+      "wind_speed": 1.568,
+      "soil_moisture_top": 0.234,
+      "soil_7day_avg": 0.237,
+      "temperature": 21.499
+    },
+    "4": {
+      "humidity": 34.871,
+      "wind_speed": 1.751,
+      "soil_moisture_top": 0.189,
+      "soil_7day_avg": 0.195,
+      "temperature": 27.987
+    },
+    "5": {
+      "humidity": 25.007,
+      "wind_speed": 1.861,
+      "soil_moisture_top": 0.156,
+      "soil_7day_avg": 0.157,
+      "temperature": 34.05
+    },
+    "6": {
+      "humidity": 32.119,
+      "wind_speed": 1.702,
+      "soil_moisture_top": 0.187,
+      "soil_7day_avg": 0.178,
+      "temperature": 36.233
+    },
+    "7": {
+      "humidity": 56.141,
+      "wind_speed": 1.4,
+      "soil_moisture_top": 0.312,
+      "soil_7day_avg": 0.303,
+      "temperature": 33.723
+    },
+    "8": {
+      "humidity": 66.293,
+      "wind_speed": 1.232,
+      "soil_moisture_top": 0.334,
+      "soil_7day_avg": 0.338,
+      "temperature": 31.447
+    },
+    "9": {
+      "humidity": 60.989,
+      "wind_speed": 1.073,
+      "soil_moisture_top": 0.268,
+      "soil_7day_avg": 0.278,
+      "temperature": 29.359
+    },
+    "10": {
+      "humidity": 46.118,
+      "wind_speed": 1.146,
+      "soil_moisture_top": 0.19,
+      "soil_7day_avg": 0.194,
+      "temperature": 25.225
+    },
+    "11": {
+      "humidity": 40.684,
+      "wind_speed": 1.293,
+      "soil_moisture_top": 0.191,
+      "soil_7day_avg": 0.19,
+      "temperature": 19.37
+    },
+    "12": {
+      "humidity": 41.87,
+      "wind_speed": 1.304,
+      "soil_moisture_top": 0.197,
+      "soil_7day_avg": 0.194,
+      "temperature": 14.347
+    }
+  },
+  "Hyderabad": {
+    "1": {
+      "humidity": 36.399,
+      "wind_speed": 2.034,
+      "soil_moisture_top": 0.137,
+      "soil_7day_avg": 0.137,
+      "temperature": 16.707
+    },
+    "2": {
+      "humidity": 34.937,
+      "wind_speed": 2.196,
+      "soil_moisture_top": 0.133,
+      "soil_7day_avg": 0.134,
+      "temperature": 20.501
+    },
+    "3": {
+      "humidity": 36.077,
+      "wind_speed": 2.58,
+      "soil_moisture_top": 0.131,
+      "soil_7day_avg": 0.131,
+      "temperature": 26.145
+    },
+    "4": {
+      "humidity": 38.816,
+      "wind_speed": 3.529,
+      "soil_moisture_top": 0.127,
+      "soil_7day_avg": 0.127,
+      "temperature": 30.896
+    },
+    "5": {
+      "humidity": 47.566,
+      "wind_speed": 4.869,
+      "soil_moisture_top": 0.125,
+      "soil_7day_avg": 0.125,
+      "temperature": 33.425
+    },
+    "6": {
+      "humidity": 53.414,
+      "wind_speed": 5.318,
+      "soil_moisture_top": 0.129,
+      "soil_7day_avg": 0.127,
+      "temperature": 33.856
+    },
+    "7": {
+      "humidity": 60.461,
+      "wind_speed": 5.059,
+      "soil_moisture_top": 0.172,
+      "soil_7day_avg": 0.165,
+      "temperature": 32.547
+    },
+    "8": {
+      "humidity": 64.191,
+      "wind_speed": 4.302,
+      "soil_moisture_top": 0.209,
+      "soil_7day_avg": 0.21,
+      "temperature": 31.037
+    },
+    "9": {
+      "humidity": 60.012,
+      "wind_speed": 3.466,
+      "soil_moisture_top": 0.174,
+      "soil_7day_avg": 0.18,
+      "temperature": 30.484
+    },
+    "10": {
+      "humidity": 43.284,
+      "wind_speed": 2.201,
+      "soil_moisture_top": 0.134,
+      "soil_7day_avg": 0.136,
+      "temperature": 28.908
+    },
+    "11": {
+      "humidity": 34.405,
+      "wind_speed": 1.867,
+      "soil_moisture_top": 0.128,
+      "soil_7day_avg": 0.128,
+      "temperature": 23.737
+    },
+    "12": {
+      "humidity": 32.573,
+      "wind_speed": 2.041,
+      "soil_moisture_top": 0.134,
+      "soil_7day_avg": 0.134,
+      "temperature": 18.176
+    }
+  },
+  "Karachi": {
+    "1": {
+      "humidity": 50.822,
+      "wind_speed": 2.503,
+      "soil_moisture_top": 0.04,
+      "soil_7day_avg": 0.04,
+      "temperature": 19.555
+    },
+    "2": {
+      "humidity": 55.921,
+      "wind_speed": 2.788,
+      "soil_moisture_top": 0.036,
+      "soil_7day_avg": 0.037,
+      "temperature": 21.413
+    },
+    "3": {
+      "humidity": 62.411,
+      "wind_speed": 3.12,
+      "soil_moisture_top": 0.033,
+      "soil_7day_avg": 0.033,
+      "temperature": 24.62
+    },
+    "4": {
+      "humidity": 67.837,
+      "wind_speed": 3.677,
+      "soil_moisture_top": 0.027,
+      "soil_7day_avg": 0.028,
+      "temperature": 27.664
+    },
+    "5": {
+      "humidity": 73.166,
+      "wind_speed": 4.719,
+      "soil_moisture_top": 0.028,
+      "soil_7day_avg": 0.027,
+      "temperature": 29.629
+    },
+    "6": {
+      "humidity": 73.208,
+      "wind_speed": 4.973,
+      "soil_moisture_top": 0.042,
+      "soil_7day_avg": 0.04,
+      "temperature": 30.522
+    },
+    "7": {
+      "humidity": 76.125,
+      "wind_speed": 5.058,
+      "soil_moisture_top": 0.09,
+      "soil_7day_avg": 0.083,
+      "temperature": 29.745
+    },
+    "8": {
+      "humidity": 78.305,
+      "wind_speed": 4.479,
+      "soil_moisture_top": 0.113,
+      "soil_7day_avg": 0.115,
+      "temperature": 28.463
+    },
+    "9": {
+      "humidity": 75.574,
+      "wind_speed": 3.666,
+      "soil_moisture_top": 0.07,
+      "soil_7day_avg": 0.077,
+      "temperature": 28.124
+    },
+    "10": {
+      "humidity": 66.836,
+      "wind_speed": 2.571,
+      "soil_moisture_top": 0.039,
+      "soil_7day_avg": 0.04,
+      "temperature": 27.648
+    },
+    "11": {
+      "humidity": 54.413,
+      "wind_speed": 2.261,
+      "soil_moisture_top": 0.036,
+      "soil_7day_avg": 0.036,
+      "temperature": 25.078
+    },
+    "12": {
+      "humidity": 47.232,
+      "wind_speed": 2.314,
+      "soil_moisture_top": 0.04,
+      "soil_7day_avg": 0.039,
+      "temperature": 21.271
+    }
+  },
+  "Lahore": {
+    "1": {
+      "humidity": 46.755,
+      "wind_speed": 1.377,
+      "soil_moisture_top": 0.234,
+      "soil_7day_avg": 0.231,
+      "temperature": 12.465
+    },
+    "2": {
+      "humidity": 46.67,
+      "wind_speed": 1.494,
+      "soil_moisture_top": 0.233,
+      "soil_7day_avg": 0.234,
+      "temperature": 15.825
+    },
+    "3": {
+      "humidity": 40.867,
+      "wind_speed": 1.58,
+      "soil_moisture_top": 0.214,
+      "soil_7day_avg": 0.216,
+      "temperature": 22.023
+    },
+    "4": {
+      "humidity": 31.634,
+      "wind_speed": 1.75,
+      "soil_moisture_top": 0.178,
+      "soil_7day_avg": 0.183,
+      "temperature": 28.605
+    },
+    "5": {
+      "humidity": 23.65,
+      "wind_speed": 1.857,
+      "soil_moisture_top": 0.162,
+      "soil_7day_avg": 0.162,
+      "temperature": 34.531
+    },
+    "6": {
+      "humidity": 31.11,
+      "wind_speed": 1.798,
+      "soil_moisture_top": 0.195,
+      "soil_7day_avg": 0.187,
+      "temperature": 36.628
+    },
+    "7": {
+      "humidity": 52.638,
+      "wind_speed": 1.559,
+      "soil_moisture_top": 0.295,
+      "soil_7day_avg": 0.287,
+      "temperature": 34.337
+    },
+    "8": {
+      "humidity": 60.547,
+      "wind_speed": 1.407,
+      "soil_moisture_top": 0.315,
+      "soil_7day_avg": 0.319,
+      "temperature": 32.359
+    },
+    "9": {
+      "humidity": 56.258,
+      "wind_speed": 1.193,
+      "soil_moisture_top": 0.255,
+      "soil_7day_avg": 0.262,
+      "temperature": 30.122
+    },
+    "10": {
+      "humidity": 42.093,
+      "wind_speed": 1.185,
+      "soil_moisture_top": 0.187,
+      "soil_7day_avg": 0.191,
+      "temperature": 25.924
+    },
+    "11": {
+      "humidity": 38.238,
+      "wind_speed": 1.342,
+      "soil_moisture_top": 0.178,
+      "soil_7day_avg": 0.178,
+      "temperature": 19.785
+    },
+    "12": {
+      "humidity": 39.695,
+      "wind_speed": 1.363,
+      "soil_moisture_top": 0.19,
+      "soil_7day_avg": 0.187,
+      "temperature": 14.558
+    }
+  },
+  "Multan": {
+    "1": {
+      "humidity": 38.39,
+      "wind_speed": 1.471,
+      "soil_moisture_top": 0.18,
+      "soil_7day_avg": 0.179,
+      "temperature": 13.649
+    },
+    "2": {
+      "humidity": 36.939,
+      "wind_speed": 1.621,
+      "soil_moisture_top": 0.181,
+      "soil_7day_avg": 0.182,
+      "temperature": 17.112
+    },
+    "3": {
+      "humidity": 34.704,
+      "wind_speed": 1.694,
+      "soil_moisture_top": 0.175,
+      "soil_7day_avg": 0.176,
+      "temperature": 23.405
+    },
+    "4": {
+      "humidity": 26.919,
+      "wind_speed": 1.912,
+      "soil_moisture_top": 0.149,
+      "soil_7day_avg": 0.152,
+      "temperature": 30.053
+    },
+    "5": {
+      "humidity": 21.269,
+      "wind_speed": 2.184,
+      "soil_moisture_top": 0.14,
+      "soil_7day_avg": 0.14,
+      "temperature": 35.874
+    },
+    "6": {
+      "humidity": 28.055,
+      "wind_speed": 2.904,
+      "soil_moisture_top": 0.152,
+      "soil_7day_avg": 0.15,
+      "temperature": 38.424
+    },
+    "7": {
+      "humidity": 38.489,
+      "wind_speed": 3.009,
+      "soil_moisture_top": 0.2,
+      "soil_7day_avg": 0.194,
+      "temperature": 37.918
+    },
+    "8": {
+      "humidity": 41.638,
+      "wind_speed": 2.774,
+      "soil_moisture_top": 0.212,
+      "soil_7day_avg": 0.215,
+      "temperature": 36.235
+    },
+    "9": {
+      "humidity": 38.076,
+      "wind_speed": 1.915,
+      "soil_moisture_top": 0.179,
+      "soil_7day_avg": 0.184,
+      "temperature": 33.51
+    },
+    "10": {
+      "humidity": 26.716,
+      "wind_speed": 1.372,
+      "soil_moisture_top": 0.141,
+      "soil_7day_avg": 0.142,
+      "temperature": 28.265
+    },
+    "11": {
+      "humidity": 28.85,
+      "wind_speed": 1.452,
+      "soil_moisture_top": 0.14,
+      "soil_7day_avg": 0.139,
+      "temperature": 21.233
+    },
+    "12": {
+      "humidity": 32.468,
+      "wind_speed": 1.423,
+      "soil_moisture_top": 0.157,
+      "soil_7day_avg": 0.155,
+      "temperature": 15.703
+    }
+  },
+  "Peshawar": {
+    "1": {
+      "humidity": 47.403,
+      "wind_speed": 1.396,
+      "soil_moisture_top": 0.243,
+      "soil_7day_avg": 0.24,
+      "temperature": 7.501
+    },
+    "2": {
+      "humidity": 53.979,
+      "wind_speed": 1.49,
+      "soil_moisture_top": 0.27,
+      "soil_7day_avg": 0.268,
+      "temperature": 9.514
+    },
+    "3": {
+      "humidity": 54.298,
+      "wind_speed": 1.432,
+      "soil_moisture_top": 0.268,
+      "soil_7day_avg": 0.268,
+      "temperature": 14.89
+    },
+    "4": {
+      "humidity": 48.454,
+      "wind_speed": 1.541,
+      "soil_moisture_top": 0.23,
+      "soil_7day_avg": 0.237,
+      "temperature": 20.575
+    },
+    "5": {
+      "humidity": 38.111,
+      "wind_speed": 1.784,
+      "soil_moisture_top": 0.164,
+      "soil_7day_avg": 0.168,
+      "temperature": 26.153
+    },
+    "6": {
+      "humidity": 32.062,
+      "wind_speed": 1.724,
+      "soil_moisture_top": 0.154,
+      "soil_7day_avg": 0.15,
+      "temperature": 30.448
+    },
+    "7": {
+      "humidity": 47.049,
+      "wind_speed": 1.8,
+      "soil_moisture_top": 0.245,
+      "soil_7day_avg": 0.234,
+      "temperature": 30.759
+    },
+    "8": {
+      "humidity": 54.414,
+      "wind_speed": 1.59,
+      "soil_moisture_top": 0.306,
+      "soil_7day_avg": 0.307,
+      "temperature": 28.939
+    },
+    "9": {
+      "humidity": 48.538,
+      "wind_speed": 1.37,
+      "soil_moisture_top": 0.251,
+      "soil_7day_avg": 0.259,
+      "temperature": 26.046
+    },
+    "10": {
+      "humidity": 38.3,
+      "wind_speed": 1.332,
+      "soil_moisture_top": 0.202,
+      "soil_7day_avg": 0.204,
+      "temperature": 20.812
+    },
+    "11": {
+      "humidity": 39.586,
+      "wind_speed": 1.349,
+      "soil_moisture_top": 0.214,
+      "soil_7day_avg": 0.214,
+      "temperature": 14.538
+    },
+    "12": {
+      "humidity": 40.346,
+      "wind_speed": 1.413,
+      "soil_moisture_top": 0.21,
+      "soil_7day_avg": 0.208,
+      "temperature": 9.875
+    }
+  },
+  "Rawalpindi": {
+    "1": {
+      "humidity": 48.719,
+      "wind_speed": 1.519,
+      "soil_moisture_top": 0.284,
+      "soil_7day_avg": 0.278,
+      "temperature": 10.829
+    },
+    "2": {
+      "humidity": 53.656,
+      "wind_speed": 1.637,
+      "soil_moisture_top": 0.314,
+      "soil_7day_avg": 0.312,
+      "temperature": 13.146
+    },
+    "3": {
+      "humidity": 52.67,
+      "wind_speed": 1.709,
+      "soil_moisture_top": 0.296,
+      "soil_7day_avg": 0.3,
+      "temperature": 18.323
+    },
+    "4": {
+      "humidity": 45.073,
+      "wind_speed": 1.786,
+      "soil_moisture_top": 0.249,
+      "soil_7day_avg": 0.255,
+      "temperature": 24.145
+    },
+    "5": {
+      "humidity": 33.436,
+      "wind_speed": 1.85,
+      "soil_moisture_top": 0.186,
+      "soil_7day_avg": 0.19,
+      "temperature": 30.11
+    },
+    "6": {
+      "humidity": 34.321,
+      "wind_speed": 1.631,
+      "soil_moisture_top": 0.191,
+      "soil_7day_avg": 0.185,
+      "temperature": 33.421
+    },
+    "7": {
+      "humidity": 58.293,
+      "wind_speed": 1.347,
+      "soil_moisture_top": 0.293,
+      "soil_7day_avg": 0.283,
+      "temperature": 31.56
+    },
+    "8": {
+      "humidity": 67.684,
+      "wind_speed": 1.207,
+      "soil_moisture_top": 0.327,
+      "soil_7day_avg": 0.329,
+      "temperature": 29.529
+    },
+    "9": {
+      "humidity": 61.167,
+      "wind_speed": 1.16,
+      "soil_moisture_top": 0.265,
+      "soil_7day_avg": 0.273,
+      "temperature": 27.409
+    },
+    "10": {
+      "humidity": 46.678,
+      "wind_speed": 1.365,
+      "soil_moisture_top": 0.2,
+      "soil_7day_avg": 0.202,
+      "temperature": 23.096
+    },
+    "11": {
+      "humidity": 42.435,
+      "wind_speed": 1.471,
+      "soil_moisture_top": 0.219,
+      "soil_7day_avg": 0.218,
+      "temperature": 17.404
+    },
+    "12": {
+      "humidity": 41.617,
+      "wind_speed": 1.454,
+      "soil_moisture_top": 0.227,
+      "soil_7day_avg": 0.223,
+      "temperature": 12.989
+    }
+  },
+  "Sialkot": {
+    "1": {
+      "humidity": 47.876,
+      "wind_speed": 1.314,
+      "soil_moisture_top": 0.273,
+      "soil_7day_avg": 0.268,
+      "temperature": 12.846
+    },
+    "2": {
+      "humidity": 50.304,
+      "wind_speed": 1.445,
+      "soil_moisture_top": 0.302,
+      "soil_7day_avg": 0.301,
+      "temperature": 15.721
+    },
+    "3": {
+      "humidity": 46.159,
+      "wind_speed": 1.561,
+      "soil_moisture_top": 0.27,
+      "soil_7day_avg": 0.275,
+      "temperature": 21.332
+    },
+    "4": {
+      "humidity": 37.017,
+      "wind_speed": 1.725,
+      "soil_moisture_top": 0.214,
+      "soil_7day_avg": 0.22,
+      "temperature": 27.525
+    },
+    "5": {
+      "humidity": 26.569,
+      "wind_speed": 1.876,
+      "soil_moisture_top": 0.162,
+      "soil_7day_avg": 0.164,
+      "temperature": 33.494
+    },
+    "6": {
+      "humidity": 32.674,
+      "wind_speed": 1.715,
+      "soil_moisture_top": 0.186,
+      "soil_7day_avg": 0.176,
+      "temperature": 35.786
+    },
+    "7": {
+      "humidity": 57.583,
+      "wind_speed": 1.398,
+      "soil_moisture_top": 0.329,
+      "soil_7day_avg": 0.318,
+      "temperature": 33.323
+    },
+    "8": {
+      "humidity": 68.461,
+      "wind_speed": 1.184,
+      "soil_moisture_top": 0.363,
+      "soil_7day_avg": 0.365,
+      "temperature": 30.962
+    },
+    "9": {
+      "humidity": 62.278,
+      "wind_speed": 1.053,
+      "soil_moisture_top": 0.302,
+      "soil_7day_avg": 0.312,
+      "temperature": 29.032
+    },
+    "10": {
+      "humidity": 46.159,
+      "wind_speed": 1.18,
+      "soil_moisture_top": 0.206,
+      "soil_7day_avg": 0.212,
+      "temperature": 25.123
+    },
+    "11": {
+      "humidity": 39.38,
+      "wind_speed": 1.262,
+      "soil_moisture_top": 0.201,
+      "soil_7day_avg": 0.2,
+      "temperature": 19.705
+    },
+    "12": {
+      "humidity": 40.052,
+      "wind_speed": 1.235,
+      "soil_moisture_top": 0.216,
+      "soil_7day_avg": 0.212,
+      "temperature": 14.966
+    }
+  },
+  "Sukkur": {
+    "1": {
+      "humidity": 30.372,
+      "wind_speed": 1.531,
+      "soil_moisture_top": 0.156,
+      "soil_7day_avg": 0.156,
+      "temperature": 15.95
+    },
+    "2": {
+      "humidity": 27.489,
+      "wind_speed": 1.679,
+      "soil_moisture_top": 0.155,
+      "soil_7day_avg": 0.155,
+      "temperature": 19.732
+    },
+    "3": {
+      "humidity": 25.357,
+      "wind_speed": 1.801,
+      "soil_moisture_top": 0.143,
+      "soil_7day_avg": 0.144,
+      "temperature": 25.967
+    },
+    "4": {
+      "humidity": 22.303,
+      "wind_speed": 2.111,
+      "soil_moisture_top": 0.131,
+      "soil_7day_avg": 0.132,
+      "temperature": 32.059
+    },
+    "5": {
+      "humidity": 24.082,
+      "wind_speed": 2.641,
+      "soil_moisture_top": 0.128,
+      "soil_7day_avg": 0.128,
+      "temperature": 36.808
+    },
+    "6": {
+      "humidity": 34.019,
+      "wind_speed": 3.749,
+      "soil_moisture_top": 0.126,
+      "soil_7day_avg": 0.126,
+      "temperature": 38.073
+    },
+    "7": {
+      "humidity": 42.99,
+      "wind_speed": 3.653,
+      "soil_moisture_top": 0.154,
+      "soil_7day_avg": 0.149,
+      "temperature": 37.087
+    },
+    "8": {
+      "humidity": 47.082,
+      "wind_speed": 2.946,
+      "soil_moisture_top": 0.185,
+      "soil_7day_avg": 0.184,
+      "temperature": 35.18
+    },
+    "9": {
+      "humidity": 41.976,
+      "wind_speed": 2.307,
+      "soil_moisture_top": 0.155,
+      "soil_7day_avg": 0.16,
+      "temperature": 33.631
+    },
+    "10": {
+      "humidity": 25.853,
+      "wind_speed": 1.475,
+      "soil_moisture_top": 0.132,
+      "soil_7day_avg": 0.133,
+      "temperature": 29.727
+    },
+    "11": {
+      "humidity": 25.253,
+      "wind_speed": 1.376,
+      "soil_moisture_top": 0.13,
+      "soil_7day_avg": 0.129,
+      "temperature": 23.498
+    },
+    "12": {
+      "humidity": 27.576,
+      "wind_speed": 1.448,
+      "soil_moisture_top": 0.141,
+      "soil_7day_avg": 0.14,
+      "temperature": 17.721
+    }
+  }
+}
