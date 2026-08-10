@@ -712,22 +712,32 @@ if not DB_AVAILABLE and pyodbc is not None:
 
 #  LOAD MODEL + SCALER (new multi-city models, trained on FLOOD_DATASET.csv)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-scaler = joblib.load(os.path.join(BASE_DIR, "model", "flood_scaler.pkl"))
-MODEL_FEATURES = list(scaler.feature_names_in_)
+scaler = None
+MODEL_FEATURES = []
+try:
+    scaler = joblib.load(os.path.join(BASE_DIR, "model", "flood_scaler.pkl"))
+    MODEL_FEATURES = list(getattr(scaler, "feature_names_in_", []))
+except Exception as e:
+    print(f"Scaler failed to load: {e}")
 
 # XGBoost is the best-performing model (per training comparison); Random Forest
 # is kept as an automatic fallback in case xgboost isn't installed on this machine.
+model = None
+ACTIVE_MODEL_NAME = "None"
 try:
     model = joblib.load(os.path.join(BASE_DIR, "model", "flood_model_xgb.pkl"))
     ACTIVE_MODEL_NAME = "XGBoost"
 except Exception as e:
-    print(f"XGBoost model failed to load ({e}); falling back to Random Forest.")
-    model = joblib.load(os.path.join(BASE_DIR, "model", "flood_model_rf.pkl"))
-    ACTIVE_MODEL_NAME = "Random Forest"
+    print(f"XGBoost model failed to load ({e}); trying Random Forest fallback...")
+    try:
+        model = joblib.load(os.path.join(BASE_DIR, "model", "flood_model_rf.pkl"))
+        ACTIVE_MODEL_NAME = "Random Forest"
+    except Exception as rf_err:
+        print(f"Random Forest model failed to load: {rf_err}")
 
 # SHAP explainer for real, per-prediction feature attributions (FR-11)
 SHAP_EXPLAINER = None
-if SHAP_AVAILABLE:
+if SHAP_AVAILABLE and model is not None:
     try:
         SHAP_EXPLAINER = shap.TreeExplainer(model)
     except Exception as e:
@@ -741,7 +751,7 @@ try:
     if ACTIVE_MODEL_NAME == "XGBoost":
         COMPARISON_MODEL = joblib.load(os.path.join(BASE_DIR, "model", "flood_model_rf.pkl"))
         COMPARISON_MODEL_NAME = "Random Forest"
-    else:
+    elif ACTIVE_MODEL_NAME == "Random Forest":
         COMPARISON_MODEL = joblib.load(os.path.join(BASE_DIR, "model", "flood_model_xgb.pkl"))
         COMPARISON_MODEL_NAME = "XGBoost"
 except Exception as e:
