@@ -627,25 +627,21 @@ cursor = None
 DB_TYPE = None
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.strip().strip("'").strip('"')
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # 1. Try PostgreSQL if DATABASE_URL is provided (production cloud database)
 if DATABASE_URL:
     import time
     pg_connected = False
     last_pg_error = None
-    # Retry a few times with a short pause — a single transient failure here
-    # (the managed Postgres instance still waking up, a momentary network
-    # blip) used to fall all the way back to a brand-new, empty SQLite
-    # database instead of trying again, making real data "disappear" after
-    # a redeploy even though it was safe the whole time in PostgreSQL.
     for attempt in range(1, 4):
         try:
             import psycopg2
             raw_conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-            raw_conn.autocommit = True  # each statement commits itself — removes any window where
-                                         # execute() succeeds but a later conn.commit() fails on a
-                                         # connection that died in between; also matches the same
-                                         # autocommit fix already used for the SQL Server path.
+            raw_conn.autocommit = True
             DB_TYPE = "postgresql"
             conn = CompatibleConnection(raw_conn, "postgresql", database_url=DATABASE_URL)
             cursor = conn.cursor()
