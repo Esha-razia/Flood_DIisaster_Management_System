@@ -555,47 +555,47 @@ const AdminDashboard = () => {
               className="field-input py-2.5 text-sm mb-4 max-w-sm"
             />
 
-            <div className="overflow-x-auto">
+            <div className="max-h-72 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
               <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-white/20">
-                    <th className="pb-3 text-muted">{t("name")}</th>
-                    <th className="pb-3 text-muted">{t("email")}</th>
-                    <th className="pb-3 text-muted">{t("role")}</th>
-                    <th className="pb-3 text-muted">{t("status")}</th>
-                    <th className="pb-3 text-muted">Joined</th>
+                <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20">
+                  <tr>
+                    <th className="py-3 px-4 text-muted">{t("name")}</th>
+                    <th className="py-3 px-4 text-muted">{t("email")}</th>
+                    <th className="py-3 px-4 text-muted">{t("role")}</th>
+                    <th className="py-3 px-4 text-muted">{t("status")}</th>
+                    <th className="py-3 px-4 text-muted">Joined</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-white/10">
                   {filteredUsers.map((user, index) => (
-                    <tr key={index} className="border-b border-white/10">
-                      <td className="py-3">
+                    <tr key={index} className="hover:bg-white/5 transition-colors">
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-sm font-bold">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
                             {user.name.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-white">{user.name}</span>
+                          <span className="text-white font-medium">{user.name}</span>
                         </div>
                       </td>
-                      <td className="py-3 text-muted">{user.email}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRoleColor(user.role)}`}>
+                      <td className="py-3 px-4 text-muted">{user.email}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getRoleColor(user.role)}`}>
                           {getRoleDisplayName(user.role)}
                         </span>
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 px-4">
                         {(() => {
                           const isActive = user.status ? user.status === "Active" : user.active !== false;
                           return (
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              isActive ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              isActive ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
                             }`}>
                               {isActive ? t("active") : t("inactive")}
                             </span>
                           );
                         })()}
                       </td>
-                      <td className="py-3 text-muted text-sm">
+                      <td className="py-3 px-4 text-muted text-xs">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
                       </td>
                     </tr>
@@ -1168,12 +1168,24 @@ const AdminDashboard = () => {
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="max-h-64 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
                 <table className="w-full text-left text-sm">
-                  <thead><tr className="border-b border-white/20 text-muted"><th className="pb-2">{t("name")}</th><th className="pb-2">{t("phoneCol")}</th><th className="pb-2">{t("cityCol")}</th><th className="pb-2">{t("skillsCol")}</th></tr></thead>
+                  <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-muted">
+                    <tr>
+                      <th className="py-2.5 px-3">{t("name")}</th>
+                      <th className="py-2.5 px-3">{t("phoneCol")}</th>
+                      <th className="py-2.5 px-3">{t("cityCol")}</th>
+                      <th className="py-2.5 px-3">{t("skillsCol")}</th>
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-white/10">
                     {volunteers.map((v) => (
-                      <tr key={v.id}><td className="py-2 text-white">{v.name}</td><td className="py-2 text-muted">{v.phone}</td><td className="py-2 text-muted">{v.city}</td><td className="py-2 text-muted">{v.skills}</td></tr>
+                      <tr key={v.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.phone}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.city}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.skills}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -1188,11 +1200,14 @@ const AdminDashboard = () => {
             {donations.length === 0 ? (
               <p className="text-sm text-muted">{t("noDonationsYet")}</p>
             ) : (
-              <div className="space-y-2">
+              <div className="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scroll">
                 {donations.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
-                    <div><span className="text-white font-medium">{d.item}</span> <span className="text-muted">× {d.quantity} — {d.donor_name}</span></div>
-                    <span className="text-xs text-teal-300 border border-teal-500/30 rounded-full px-2 py-0.5">{d.status}</span>
+                  <div key={d.id} className="flex items-center justify-between bg-white/[0.04] border border-white/10 hover:border-white/20 rounded-xl px-4 py-3 text-sm transition-all">
+                    <div>
+                      <span className="text-white font-semibold">{d.item}</span>
+                      <span className="text-muted"> × {d.quantity} — {d.donor_name}</span>
+                    </div>
+                    <span className="text-xs text-teal-300 bg-teal-500/10 border border-teal-500/30 rounded-full px-2.5 py-0.5 font-medium">{d.status}</span>
                   </div>
                 ))}
               </div>
