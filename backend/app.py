@@ -627,6 +627,10 @@ def initialize_postgresql_db(cursor, conn):
                     # Repair a column that an earlier, blanket-TEXT version of
                     # this migration already created with the wrong type.
                     # NULLIF(..., '') avoids a cast error on empty strings.
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE INTEGER USING NULLIF({col}, '')::INTEGER")
+                    except Exception:
+                        pass
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
 
@@ -1339,6 +1343,7 @@ def predict():
                 shap_contributions = [
                     {"feature": f, "impact": round(float(imp), 4), "value": round(float(val), 3)}
                     for f, imp, val in pairs[:6]
+                ]
             except Exception as shap_error:
                 print(f"SHAP explanation failed: {shap_error}")
 
