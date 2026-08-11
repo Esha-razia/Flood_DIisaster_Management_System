@@ -1882,6 +1882,19 @@ def update_rescue_operation_status(op_id):
         except Exception as db_error:
             log_event("error", f"Failed to update rescue operation in database: {db_error}")
 
+    # Sync status back to linked community reports
+    target_report_status = "Completed" if new_status == "Completed" else ("Action Taken" if new_status == "In Progress" else "Reviewed")
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE community_reports SET status = ? WHERE linked_rescue_op_id = ?", (target_report_status, op_id))
+            conn.commit()
+        except Exception as sync_err:
+            print("REPORT STATUS SYNC ERROR:", sync_err)
+
+    for r in MEMORY_COMMUNITY_REPORTS:
+        if r.get("linked_rescue_op_id") == op_id:
+            r["status"] = target_report_status
+
     if result is None:
         return jsonify({"message": "Rescue operation not found"}), 404
     return jsonify(result)

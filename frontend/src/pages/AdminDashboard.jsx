@@ -610,7 +610,7 @@ const AdminDashboard = () => {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
               <div>
                 <h2 className="font-display text-2xl text-parchment">🗂️ Citizen Reports Moderation</h2>
-                <p className="text-sm text-muted mt-1">Review, manage and convert citizen-submitted incident reports.</p>
+                <p className="text-sm text-muted mt-1">View and filter incident reports submitted by citizens across all stages.</p>
               </div>
               <div className="flex gap-2 flex-wrap">
                 {["All", "Submitted", "Reviewed", "Action Taken", "Completed"].map(f => (
@@ -629,7 +629,7 @@ const AdminDashboard = () => {
                 if (filter === "All") return true;
                 if (filter === "Submitted") return r.status === "Submitted";
                 if (filter === "Reviewed") return r.status === "Reviewed" || r.status === "Under Review" || r.status === "Approved";
-                if (filter === "Action Taken") return r.status === "Action Taken" || r.status === "Converted to Alert" || r.status === "Converted to Rescue Op";
+                if (filter === "Action Taken") return r.status === "Action Taken" || r.status === "In Progress" || r.status === "Converted to Alert" || r.status === "Converted to Rescue Op";
                 if (filter === "Completed") return r.status === "Completed" || r.status === "Resolved";
                 return r.status === filter;
               };
@@ -645,7 +645,7 @@ const AdminDashboard = () => {
               }
 
               return (
-                <div className="space-y-4">
+                <div className="max-h-80 overflow-y-auto pr-1 space-y-4 custom-scroll">
                   {filteredList.map((report, i) => {
                     const severityColor = report.severity === "High" || report.severity === "Critical"
                       ? "text-red-400 bg-red-500/10 border-red-500/30"
@@ -655,12 +655,12 @@ const AdminDashboard = () => {
 
                     const statusColor = report.status === "Completed" || report.status === "Resolved" ? "text-emerald-400"
                       : report.status === "Reviewed" || report.status === "Approved" ? "text-blue-400"
-                      : report.status === "Action Taken" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
+                      : report.status === "Action Taken" || report.status === "In Progress" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
                       : "text-amber-400";
 
                     return (
                       <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
-                        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                           {/* Report Info */}
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -683,32 +683,6 @@ const AdminDashboard = () => {
                               <span>🕐 {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleString() : "—"}</span>
                             </div>
                           </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex flex-col gap-2 min-w-[170px]">
-                            {report.status === "Submitted" && (
-                              <button
-                                onClick={() => handleReportStatus(report.id, "Reviewed")}
-                                className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
-                              >🔍 Mark Reviewed</button>
-                            )}
-                            {report.status !== "Completed" && report.status !== "Resolved" && (
-                              <>
-                                <button
-                                  onClick={() => setConvertModal({ open: true, report, type: "alert" })}
-                                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >🚨 Create Alert</button>
-                                <button
-                                  onClick={() => setConvertModal({ open: true, report, type: "rescue" })}
-                                  className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >🚁 Launch Rescue Op</button>
-                                <button
-                                  onClick={() => handleReportStatus(report.id, "Completed")}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >✅ Mark Completed</button>
-                              </>
-                            )}
-                          </div>
                         </div>
                       </div>
                     );
@@ -717,44 +691,6 @@ const AdminDashboard = () => {
               );
             })()}
           </div>
-
-          {/* Conversion Confirmation Modal */}
-          {convertModal.open && convertModal.report && (
-            <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-              <div className="w-full max-w-md bg-ink-soft border border-white/10 rounded-2xl p-6 shadow-2xl">
-                <h3 className="font-display text-xl text-parchment mb-2">
-                  {convertModal.type === "alert" ? "🚨 Create Emergency Alert" : "🚁 Launch Rescue Operation"}
-                </h3>
-                <p className="text-muted text-sm mb-4">
-                  {convertModal.type === "alert"
-                    ? "An emergency alert will be broadcast to all users based on this report."
-                    : "A rescue operation will be immediately created and assigned for this report location."}
-                </p>
-                <div className="bg-white/5 rounded-lg p-4 mb-5 space-y-1 text-sm">
-                  <p><span className="text-muted">Location:</span> <span className="text-white">{convertModal.report.location}</span></p>
-                  <p><span className="text-muted">Type:</span> <span className="text-white">{convertModal.report.type || convertModal.report.incident_type}</span></p>
-                  <p><span className="text-muted">Severity:</span> <span className="text-white">{convertModal.report.severity}</span></p>
-                  <p><span className="text-muted">Description:</span> <span className="text-white">{convertModal.report.description}</span></p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => convertModal.type === "alert" ? handleConvertToAlert(convertModal.report) : handleConvertToRescueOp(convertModal.report)}
-                    className={`flex-1 py-2.5 rounded-xl font-semibold text-white transition-colors ${
-                      convertModal.type === "alert" ? "bg-yellow-600 hover:bg-yellow-700" : "bg-teal-600 hover:bg-teal-700"
-                    }`}
-                  >
-                    {convertModal.type === "alert" ? "Confirm & Create Alert" : "Confirm & Launch Rescue Op"}
-                  </button>
-                  <button
-                    onClick={() => setConvertModal({ open: false, report: null, type: "" })}
-                    className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* System Overview */}
           <div className="grid md:grid-cols-3 gap-8">
@@ -853,8 +789,9 @@ const AdminDashboard = () => {
               </div>
             </div>
             
-            <div className="space-y-3">
-              {alerts.slice(0, 10).map((alert, index) => (
+            <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+              {alerts.length === 0 && <p className="text-muted text-sm">{t("noAlertsYet") || "No alerts active."}</p>}
+              {alerts.map((alert, index) => (
                 <div key={index} className="bg-white/10 rounded-lg p-4 border border-white/20">
                   <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
                     <div className="flex-1">
@@ -931,27 +868,27 @@ const AdminDashboard = () => {
               <input type="date" value={predictionFilters.to} onChange={(e) => setPredictionFilters(p => ({ ...p, to: e.target.value }))}
                 className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500" />
             </div>
-            <div className="overflow-x-auto">
+            <div className="max-h-72 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
               <table className="min-w-full text-left">
-                <thead className="text-muted text-sm">
+                <thead className="sticky top-0 bg-slate-900 z-10 border-b border-white/20 text-muted text-sm">
                   <tr>
-                    <th className="px-3 py-2">{t("location2")}</th>
-                    <th className="px-3 py-2">{t("riskLabel")}</th>
-                    <th className="px-3 py-2">{t("confidence")}</th>
-                    <th className="px-3 py-2">{t("rainfallLabel")}</th>
-                    <th className="px-3 py-2">{t("riverLevelLabel")}</th>
-                    <th className="px-3 py-2">{t("timestamp")}</th>
+                    <th className="px-3 py-2.5">{t("location2")}</th>
+                    <th className="px-3 py-2.5">{t("riskLabel")}</th>
+                    <th className="px-3 py-2.5">{t("confidence")}</th>
+                    <th className="px-3 py-2.5">{t("rainfallLabel")}</th>
+                    <th className="px-3 py-2.5">{t("riverLevelLabel")}</th>
+                    <th className="px-3 py-2.5">{t("timestamp")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
-                  {filteredPredictions.slice(0, 20).map((p, i) => (
-                    <tr key={i} className="text-parchment text-sm">
-                      <td className="px-3 py-3">{p.location || "—"}</td>
+                  {filteredPredictions.map((p, i) => (
+                    <tr key={i} className="text-parchment text-sm hover:bg-white/5 transition-colors">
+                      <td className="px-3 py-3 font-medium">{p.location || "—"}</td>
                       <td className="px-3 py-3"><span className={`font-semibold ${getRiskColor(p.risk)}`}>{p.risk}</span></td>
-                      <td className="px-3 py-3">{p.confidence ? `${(p.confidence * 100).toFixed(1)}%` : "—"}</td>
-                      <td className="px-3 py-3">{p.rainfall ?? "—"} mm</td>
-                      <td className="px-3 py-3">{p.river_level ?? "—"} m</td>
-                      <td className="px-3 py-3 text-muted">{p.created_at ? new Date(p.created_at).toLocaleString() : "—"}</td>
+                      <td className="px-3 py-3 font-mono">{p.confidence ? `${(p.confidence * 100).toFixed(1)}%` : "—"}</td>
+                      <td className="px-3 py-3">{p.rainfall ? `${p.rainfall} mm` : "—"}</td>
+                      <td className="px-3 py-3">{p.river_level ? `${p.river_level} m` : "—"}</td>
+                      <td className="px-3 py-3 text-muted text-xs">{p.created_at ? new Date(p.created_at).toLocaleString() : "—"}</td>
                     </tr>
                   ))}
                   {filteredPredictions.length === 0 && (
