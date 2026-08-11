@@ -571,6 +571,18 @@ def initialize_postgresql_db(cursor, conn):
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS donations (
+      id SERIAL PRIMARY KEY,
+      donor_name TEXT,
+      contact TEXT,
+      item TEXT,
+      quantity INTEGER DEFAULT 1,
+      shelter_id INTEGER,
+      status TEXT DEFAULT 'Pledged',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
 
     # Same self-healing migration as the SQLite path above — critical here
     # because a real, already-deployed PostgreSQL database (like the one on
@@ -3769,6 +3781,30 @@ MEMORY_DONATIONS = []
 
 @app.route("/donations", methods=["GET"])
 def get_donations():
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT id, donor_name, contact, item, quantity, shelter_id, status, created_at FROM donations ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    "id": row.id,
+                    "donor_name": row.donor_name,
+                    "contact": getattr(row, "contact", ""),
+                    "item": row.item,
+                    "quantity": row.quantity,
+                    "shelter_id": getattr(row, "shelter_id", None),
+                    "status": row.status,
+                    "created_at": str(row.created_at),
+                })
+            # Merge any in-memory pledges not yet in DB
+            db_ids = {r["id"] for r in result}
+            for d in MEMORY_DONATIONS:
+                if d["id"] not in db_ids:
+                    result.append(d)
+            return jsonify(result)
+        except Exception as e:
+            print(f"[DONATIONS GET] DB error: {e}")
     return jsonify(MEMORY_DONATIONS)
 
 @app.route("/donations", methods=["POST"])
@@ -3778,24 +3814,44 @@ def create_donation():
     item = (data.get("item") or "").strip()
     if not donor_name or not item:
         return jsonify({"message": "Donor name and item are required"}), 400
+    new_id = max([d["id"] for d in MEMORY_DONATIONS], default=0) + 1
     donation = {
-        "id": (max([d["id"] for d in MEMORY_DONATIONS], default=0) + 1),
+        "id": new_id,
         "donor_name": donor_name, "contact": data.get("contact", ""),
         "item": item, "quantity": data.get("quantity", 1),
         "shelter_id": data.get("shelter_id"), "status": "Pledged",
         "created_at": str(datetime.now()),
     }
+    if DB_AVAILABLE:
+        try:
+            cursor.execute(
+                "INSERT INTO donations (donor_name, contact, item, quantity, shelter_id, status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                (donor_name, data.get("contact", ""), item, data.get("quantity", 1), data.get("shelter_id"), "Pledged")
+            )
+            row = cursor.fetchone()
+            if row:
+                donation["id"] = row.id
+            conn.commit()
+        except Exception as e:
+            print(f"[DONATIONS POST] DB error: {e}")
     MEMORY_DONATIONS.append(donation)
     return jsonify(donation), 201
 
 @app.route("/donations/<int:donation_id>", methods=["PUT"])
 def update_donation(donation_id):
     data = request.json or {}
+    new_status = data.get("status")
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE donations SET status = %s WHERE id = %s", (new_status, donation_id))
+            conn.commit()
+        except Exception as e:
+            print(f"[DONATIONS PUT] DB error: {e}")
     for d in MEMORY_DONATIONS:
         if d["id"] == donation_id:
-            d["status"] = data.get("status", d["status"])
+            d["status"] = new_status or d["status"]
             return jsonify(d)
-    return jsonify({"message": "Donation not found"}), 404
+    return jsonify({"id": donation_id, "status": new_status})
 
 # ---------------- SHELTER QR CHECK-IN ----------------
 MEMORY_CHECKINS = []  # {id, shelter_id, name, timestamp}
