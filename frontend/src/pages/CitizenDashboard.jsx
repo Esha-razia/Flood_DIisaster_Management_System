@@ -1094,12 +1094,20 @@ export default function CitizenDashboard() {
               </div>
             </div>
 
-          {/* Recent Alerts */}
-          {alerts.length > 0 && (
-            <div className="max-w-4xl mx-auto">
-              <div className="dashboard-card p-8">
-                <p className="eyebrow text-marigold-400 mb-2">{t("nearby")}</p>
-                <h3 className="font-display text-2xl text-parchment mb-6">{t("recentAlerts")}</h3>
+          {/* Recent Alerts / Nearby Emergency Alerts */}
+          <div className="max-w-4xl mx-auto">
+            <div className="dashboard-card p-8">
+              <p className="eyebrow text-marigold-400 mb-2">{t("nearby")}</p>
+              <h3 className="font-display text-2xl text-parchment mb-6">{t("recentAlerts")}</h3>
+              {alerts.length === 0 ? (
+                <div className="p-5 rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-300 text-sm flex items-center gap-3">
+                  <span className="text-2xl">🟢</span>
+                  <div>
+                    <p className="font-semibold text-white">No Active Emergency Alerts</p>
+                    <p className="text-xs text-muted mt-0.5">There are currently no active flood emergency alerts in {formData.location || "your area"}. Stay informed!</p>
+                  </div>
+                </div>
+              ) : (
                 <div className="space-y-3">
                   {alerts.slice(0, 5).map((alert, index) => (
                     <div key={index} className={`p-4 rounded-xl border ${getRiskBgColor(alert.risk)}`}>
@@ -1113,9 +1121,9 @@ export default function CitizenDashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
