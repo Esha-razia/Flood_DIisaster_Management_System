@@ -2035,15 +2035,27 @@ def add_rescue_operation_note(op_id):
 # ---------------- SHELTERS (FR-07) ----------------
 MEMORY_SHELTERS = []
 
+def clean_shelter_name(name):
+    if not name:
+        return name
+    return name.replace(" (Potential Shelter Site)", "").replace(" (ممکنہ پناہ گاہ)", "").strip()
+
 @app.route("/shelters", methods=["GET"])
 def get_shelters():
-    data = list(MEMORY_SHELTERS)
+    data = []
+    for s in MEMORY_SHELTERS:
+        item = dict(s)
+        item["name"] = clean_shelter_name(item.get("name"))
+        if item.get("name_ur"):
+            item["name_ur"] = clean_shelter_name(item.get("name_ur"))
+        data.append(item)
+
     if DB_AVAILABLE:
         try:
             cursor.execute("SELECT id, name, address, capacity, contact, latitude, longitude, verified, occupancy FROM shelters ORDER BY id DESC")
             for row in cursor.fetchall():
                 data.append({
-                    "id": row.id, "name": row.name, "name_ur": None, "address": row.address,
+                    "id": row.id, "name": clean_shelter_name(row.name), "name_ur": None, "address": row.address,
                     "capacity": row.capacity, "contact": row.contact,
                     "latitude": row.latitude, "longitude": row.longitude,
                     "verified": bool(getattr(row, "verified", 0)), "occupancy": getattr(row, "occupancy", None),
