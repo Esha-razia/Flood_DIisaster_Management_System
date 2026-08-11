@@ -610,12 +610,12 @@ const AdminDashboard = () => {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
               <div>
                 <h2 className="font-display text-2xl text-parchment">🗂️ Citizen Reports Moderation</h2>
-                <p className="text-sm text-muted mt-1">Review, approve, reject or convert citizen-submitted incident reports into emergency alerts or rescue operations.</p>
+                <p className="text-sm text-muted mt-1">Review, manage and convert citizen-submitted incident reports.</p>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {["All", "Submitted", "Approved", "Rejected", "Spam", "Converted to Alert", "Converted to Rescue Op", "Action Taken"].map(f => (
+                {["All", "Submitted", "Reviewed", "Action Taken", "Completed"].map(f => (
                   <button key={f} onClick={() => setReportsFilter(f)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
                       reportsFilter === f
                         ? "bg-teal-500 border-teal-400 text-white"
                         : "bg-white/5 border-white/20 text-muted hover:bg-white/10"
@@ -624,26 +624,39 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {communityReports.filter(r => reportsFilter === "All" || r.status === reportsFilter).length === 0 ? (
-              <div className="text-center py-10 text-muted">
-                <div className="text-4xl mb-3">📋</div>
-                <p>No reports found for this filter.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {communityReports
-                  .filter(r => reportsFilter === "All" || r.status === reportsFilter)
-                  .map((report, i) => {
+            {(() => {
+              const isReportInFilter = (r, filter) => {
+                if (filter === "All") return true;
+                if (filter === "Submitted") return r.status === "Submitted";
+                if (filter === "Reviewed") return r.status === "Reviewed" || r.status === "Under Review" || r.status === "Approved";
+                if (filter === "Action Taken") return r.status === "Action Taken" || r.status === "Converted to Alert" || r.status === "Converted to Rescue Op";
+                if (filter === "Completed") return r.status === "Completed" || r.status === "Resolved";
+                return r.status === filter;
+              };
+              const filteredList = communityReports.filter(r => isReportInFilter(r, reportsFilter));
+
+              if (filteredList.length === 0) {
+                return (
+                  <div className="text-center py-10 text-muted">
+                    <div className="text-4xl mb-3">📋</div>
+                    <p>No reports found for "{reportsFilter}".</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  {filteredList.map((report, i) => {
                     const severityColor = report.severity === "High" || report.severity === "Critical"
                       ? "text-red-400 bg-red-500/10 border-red-500/30"
                       : report.severity === "Medium"
                       ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
                       : "text-green-400 bg-green-500/10 border-green-500/30";
 
-                    const statusColor = report.status === "Approved" ? "text-green-400"
-                      : report.status === "Rejected" || report.status === "Spam" ? "text-red-400"
-                      : report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" || report.status === "Action Taken" ? "text-teal-400"
-                      : "text-yellow-400";
+                    const statusColor = report.status === "Completed" || report.status === "Resolved" ? "text-emerald-400"
+                      : report.status === "Reviewed" || report.status === "Approved" ? "text-blue-400"
+                      : report.status === "Action Taken" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
+                      : "text-amber-400";
 
                     return (
                       <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
@@ -672,33 +685,27 @@ const AdminDashboard = () => {
                           </div>
 
                           {/* Action Buttons */}
-                          <div className="flex flex-col gap-2 min-w-[160px]">
-                            {report.status === "Submitted" || report.status === "Under Review" ? (
-                              <>
-                                <button
-                                  onClick={() => handleReportStatus(report.id, "Approved")}
-                                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >✅ Approve</button>
-                                <button
-                                  onClick={() => handleReportStatus(report.id, "Rejected")}
-                                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >❌ Reject</button>
-                                <button
-                                  onClick={() => handleReportStatus(report.id, "Spam")}
-                                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-                                >🚫 Mark Spam</button>
-                              </>
-                            ) : null}
-                            {(report.status === "Approved" || report.status === "Submitted") && (
+                          <div className="flex flex-col gap-2 min-w-[170px]">
+                            {report.status === "Submitted" && (
+                              <button
+                                onClick={() => handleReportStatus(report.id, "Reviewed")}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
+                              >🔍 Mark Reviewed</button>
+                            )}
+                            {report.status !== "Completed" && report.status !== "Resolved" && (
                               <>
                                 <button
                                   onClick={() => setConvertModal({ open: true, report, type: "alert" })}
-                                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
                                 >🚨 Create Alert</button>
                                 <button
                                   onClick={() => setConvertModal({ open: true, report, type: "rescue" })}
-                                  className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                  className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
                                 >🚁 Launch Rescue Op</button>
+                                <button
+                                  onClick={() => handleReportStatus(report.id, "Completed")}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors"
+                                >✅ Mark Completed</button>
                               </>
                             )}
                           </div>
@@ -706,8 +713,9 @@ const AdminDashboard = () => {
                       </div>
                     );
                   })}
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Conversion Confirmation Modal */}
@@ -1084,37 +1092,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* System Logs (NFR06-02) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="eyebrow text-marigold-400 mb-2">{t("maintainability")}</p>
-                <h2 className="font-display text-2xl text-parchment">{t("systemEventLog")}</h2>
-              </div>
-              <button
-                onClick={() => { setShowLogs(v => !v); if (!showLogs) fetchLogs(); }}
-                className="btn-secondary text-sm py-2.5"
-              >
-                {showLogs ? t("hideLog") : t("viewLog")}
-              </button>
-            </div>
-            {showLogs && (
-              <div className="max-h-80 overflow-y-auto space-y-1.5 font-mono-data text-xs">
-                {logs.length === 0 && <p className="text-muted">{t("noEventsLogged")}</p>}
-                {logs.map((log, i) => (
-                  <div key={i} className={`flex gap-3 px-3 py-2 rounded-lg border ${
-                    log.level === "error" ? "bg-red-500/10 border-red-500/20 text-red-300" :
-                    log.level === "warning" ? "bg-amber-500/10 border-amber-500/20 text-amber-300" :
-                    "bg-white/5 border-white/10 text-muted"
-                  }`}>
-                    <span className="shrink-0 opacity-70">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    <span className="uppercase shrink-0 opacity-70">[{log.level}]</span>
-                    <span>{log.message}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+
 
           {/* Interactive Map (FR-04) */}
           <div className="mb-8">
