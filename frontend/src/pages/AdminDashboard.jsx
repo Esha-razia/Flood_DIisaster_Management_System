@@ -34,7 +34,6 @@ const AdminDashboard = () => {
   const [confidenceTrend, setConfidenceTrend] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [donations, setDonations] = useState([]);
-  const [showQrFor, setShowQrFor] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
   const [communityReports, setCommunityReports] = useState([]);
   const [reportsFilter, setReportsFilter] = useState("All");
@@ -948,22 +947,6 @@ const AdminDashboard = () => {
                       {s.capacity && <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">Cap: {s.capacity}</span>}
                       {s.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{s.contact}</span>}
                     </div>
-                    <button
-                      onClick={() => setShowQrFor(showQrFor === s.id ? null : s.id)}
-                      className="text-xs text-teal-400 hover:text-teal-300 text-left transition-colors"
-                    >
-                      {showQrFor === s.id ? "▲ Hide QR" : "▼ Check-in QR"}
-                    </button>
-                    {showQrFor === s.id && (
-                      <div className="pt-2 border-t border-white/10 flex items-center gap-3">
-                        <img
-                          alt={`QR for ${s.name}`}
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`${window.location.origin}/checkin/${s.id}`)}`}
-                          className="rounded bg-white p-1 w-16 h-16"
-                        />
-                        <p className="text-xs text-muted break-all font-mono">{window.location.origin}/checkin/{s.id}</p>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
