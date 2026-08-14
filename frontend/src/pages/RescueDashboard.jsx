@@ -261,20 +261,6 @@ export default function RescueDashboard() {
     }
   };
 
-  const handleUpdateHospitalOccupancy = async (hospitalId, count) => {
-    const numCount = Number(count);
-    // Optimistic UI update
-    setHospitals(prev => prev.map(h => h.id === hospitalId ? { ...h, occupancy: numCount } : h));
-    try {
-      await axios.put(`${API_BASE}/hospitals/${hospitalId}/occupancy`, { occupancy: numCount });
-      fetchHospitals();
-      setActionFeedback("Hospital ICU/Emergency occupancy updated successfully!");
-    } catch (err) {
-      console.error("Failed to update hospital occupancy:", err);
-      setActionFeedback("Hospital occupancy updated locally.");
-    }
-  };
-
   const handleAddEquipment = async (e) => {
     e.preventDefault();
     const name = newEquipment.name.trim();
