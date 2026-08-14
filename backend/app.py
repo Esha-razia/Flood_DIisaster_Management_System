@@ -2236,6 +2236,8 @@ def delete_shelter(shelter_id):
     return jsonify({"message": "Shelter deleted successfully"})
 
 # ---------------- HOSPITALS (FR-08) ----------------
+MEMORY_HOSPITALS = []
+
 @app.route("/hospitals", methods=["GET"])
 def get_hospitals():
     hospital_dict = {}
