@@ -1904,6 +1904,7 @@ export default function RescueDashboard() {
                           <input
                             type="number"
                             min="0"
+                            key={`hospital-occ-key-${h.id}-${current}`}
                             id={`hospital-occupancy-input-${h.id}`}
                             defaultValue={current}
                             placeholder="Occupied Beds"
