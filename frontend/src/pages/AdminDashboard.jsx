@@ -55,6 +55,7 @@ const AdminDashboard = () => {
   const [advisories, setAdvisories] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [handoverNotes, setHandoverNotes] = useState([]);
+  const [volunteerSkillFilter, setVolunteerSkillFilter] = useState("");
 
   useEffect(() => {
     fetchUsers();
@@ -202,6 +203,27 @@ const AdminDashboard = () => {
       const res = await axios.get(`${API_BASE}/shift-handover`);
       setHandoverNotes(res.data || []);
     } catch (err) { console.error(err); }
+  };
+
+  const toggleUserLock = async (user) => {
+    const currentStatus = user.status ? user.status === "Active" : user.active !== false;
+    const newStatus = currentStatus ? "Inactive" : "Active";
+    try {
+      await axios.put(`${API_BASE}/users/${user.id}/status`, { status: newStatus });
+      fetchUsers();
+    } catch (err) {
+      alert("Failed to update user status.");
+    }
+  };
+
+  const toggleVolunteerDeploy = async (vol) => {
+    const newStatus = vol.availability === "Deployed" ? "Available" : "Deployed";
+    try {
+      await axios.put(`${API_BASE}/volunteers/${vol.id}/status`, { availability: newStatus });
+      fetchVolunteers();
+    } catch (err) {
+      alert("Failed to update volunteer status.");
+    }
   };
 
   const fetchEvents = async () => {
@@ -724,6 +746,7 @@ const AdminDashboard = () => {
                     <th className="py-3 px-4 text-muted">{t("role")}</th>
                     <th className="py-3 px-4 text-muted">{t("status")}</th>
                     <th className="py-3 px-4 text-muted">Joined</th>
+                    <th className="py-3 px-4 text-muted text-right">Account Control</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
@@ -750,13 +773,27 @@ const AdminDashboard = () => {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                               isActive ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
                             }`}>
-                              {isActive ? t("active") : t("inactive")}
+                              {isActive ? t("active") : "Locked 🔒"}
                             </span>
                           );
                         })()}
                       </td>
                       <td className="py-3 px-4 text-muted text-xs">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {user.role !== "admin" && (
+                          <button
+                            onClick={() => toggleUserLock(user)}
+                            className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors ${
+                              (user.status ? user.status === "Active" : user.active !== false)
+                                ? "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
+                                : "bg-green-500/20 text-green-300 border-green-500/30 hover:bg-green-500/30"
+                            }`}
+                          >
+                            {(user.status ? user.status === "Active" : user.active !== false) ? "Lock 🔒" : "Unlock 🔓"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1325,10 +1362,28 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Volunteers */}
+          {/* Volunteers — with Deploy Dispatcher */}
           <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-marigold-400 mb-2">{t("safetyNetwork")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("registeredVolunteers")} ({volunteers.length})</h2>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <p className="eyebrow text-marigold-400 mb-1">{t("safetyNetwork")}</p>
+                <h2 className="font-display text-2xl text-parchment">{t("registeredVolunteers")} ({volunteers.length})</h2>
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="text-xs text-muted">Filter by skill:</span>
+                <select
+                  onChange={(e) => setVolunteerSkillFilter(e.target.value)}
+                  className="field-input py-1.5 text-xs max-w-[160px]"
+                  defaultValue=""
+                >
+                  <option value="">All Skills</option>
+                  <option value="Medical">Medical First Aid</option>
+                  <option value="Boat">Boat Navigation</option>
+                  <option value="Food">Food Distribution</option>
+                  <option value="Rescue">Search & Rescue</option>
+                </select>
+              </div>
+            </div>
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
             ) : (
@@ -1340,17 +1395,42 @@ const AdminDashboard = () => {
                       <th className="py-2.5 px-3">{t("phoneCol")}</th>
                       <th className="py-2.5 px-3">{t("cityCol")}</th>
                       <th className="py-2.5 px-3">{t("skillsCol")}</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3 text-right">Deploy</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {volunteers.map((v) => (
-                      <tr key={v.id} className="hover:bg-white/5 transition-colors">
-                        <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.phone}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.city}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.skills}</td>
-                      </tr>
-                    ))}
+                    {volunteers
+                      .filter((v) => !volunteerSkillFilter || (v.skills || "").toLowerCase().includes(volunteerSkillFilter.toLowerCase()))
+                      .map((v) => (
+                        <tr key={v.id} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
+                          <td className="py-2.5 px-3 text-muted">{v.phone}</td>
+                          <td className="py-2.5 px-3 text-muted">{v.city}</td>
+                          <td className="py-2.5 px-3 text-muted">{v.skills}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              v.availability === "Deployed"
+                                ? "bg-teal-500/20 text-teal-400 border border-teal-500/30"
+                                : "bg-green-500/20 text-green-400 border border-green-500/30"
+                            }`}>
+                              {v.availability || "Available"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <button
+                              onClick={() => toggleVolunteerDeploy(v)}
+                              className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors ${
+                                v.availability === "Deployed"
+                                  ? "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
+                                  : "bg-teal-500/10 text-teal-300 border-teal-500/20 hover:bg-teal-500/20"
+                              }`}
+                            >
+                              {v.availability === "Deployed" ? "Mark Available" : "Deploy 🚀"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -1464,6 +1544,161 @@ const AdminDashboard = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Community Forum Moderation */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">💬 Community Forum Moderation</h2>
+                <p className="text-sm text-muted mt-1">View, delete spam, and pin official emergency announcements submitted by citizens.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
+                {reports.length} Posts
+              </span>
+            </div>
+            {reports.length === 0 ? (
+              <p className="text-sm text-muted py-4">No community posts submitted yet.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                {reports.slice(0, 20).map((report) => {
+                  const severityColor = report.severity === "High" || report.severity === "Critical"
+                    ? "text-red-400 bg-red-500/10 border-red-500/30"
+                    : report.severity === "Medium"
+                    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                    : "text-green-400 bg-green-500/10 border-green-500/30";
+                  return (
+                    <div key={report.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-muted">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${severityColor}`}>{report.severity || "Unknown"}</span>
+                            <span className="text-xs text-muted">📍 {report.location}</span>
+                          </div>
+                          <p className="text-white font-medium text-sm">{report.type || report.incident_type} — {report.description?.slice(0, 80)}...</p>
+                          <p className="text-xs text-muted mt-0.5">👤 {report.authorName || report.author_name || "Anonymous"} · {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleDateString() : ""}</p>
+                        </div>
+                        <div className="flex flex-col gap-1.5 shrink-0">
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Pin this post as official emergency notice?")) return;
+                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Approved" }); fetchReports(); }
+                              catch { alert("Failed to pin post."); }
+                            }}
+                            className="text-[10px] px-2 py-1 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 font-semibold"
+                          >
+                            📌 Pin
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Mark this post as Spam and remove?")) return;
+                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Spam" }); fetchReports(); }
+                              catch { alert("Failed."); }
+                            }}
+                            className="text-[10px] px-2 py-1 rounded bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 font-semibold"
+                          >
+                            🗑 Spam
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Shelter Live Occupancy & Overflow Warning */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🏢 Shelter Occupancy & Overflow Monitor</h2>
+                <p className="text-sm text-muted mt-1">Real-time capacity tracking with overflow alerts for displaced citizens.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                {shelters.filter(s => ((s.current_occupancy || s.occupancy || 0) / (s.capacity || 100)) >= 0.9).length} At Capacity
+              </span>
+            </div>
+            {shelters.length === 0 ? (
+              <p className="text-sm text-muted py-4">No shelters registered.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {shelters.map((shelter) => {
+                    const current = shelter.current_occupancy || shelter.occupancy || 0;
+                    const capacity = shelter.capacity || 100;
+                    const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                    const isCritical = pct >= 90;
+                    const isWarning = pct >= 70 && pct < 90;
+                    const barColor = isCritical ? "bg-red-500" : isWarning ? "bg-amber-400" : "bg-teal-500";
+                    return (
+                      <div key={shelter.id} className={`bg-white/5 rounded-xl p-4 border ${
+                        isCritical ? "border-red-500/50 bg-red-500/5" : isWarning ? "border-amber-500/30" : "border-white/10"
+                      }`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h4 className="text-white font-semibold text-sm">{shelter.name}</h4>
+                            <p className="text-xs text-muted">📍 {shelter.city || shelter.location}</p>
+                          </div>
+                          {isCritical && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
+                          )}
+                        </div>
+                        <div className="w-full bg-white/10 rounded-full h-2 mb-1">
+                          <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }}></div>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted">{current} / {capacity} people</span>
+                          <span className={isCritical ? "text-red-400 font-bold" : isWarning ? "text-amber-400" : "text-teal-400"}>{pct}% Full</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ML Prediction Audit Log */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">📊 Citizen ML Flood Prediction Audit Log</h2>
+                <p className="text-sm text-muted mt-1">Real-time log of flood risk predictions run by citizens — spot high-risk regions early.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/30">
+                {accuracyHistory.length > 0 ? `${accuracyHistory.length} Model Versions` : "Live"} 
+              </span>
+            </div>
+            <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+              <p className="text-sm text-muted mb-3">High-risk flood queries by location (based on citizen reports & severity distribution):</p>
+              <div className="space-y-2">
+                {(function() {
+                  const highRisk = reports.filter(r => r.severity === "High" || r.severity === "Critical");
+                  if (highRisk.length === 0) return <p className="text-xs text-muted">No high-risk citizen reports found yet.</p>;
+                  const grouped = highRisk.reduce((acc, r) => {
+                    const loc = r.region || r.location || "Unknown";
+                    acc[loc] = (acc[loc] || 0) + 1;
+                    return acc;
+                  }, {});
+                  return Object.entries(grouped)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([loc, count]) => (
+                      <div key={loc} className="flex items-center gap-3">
+                        <span className="text-xs text-white font-medium w-32 truncate">📍 {loc}</span>
+                        <div className="flex-1 bg-white/10 rounded-full h-2">
+                          <div
+                            className="bg-red-500 h-2 rounded-full"
+                            style={{ width: `${Math.min((count / highRisk.length) * 100, 100)}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-xs text-red-400 font-bold w-14 text-right">{count} High-Risk Report{count > 1 ? "s" : ""}</span>
+                      </div>
+                    ));
+                })()}
+              </div>
+            </div>
           </div>
         </div>
       </div>

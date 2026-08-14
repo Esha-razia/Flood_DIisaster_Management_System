@@ -3629,6 +3629,46 @@ def get_rescue_stats():
         "avg_completion_minutes": round(sum(durations) / len(durations), 1) if durations else None,
     })
 
+@app.route("/volunteers/<int:vol_id>", methods=["DELETE"])
+def delete_volunteer(vol_id):
+    MEMORY_VOLUNTEERS[:] = [v for v in MEMORY_VOLUNTEERS if v["id"] != vol_id]
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("DELETE FROM volunteers WHERE id = ?", (vol_id,))
+            conn.commit()
+        except Exception as db_error:
+            log_event("error", f"Failed to delete volunteer from database: {db_error}")
+            return jsonify({"message": "Could not delete the volunteer — please try again."}), 503
+    log_event("info", f"Deleted volunteer id {vol_id}")
+    return jsonify({"message": "Volunteer deleted successfully"})
+
+@app.route("/volunteers/<int:vol_id>/status", methods=["PUT"])
+def update_volunteer_status(vol_id):
+    data = request.json or {}
+    new_status = data.get("availability", "Deployed")
+    for v in MEMORY_VOLUNTEERS:
+        if v["id"] == vol_id:
+            v["availability"] = new_status
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE volunteers SET availability = ? WHERE id = ?", (new_status, vol_id))
+            conn.commit()
+        except Exception as e:
+            print("Failed to update volunteer status:", e)
+    return jsonify({"id": vol_id, "availability": new_status})
+
+@app.route("/users/<int:user_id>/status", methods=["PUT"])
+def update_user_status(user_id):
+    data = request.json or {}
+    new_status = data.get("status", "Inactive")
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE users SET status = ? WHERE id = ?", (new_status, user_id))
+            conn.commit()
+        except Exception as e:
+            print("Failed to update user status:", e)
+    return jsonify({"id": user_id, "status": new_status})
+
 @app.route("/admin/accuracy-history", methods=["GET"])
 def get_accuracy_history():
     return jsonify(MEMORY_ACCURACY_HISTORY)
