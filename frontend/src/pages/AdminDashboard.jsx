@@ -867,7 +867,7 @@ const AdminDashboard = () => {
               }
 
               return (
-                <div className="max-h-80 overflow-y-auto pr-1 space-y-4 custom-scroll">
+                <div className="max-h-64 overflow-y-auto pr-1 space-y-4 custom-scroll">
                   {filteredList.map((report, i) => {
                     const severityColor = report.severity === "High" || report.severity === "Critical"
                       ? "text-red-400 bg-red-500/10 border-red-500/30"

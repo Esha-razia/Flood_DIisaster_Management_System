@@ -1617,7 +1617,7 @@ export default function RescueDashboard() {
               </form>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-1 custom-scroll">
               {equipment.map((item) => {
                 // Operations in the same city as this equipment are sorted
                 // first and marked 📍 — so a boat sitting in Lahore isn't
