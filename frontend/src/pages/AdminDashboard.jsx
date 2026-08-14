@@ -51,6 +51,11 @@ const AdminDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const [rescueOps, setRescueOps] = useState([]);
+  const [advisories, setAdvisories] = useState([]);
+  const [equipment, setEquipment] = useState([]);
+  const [handoverNotes, setHandoverNotes] = useState([]);
+
   useEffect(() => {
     fetchUsers();
     fetchAlerts();
@@ -62,7 +67,10 @@ const AdminDashboard = () => {
     fetchVolunteers();
     fetchDonations();
     fetchCommunityReports();
-    fetchEvents();
+    fetchRescueOps();
+    fetchAdvisories();
+    fetchEquipment();
+    fetchHandoverNotes();
   }, []);
 
   const fetchCommunityReports = async () => {
@@ -156,6 +164,44 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const fetchRescueOps = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/rescue-operations`);
+      setRescueOps(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchAdvisories = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/advisories`);
+      setAdvisories(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleDeleteAdvisory = async (id) => {
+    if (!confirm("Revoke / Delete this advisory broadcast?")) return;
+    try {
+      await axios.delete(`${API_BASE}/advisories/${id}`);
+      fetchAdvisories();
+    } catch (err) {
+      alert("Failed to delete advisory.");
+    }
+  };
+
+  const fetchEquipment = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/equipment`);
+      setEquipment(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchHandoverNotes = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/shift-handover`);
+      setHandoverNotes(res.data || []);
+    } catch (err) { console.error(err); }
   };
 
   const fetchEvents = async () => {
@@ -847,6 +893,109 @@ const AdminDashboard = () => {
             })()}
           </div>
 
+          {/* Active Rescue Operations Tracker (From Rescue Portal) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🚁 Active Rescue Operations Tracker</h2>
+                <p className="text-sm text-muted mt-1">Live oversight of ground rescue missions, team assignments, lives rescued, and backup calls.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/30">
+                {rescueOps.length} Active Missions
+              </span>
+            </div>
+
+            {rescueOps.length === 0 ? (
+              <p className="text-sm text-muted py-4">No active rescue operations recorded.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {rescueOps.map((op) => {
+                    const isBackupNeeded = op.needs_backup === 1 || op.needsBackup;
+                    return (
+                      <div key={op.id} className={`bg-white/5 rounded-xl p-4 border flex flex-col justify-between gap-2 transition-all ${
+                        isBackupNeeded ? "border-red-500/50 bg-red-500/10 animate-pulse" : "border-white/10 hover:border-teal-500/40"
+                      }`}>
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-xs font-mono text-muted">#{op.id}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              op.risk_level === "Critical" || op.risk_level === "High" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"
+                            }`}>
+                              {op.risk_level || "High Risk"}
+                            </span>
+                          </div>
+                          <h4 className="font-semibold text-white text-base">📍 {op.location}</h4>
+                          <p className="text-xs text-muted mt-1 line-clamp-2">{op.description}</p>
+                        </div>
+                        <div className="pt-2 border-t border-white/10 text-xs space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted">Assigned Team:</span>
+                            <span className="text-white font-medium">{op.assigned_team || op.assignedTeam || "Unassigned"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted">People Rescued:</span>
+                            <span className="text-emerald-400 font-bold">{op.people_rescued || op.peopleRescued || 0} Lives</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-1">
+                            <span className="text-teal-400 font-semibold">● {op.status || "Assigned"}</span>
+                            {isBackupNeeded && (
+                              <span className="px-2 py-0.5 rounded bg-red-500 text-white font-bold text-[10px]">
+                                NEEDS BACKUP 🚨
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Government Emergency Advisories Control (From Gov Portal) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">📢 Emergency Advisories Broadcasts</h2>
+                <p className="text-sm text-muted mt-1">Official government disaster warnings, evacuation notices, and regional advisories.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-marigold-500/10 text-marigold-400 border border-marigold-500/30">
+                {advisories.length} Active Advisories
+              </span>
+            </div>
+
+            {advisories.length === 0 ? (
+              <p className="text-sm text-muted py-4">No active government advisories broadcasted.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {advisories.map((adv) => (
+                    <div key={adv.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between gap-2">
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/20 text-red-300 border border-red-500/30">
+                            📍 {adv.region || "All Regions"}
+                          </span>
+                          <span className="text-xs text-muted font-mono">{adv.created_at ? new Date(adv.created_at).toLocaleDateString() : "Live"}</span>
+                        </div>
+                        <h4 className="font-semibold text-white text-base">{adv.title}</h4>
+                        <p className="text-xs text-muted mt-1 bg-white/5 p-2 rounded line-clamp-3">{adv.message}</p>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+                        <span className="text-muted">Issued by: <strong className="text-white">{adv.issued_by || "Government Official"}</strong></span>
+                        <button onClick={() => handleDeleteAdvisory(adv.id)} className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
+                          Revoke Advisory
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* System Overview */}
           <div className="grid md:grid-cols-3 gap-8">
             <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
@@ -1286,6 +1435,94 @@ const AdminDashboard = () => {
                     <span className="text-xs text-teal-300 bg-teal-500/10 border border-teal-500/30 rounded-full px-2.5 py-0.5 font-medium">{d.status}</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Relief Equipment & Emergency Gear Overview (From Rescue Portal) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🚤 Relief Equipment & Emergency Gear</h2>
+                <p className="text-sm text-muted mt-1">Tracking lifeboats, dewatering pumps, life jackets, and regional emergency supplies.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                {equipment.length} Assets Registered
+              </span>
+            </div>
+
+            {equipment.length === 0 ? (
+              <p className="text-sm text-muted py-4">No relief equipment items registered.</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-muted">
+                    <tr>
+                      <th className="py-2.5 px-3">Equipment Name</th>
+                      <th className="py-2.5 px-3">Quantity</th>
+                      <th className="py-2.5 px-3">City / Location</th>
+                      <th className="py-2.5 px-3">Notes & Operational Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {equipment.map((eq) => (
+                      <tr key={eq.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-2.5 px-3 text-white font-medium">{eq.name}</td>
+                        <td className="py-2.5 px-3 text-teal-400 font-bold">{eq.quantity || 1} units</td>
+                        <td className="py-2.5 px-3 text-muted">📍 {eq.city || "Central Warehouse"}</td>
+                        <td className="py-2.5 px-3 text-muted">{eq.notes || "Operational"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Ground Team Shift Handover Notes Log (From Rescue Portal) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">📝 Ground Operational Handover Notes</h2>
+                <p className="text-sm text-muted mt-1">Field officer shift handovers, operational briefings, and critical ground updates.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
+                {handoverNotes.length} Handover Notes
+              </span>
+            </div>
+
+            {handoverNotes.length === 0 ? (
+              <p className="text-sm text-muted py-4">No shift handover notes logged by ground teams.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {handoverNotes.map((hn) => {
+                    const isUrgent = hn.priority === "Urgent" || hn.priority === "High";
+                    return (
+                      <div key={hn.id} className={`bg-white/5 rounded-xl p-4 border flex flex-col justify-between gap-2 ${
+                        isUrgent ? "border-red-500/40 bg-red-500/5" : "border-white/10"
+                      }`}>
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              isUrgent ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-white/10 text-muted"
+                            }`}>
+                              {hn.priority || "Normal Priority"}
+                            </span>
+                            <span className="text-xs text-muted font-mono">{hn.created_at ? new Date(hn.created_at).toLocaleDateString() : "Shift Log"}</span>
+                          </div>
+                          <p className="text-xs text-parchment font-medium bg-white/5 p-2.5 rounded mt-1 line-clamp-3">"{hn.note}"</p>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-muted">
+                          <span>👤 {hn.author || "Rescue Officer"} — {hn.location || "Sector"}</span>
+                          <span className={hn.resolved ? "text-emerald-400" : "text-amber-400 font-semibold"}>
+                            {hn.resolved ? "Resolved ✓" : "● Active Shift Note"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
