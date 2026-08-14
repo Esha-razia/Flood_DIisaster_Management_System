@@ -1554,14 +1554,14 @@ const AdminDashboard = () => {
                 <p className="text-sm text-muted mt-1">View, delete spam, and pin official emergency announcements submitted by citizens.</p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
-                {reports.length} Posts
+                {communityReports.length} Posts
               </span>
             </div>
-            {reports.length === 0 ? (
+            {communityReports.length === 0 ? (
               <p className="text-sm text-muted py-4">No community posts submitted yet.</p>
             ) : (
               <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                {reports.slice(0, 20).map((report) => {
+                {communityReports.slice(0, 20).map((report) => {
                   const severityColor = report.severity === "High" || report.severity === "Critical"
                     ? "text-red-400 bg-red-500/10 border-red-500/30"
                     : report.severity === "Medium"
@@ -1583,7 +1583,7 @@ const AdminDashboard = () => {
                           <button
                             onClick={async () => {
                               if (!confirm("Pin this post as official emergency notice?")) return;
-                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Approved" }); fetchReports(); }
+                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Approved" }); fetchCommunityReports(); }
                               catch { alert("Failed to pin post."); }
                             }}
                             className="text-[10px] px-2 py-1 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 font-semibold"
@@ -1593,7 +1593,7 @@ const AdminDashboard = () => {
                           <button
                             onClick={async () => {
                               if (!confirm("Mark this post as Spam and remove?")) return;
-                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Spam" }); fetchReports(); }
+                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Spam" }); fetchCommunityReports(); }
                               catch { alert("Failed."); }
                             }}
                             className="text-[10px] px-2 py-1 rounded bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 font-semibold"
@@ -1675,7 +1675,7 @@ const AdminDashboard = () => {
               <p className="text-sm text-muted mb-3">High-risk flood queries by location (based on citizen reports & severity distribution):</p>
               <div className="space-y-2">
                 {(function() {
-                  const highRisk = reports.filter(r => r.severity === "High" || r.severity === "Critical");
+                  const highRisk = communityReports.filter(r => r.severity === "High" || r.severity === "Critical");
                   if (highRisk.length === 0) return <p className="text-xs text-muted">No high-risk citizen reports found yet.</p>;
                   const grouped = highRisk.reduce((acc, r) => {
                     const loc = r.region || r.location || "Unknown";
