@@ -220,6 +220,15 @@ export default function RescueDashboard() {
     }
   };
 
+  const fetchHandoverNotes = async () => {
+    try {
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shift-handover`));
+      setHandoverNotes(res.data || []);
+    } catch (err) {
+      console.error("Failed to load handover notes:", err);
+    }
+  };
+
   const [shelters, setShelters] = useState([]);
 
   const fetchShelters = async () => {
