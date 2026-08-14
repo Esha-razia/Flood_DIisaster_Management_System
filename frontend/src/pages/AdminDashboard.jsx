@@ -708,25 +708,9 @@ const AdminDashboard = () => {
 
           {/* User Management */}
           <div className="dashboard-card p-6 mb-8">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">{t("userManagement")}</h2>
-                <p className="text-sm text-muted mt-1">{t("userManagementDesc")}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => setShowCreateUser(true)}
-                  className="btn-secondary text-sm py-2.5"
-                >
-                  {t("newUser")}
-                </button>
-                <button
-                  onClick={() => setShowAlertModal(true)}
-                  className="btn-primary text-sm py-2.5"
-                >
-                  {t("newAlert")}
-                </button>
-              </div>
+            <div className="mb-6">
+              <h2 className="font-display text-2xl text-parchment">{t("userManagement")}</h2>
+              <p className="text-sm text-muted mt-1">{t("userManagementDesc")}</p>
             </div>
 
             <input
@@ -1542,69 +1526,6 @@ const AdminDashboard = () => {
                     );
                   })}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Community Forum Moderation */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">💬 Community Forum Moderation</h2>
-                <p className="text-sm text-muted mt-1">View, delete spam, and pin official emergency announcements submitted by citizens.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
-                {communityReports.length} Posts
-              </span>
-            </div>
-            {communityReports.length === 0 ? (
-              <p className="text-sm text-muted py-4">No community posts submitted yet.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                {communityReports.slice(0, 20).map((report) => {
-                  const severityColor = report.severity === "High" || report.severity === "Critical"
-                    ? "text-red-400 bg-red-500/10 border-red-500/30"
-                    : report.severity === "Medium"
-                    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
-                    : "text-green-400 bg-green-500/10 border-green-500/30";
-                  return (
-                    <div key={report.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col gap-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-2 mb-1">
-                            <span className="text-xs font-mono text-muted">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${severityColor}`}>{report.severity || "Unknown"}</span>
-                            <span className="text-xs text-muted">📍 {report.location}</span>
-                          </div>
-                          <p className="text-white font-medium text-sm">{report.type || report.incident_type} — {report.description?.slice(0, 80)}...</p>
-                          <p className="text-xs text-muted mt-0.5">👤 {report.authorName || report.author_name || "Anonymous"} · {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleDateString() : ""}</p>
-                        </div>
-                        <div className="flex flex-col gap-1.5 shrink-0">
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Pin this post as official emergency notice?")) return;
-                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Approved" }); fetchCommunityReports(); }
-                              catch { alert("Failed to pin post."); }
-                            }}
-                            className="text-[10px] px-2 py-1 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 font-semibold"
-                          >
-                            📌 Pin
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Mark this post as Spam and remove?")) return;
-                              try { await axios.put(`${API_BASE}/community-reports/${report.id}/status`, { status: "Spam" }); fetchCommunityReports(); }
-                              catch { alert("Failed."); }
-                            }}
-                            className="text-[10px] px-2 py-1 rounded bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 font-semibold"
-                          >
-                            🗑 Spam
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </div>
