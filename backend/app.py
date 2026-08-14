@@ -2203,11 +2203,13 @@ def verify_shelter(shelter_id):
             print("Failed to update shelter verification:", e)
     return jsonify({"id": shelter_id, "verified": verified})
 
-@app.route("/shelters/<int:shelter_id>/occupancy", methods=["PUT"])
+@app.route("/shelters/<int:shelter_id>/occupancy", methods=["PUT", "OPTIONS"])
 def update_shelter_occupancy(shelter_id):
     """A rescue worker updates how many people are currently at a shelter —
     kept separate from the general edit endpoint for the same reason as
     verification above."""
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
     data = request.json or {}
     try:
         occupancy = max(0, int(data.get("occupancy", 0)))
@@ -2341,10 +2343,12 @@ def update_hospital(hospital_id):
             print("Failed to update hospital in database:", e)
     return jsonify(updated or {"id": hospital_id})
 
-@app.route("/hospitals/<int:hospital_id>/verify", methods=["PUT"])
+@app.route("/hospitals/<int:hospital_id>/verify", methods=["PUT", "OPTIONS"])
 def verify_hospital(hospital_id):
     """Same idea as /shelters/<id>/verify — kept as its own endpoint so this
     flag can't be silently wiped by an unrelated general edit."""
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
     data = request.json or {}
     verified = bool(data.get("verified", True))
     for h in MEMORY_HOSPITALS:
@@ -2358,8 +2362,10 @@ def verify_hospital(hospital_id):
             print("Failed to update hospital verification:", e)
     return jsonify({"id": hospital_id, "verified": verified})
 
-@app.route("/hospitals/<int:hospital_id>/occupancy", methods=["PUT"])
+@app.route("/hospitals/<int:hospital_id>/occupancy", methods=["PUT", "OPTIONS"])
 def update_hospital_occupancy(hospital_id):
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
     data = request.json or {}
     try:
         occupancy = max(0, int(data.get("occupancy", 0)))
