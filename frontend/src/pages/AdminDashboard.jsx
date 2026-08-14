@@ -1346,28 +1346,10 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Volunteers — with Deploy Dispatcher */}
+          {/* Volunteers */}
           <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <p className="eyebrow text-marigold-400 mb-1">{t("safetyNetwork")}</p>
-                <h2 className="font-display text-2xl text-parchment">{t("registeredVolunteers")} ({volunteers.length})</h2>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="text-xs text-muted">Filter by skill:</span>
-                <select
-                  onChange={(e) => setVolunteerSkillFilter(e.target.value)}
-                  className="field-input py-1.5 text-xs max-w-[160px]"
-                  defaultValue=""
-                >
-                  <option value="">All Skills</option>
-                  <option value="Medical">Medical First Aid</option>
-                  <option value="Boat">Boat Navigation</option>
-                  <option value="Food">Food Distribution</option>
-                  <option value="Rescue">Search & Rescue</option>
-                </select>
-              </div>
-            </div>
+            <p className="eyebrow text-marigold-400 mb-2">{t("safetyNetwork")}</p>
+            <h2 className="font-display text-2xl text-parchment mb-4">{t("registeredVolunteers")} ({volunteers.length})</h2>
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
             ) : (
@@ -1379,42 +1361,17 @@ const AdminDashboard = () => {
                       <th className="py-2.5 px-3">{t("phoneCol")}</th>
                       <th className="py-2.5 px-3">{t("cityCol")}</th>
                       <th className="py-2.5 px-3">{t("skillsCol")}</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Deploy</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {volunteers
-                      .filter((v) => !volunteerSkillFilter || (v.skills || "").toLowerCase().includes(volunteerSkillFilter.toLowerCase()))
-                      .map((v) => (
-                        <tr key={v.id} className="hover:bg-white/5 transition-colors">
-                          <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
-                          <td className="py-2.5 px-3 text-muted">{v.phone}</td>
-                          <td className="py-2.5 px-3 text-muted">{v.city}</td>
-                          <td className="py-2.5 px-3 text-muted">{v.skills}</td>
-                          <td className="py-2.5 px-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              v.availability === "Deployed"
-                                ? "bg-teal-500/20 text-teal-400 border border-teal-500/30"
-                                : "bg-green-500/20 text-green-400 border border-green-500/30"
-                            }`}>
-                              {v.availability || "Available"}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => toggleVolunteerDeploy(v)}
-                              className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors ${
-                                v.availability === "Deployed"
-                                  ? "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
-                                  : "bg-teal-500/10 text-teal-300 border-teal-500/20 hover:bg-teal-500/20"
-                              }`}
-                            >
-                              {v.availability === "Deployed" ? "Mark Available" : "Deploy 🚀"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                    {volunteers.map((v) => (
+                      <tr key={v.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.phone}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.city}</td>
+                        <td className="py-2.5 px-3 text-muted">{v.skills}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
