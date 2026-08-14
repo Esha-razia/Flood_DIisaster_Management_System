@@ -1020,7 +1020,7 @@ export default function RescueDashboard() {
           {/* My Performance Stats */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("myPerformance")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("myStatsTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">📊 {t("myStatsTitle")}</h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="stat-tile text-center">
                 <div className="font-display text-2xl text-parchment">{myStats.total}</div>
@@ -1047,7 +1047,7 @@ export default function RescueDashboard() {
 
           {/* My Operations List */}
           <div className="dashboard-card p-6 mb-8">
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("myAssignedOperations")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-1">📌 {t("myAssignedOperations")}</h2>
             <p className="text-sm text-muted mb-6">{t("myAssignedOperationsDesc")}</p>
             {myOperations.length === 0 ? (
               <p className="text-muted text-center py-6">{t("noOperationsAssignedToMe")}</p>
@@ -1067,7 +1067,7 @@ export default function RescueDashboard() {
           {stats && (
             <div className="dashboard-card p-6 mb-8">
               <p className="eyebrow text-marigold-400 mb-2">{t("rescueStatsLabel")}</p>
-              <h2 className="font-display text-2xl text-parchment mb-4">{t("operationsOverviewLabel")}</h2>
+              <h2 className="font-display text-2xl text-parchment mb-4">📈 {t("operationsOverviewLabel")}</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="stat-tile text-center">
                   <div className="font-display text-2xl text-parchment">{stats.total_operations}</div>
@@ -1093,7 +1093,7 @@ export default function RescueDashboard() {
           <div className={`dashboard-card p-6 ${getEmergencyStatusColor()}`}>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="font-display text-2xl mb-2">{t("emergencyStatus")}</h2>
+                <h2 className="font-display text-2xl mb-2">🚨 {t("emergencyStatus")}</h2>
                 <p className="text-lg">{getEmergencyStatusText()}</p>
               </div>
               <div className="text-right">
@@ -1142,7 +1142,7 @@ export default function RescueDashboard() {
           {/* High Risk Alerts */}
           {highRiskAlerts.length > 0 && (
             <div className="mb-8">
-              <h2 className="font-display text-2xl text-red-400 mb-4">{t("criticalAlertsHeading")}</h2>
+              <h2 className="font-display text-2xl text-red-400 mb-4">🔔 {t("criticalAlertsHeading")}</h2>
               <div className="grid gap-4">
                 {highRiskAlerts.map((alert, index) => (
                   <div key={index} className="dashboard-card border-red-500/50 p-6">
@@ -1173,7 +1173,7 @@ export default function RescueDashboard() {
           <div className="grid md:grid-cols-2 gap-8 mb-8">
             {/* High Risk Areas */}
             <div className="dashboard-card p-6">
-              <h2 className="font-display text-xl text-red-400 mb-4">{t("highRiskAreas")}</h2>
+              <h2 className="font-display text-xl text-red-400 mb-4">🔴 {t("highRiskAreas")}</h2>
               {highRiskPredictions.length > 0 ? (
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                   {highRiskPredictions.map((pred, index) => (
@@ -1199,7 +1199,7 @@ export default function RescueDashboard() {
 
             {/* Medium Risk Areas */}
             <div className="dashboard-card p-6">
-              <h2 className="text-xl font-bold text-yellow-400 mb-4">{t("mediumRiskAreas")}</h2>
+              <h2 className="text-xl font-bold text-yellow-400 mb-4">🟡 {t("mediumRiskAreas")}</h2>
               {mediumRiskPredictions.length > 0 ? (
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                   {mediumRiskPredictions.map((pred, index) => (
@@ -1228,7 +1228,7 @@ export default function RescueDashboard() {
               made visible here so a rescue worker can actually act on it. */}
           {communityReports.length > 0 && (
             <div className="mb-8">
-              <h2 className="font-display text-2xl text-marigold-400 mb-4">{t("communityReportsHeading")}</h2>
+              <h2 className="font-display text-2xl text-marigold-400 mb-4">📢 {t("communityReportsHeading")}</h2>
               <div className="grid gap-4">
                 {communityReports.map((r) => (
                   <div key={r.id} className="dashboard-card border-marigold-500/40 p-6">
@@ -1300,7 +1300,7 @@ export default function RescueDashboard() {
           <div className="dashboard-card p-6 mb-8">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="font-display text-2xl text-parchment">{t("rescueOperations")}</h2>
+                <h2 className="font-display text-2xl text-parchment">🚤 {t("rescueOperations")}</h2>
                 <p className="text-sm text-muted">{t("rescueOpsSubtitle")}</p>
               </div>
               <button
@@ -1398,7 +1398,7 @@ export default function RescueDashboard() {
           {/* Interactive Map (FR-04) */}
           <div className="mb-8">
             <p className="eyebrow text-teal-400 mb-3">{t("liveMap")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("activeOpsBlockedRoads")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">🗺️ {t("activeOpsBlockedRoads")}</h2>
             <FloodMap height={460} canEdit={true} />
           </div>
           </>)}
@@ -1409,7 +1409,7 @@ export default function RescueDashboard() {
           {/* On-Duty Workers */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-emerald-400 mb-2">{t("coordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("onDutyWorkersTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-1">👮 {t("onDutyWorkersTitle")}</h2>
             <p className="text-sm text-muted mb-4">{t("onDutyWorkersDesc")}</p>
             {onDutyWorkers.length === 0 ? (
               <p className="text-sm text-muted">{t("noOneOnDuty")}</p>
@@ -1431,7 +1431,7 @@ export default function RescueDashboard() {
           {teamLeaderboard.length > 0 && (
             <div className="dashboard-card p-6 mb-8">
               <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-              <h2 className="font-display text-2xl text-parchment mb-1">{t("teamPerformanceTitle")}</h2>
+              <h2 className="font-display text-2xl text-parchment mb-1">⭐ {t("teamPerformanceTitle")}</h2>
               <p className="text-sm text-muted mb-4">{t("teamPerformanceDesc")}</p>
               <div className="space-y-2">
                 {teamLeaderboard.map((t2, i) => (
@@ -1457,7 +1457,7 @@ export default function RescueDashboard() {
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-                <h2 className="font-display text-2xl text-parchment">{t("rescueTeamsTitle")}</h2>
+                <h2 className="font-display text-2xl text-parchment">👥 {t("rescueTeamsTitle")}</h2>
               </div>
               <button onClick={() => setShowTeamForm((v) => !v)} className="btn-secondary text-sm py-2.5 shrink-0">
                 {showTeamForm ? t("cancel") : t("newTeamBtn")}
@@ -1531,7 +1531,7 @@ export default function RescueDashboard() {
           {/* Team Roster / Contact Directory */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("teamRosterTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">📋 {t("teamRosterTitle")}</h2>
             {rescueWorkers.length === 0 ? (
               <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
             ) : (
@@ -1568,7 +1568,7 @@ export default function RescueDashboard() {
               can browse and dispatch to a nearby operation. */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("volunteersTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-1">👷 {t("volunteersTitle")}</h2>
             <p className="text-sm text-muted mb-4">{t("volunteersDesc")}</p>
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noRescueVolunteersYet")}</p>
@@ -1608,7 +1608,7 @@ export default function RescueDashboard() {
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
-                <h2 className="font-display text-2xl text-parchment">{t("equipmentTrackerTitle")}</h2>
+                <h2 className="font-display text-2xl text-parchment">🛠️ {t("equipmentTrackerTitle")}</h2>
               </div>
               <button onClick={() => setShowEquipForm((v) => !v)} className="btn-secondary text-sm py-2.5 shrink-0">
                 {showEquipForm ? t("cancel") : t("addEquipmentBtn")}
@@ -1730,7 +1730,7 @@ export default function RescueDashboard() {
           {/* Shift Handover Notes */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-red-400 mb-2">{t("continuity")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("shiftHandoverTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-1">📝 {t("shiftHandoverTitle")}</h2>
             <p className="text-sm text-muted mb-4">{t("shiftHandoverDesc")}</p>
             <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-4">
               <input
@@ -1849,7 +1849,7 @@ export default function RescueDashboard() {
           {/* Historical Operations Search */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("recordKeeping")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">{t("historicalSearchTitle")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-1">📜 {t("historicalSearchTitle")}</h2>
             <p className="text-sm text-muted mb-4">{t("historicalSearchDesc")}</p>
             <input
               value={historySearch}
@@ -1882,7 +1882,7 @@ export default function RescueDashboard() {
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <form onSubmit={handleSubmitCompletion} className="dashboard-card p-8 max-w-lg w-full">
                 <p className="eyebrow text-emerald-400 mb-2">{t("markComplete")}</p>
-                <h2 className="font-display text-2xl text-parchment mb-1">{t("completionReportTitle")}</h2>
+                <h2 className="font-display text-2xl text-parchment mb-1">📄 {t("completionReportTitle")}</h2>
                 <p className="text-sm text-muted mb-6">{t("completionReportDesc")}</p>
 
                 <div className="space-y-4">
@@ -1927,7 +1927,7 @@ export default function RescueDashboard() {
           {selectedAlert && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-ink-soft rounded-2xl p-8 max-w-2xl w-full">
-                <h2 className="font-display text-2xl text-parchment mb-4">{t("alertDetails")}</h2>
+                <h2 className="font-display text-2xl text-parchment mb-4">🚨 {t("alertDetails")}</h2>
                 <div className={`p-4 rounded-lg mb-4 ${getRiskBgColor(selectedAlert.risk)}`}>
                   <h3 className={`text-xl font-bold ${getRiskColor(selectedAlert.risk)} mb-2`}>
                     {selectedAlert.message}
