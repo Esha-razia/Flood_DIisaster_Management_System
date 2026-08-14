@@ -678,7 +678,6 @@ const AdminDashboard = () => {
                     <th className="py-3 px-4 text-muted">{t("role")}</th>
                     <th className="py-3 px-4 text-muted">{t("status")}</th>
                     <th className="py-3 px-4 text-muted">Joined</th>
-                    <th className="py-3 px-4 text-muted text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
@@ -712,13 +711,6 @@ const AdminDashboard = () => {
                       </td>
                       <td className="py-3 px-4 text-muted text-xs">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {user.role !== "admin" && (
-                          <button onClick={() => handleDeleteUser(user.id)} className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
-                            ✕
-                          </button>
-                        )}
                       </td>
                     </tr>
                   ))}
