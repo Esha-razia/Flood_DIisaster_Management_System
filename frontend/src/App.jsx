@@ -72,6 +72,7 @@ function App() {
         <Route path="/community" element={<Community />} />
         <Route path="/map" element={<MapView />} />
         <Route path="/checkin/:shelterId" element={<CheckIn />} />
+        <Route path="/check-in/:shelterId" element={<CheckIn />} />
         <Route path="/profile" element={
           <ProtectedRoute>
             <Profile />
