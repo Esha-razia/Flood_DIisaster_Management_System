@@ -2088,27 +2088,37 @@ def clean_shelter_name(name):
 
 @app.route("/shelters", methods=["GET"])
 def get_shelters():
-    data = []
+    shelter_map = {}
     for s in MEMORY_SHELTERS:
         item = dict(s)
         item["name"] = clean_shelter_name(item.get("name"))
         if item.get("name_ur"):
             item["name_ur"] = clean_shelter_name(item.get("name_ur"))
-        data.append(item)
+        item["occupancy"] = int(item.get("occupancy", 0) or 0)
+        shelter_map[item["id"]] = item
 
     if DB_AVAILABLE:
         try:
             cursor.execute("SELECT id, name, address, capacity, contact, latitude, longitude, verified, occupancy FROM shelters ORDER BY id DESC")
             for row in cursor.fetchall():
-                data.append({
-                    "id": row.id, "name": clean_shelter_name(row.name), "name_ur": None, "address": row.address,
-                    "capacity": row.capacity, "contact": row.contact,
-                    "latitude": row.latitude, "longitude": row.longitude,
-                    "verified": bool(getattr(row, "verified", 0)), "occupancy": getattr(row, "occupancy", None),
-                })
+                sid = row.id
+                db_occ = int(getattr(row, "occupancy", 0) or 0)
+                db_ver = bool(getattr(row, "verified", 0))
+                if sid in shelter_map:
+                    shelter_map[sid]["occupancy"] = db_occ
+                    shelter_map[sid]["verified"] = db_ver
+                else:
+                    shelter_map[sid] = {
+                        "id": sid, "name": clean_shelter_name(row.name), "name_ur": None, "address": row.address,
+                        "capacity": row.capacity, "contact": row.contact,
+                        "latitude": row.latitude, "longitude": row.longitude,
+                        "verified": db_ver, "occupancy": db_occ,
+                    }
         except Exception as e:
             print("SHELTERS DB ERROR:", e)
-    return jsonify(data)
+    res = list(shelter_map.values())
+    res.sort(key=lambda x: x["id"])
+    return jsonify(res)
 
 @app.route("/shelters", methods=["POST"])
 def create_shelter():
@@ -2258,7 +2268,10 @@ def get_hospitals():
                     }
         except Exception as e:
             print("HOSPITALS DB ERROR:", e)
-    return jsonify(list(hospital_dict.values()))
+
+    res = list(hospital_dict.values())
+    res.sort(key=lambda x: x["id"])
+    return jsonify(res)
 
 @app.route("/hospitals", methods=["POST"])
 def create_hospital():
@@ -2358,14 +2371,6 @@ def update_hospital_occupancy(hospital_id):
     if DB_AVAILABLE:
         try:
             cursor.execute("UPDATE hospitals SET occupancy = ? WHERE id = ?", (occupancy, hospital_id))
-            if getattr(cursor, "rowcount", 0) == 0:
-                target = next((h for h in MEMORY_HOSPITALS if h["id"] == hospital_id), None)
-                h_name = target["name"] if target else f"Hospital #{hospital_id}"
-                h_addr = target["address"] if target else "City"
-                cursor.execute(
-                    "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
-                    (h_name, h_addr, "", "Emergency", None, None, 1, occupancy)
-                )
             conn.commit()
         except Exception as e:
             print("Failed to update hospital occupancy:", e)
