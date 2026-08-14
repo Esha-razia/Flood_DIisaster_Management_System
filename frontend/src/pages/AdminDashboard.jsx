@@ -72,6 +72,15 @@ const AdminDashboard = () => {
     fetchAdvisories();
     fetchEquipment();
     fetchHandoverNotes();
+
+    // 5s real-time live sync for Hospitals, Shelters, and Community Reports
+    const syncInterval = setInterval(() => {
+      fetchShelters();
+      fetchHospitals();
+      fetchCommunityReports();
+    }, 5000);
+
+    return () => clearInterval(syncInterval);
   }, []);
 
   const fetchCommunityReports = async () => {
@@ -1264,6 +1273,13 @@ const AdminDashboard = () => {
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${
+                        ((h.current_occupancy || h.occupancy || 0) / (h.capacity || 50)) >= 0.9
+                          ? "bg-red-500/20 text-red-300 border border-red-500/30"
+                          : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                      }`}>
+                        🛏️ ICU Beds: {h.current_occupancy || h.occupancy || 0} / {h.capacity || 50}
+                      </span>
                       {h.services && (
                         <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
                           {h.services === "Emergency" ? t("serviceEmergency") : h.services}
