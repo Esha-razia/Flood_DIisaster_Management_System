@@ -893,67 +893,6 @@ const AdminDashboard = () => {
             })()}
           </div>
 
-          {/* Active Rescue Operations Tracker (From Rescue Portal) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🚁 Active Rescue Operations Tracker</h2>
-                <p className="text-sm text-muted mt-1">Live oversight of ground rescue missions, team assignments, lives rescued, and backup calls.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/30">
-                {rescueOps.length} Active Missions
-              </span>
-            </div>
-
-            {rescueOps.length === 0 ? (
-              <p className="text-sm text-muted py-4">No active rescue operations recorded.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {rescueOps.map((op) => {
-                    const isBackupNeeded = op.needs_backup === 1 || op.needsBackup;
-                    return (
-                      <div key={op.id} className={`bg-white/5 rounded-xl p-4 border flex flex-col justify-between gap-2 transition-all ${
-                        isBackupNeeded ? "border-red-500/50 bg-red-500/10 animate-pulse" : "border-white/10 hover:border-teal-500/40"
-                      }`}>
-                        <div>
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-xs font-mono text-muted">#{op.id}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              op.risk_level === "Critical" || op.risk_level === "High" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"
-                            }`}>
-                              {op.risk_level || "High Risk"}
-                            </span>
-                          </div>
-                          <h4 className="font-semibold text-white text-base">📍 {op.location}</h4>
-                          <p className="text-xs text-muted mt-1 line-clamp-2">{op.description}</p>
-                        </div>
-                        <div className="pt-2 border-t border-white/10 text-xs space-y-1">
-                          <div className="flex justify-between">
-                            <span className="text-muted">Assigned Team:</span>
-                            <span className="text-white font-medium">{op.assigned_team || op.assignedTeam || "Unassigned"}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted">People Rescued:</span>
-                            <span className="text-emerald-400 font-bold">{op.people_rescued || op.peopleRescued || 0} Lives</span>
-                          </div>
-                          <div className="flex justify-between items-center pt-1">
-                            <span className="text-teal-400 font-semibold">● {op.status || "Assigned"}</span>
-                            {isBackupNeeded && (
-                              <span className="px-2 py-0.5 rounded bg-red-500 text-white font-bold text-[10px]">
-                                NEEDS BACKUP 🚨
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Government Emergency Advisories Control (From Gov Portal) */}
           <div className="dashboard-card p-6 mb-8">
             <div className="flex justify-between items-center mb-4">
