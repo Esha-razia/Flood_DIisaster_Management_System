@@ -1561,7 +1561,8 @@ export default function RescueDashboard() {
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noRescueVolunteersYet")}</p>
             ) : (
-              <div className="grid md:grid-cols-2 gap-3">
+              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
+                <div className="grid md:grid-cols-2 gap-3">
                 {volunteers.map((v) => {
                   const activeOps = operations.filter((o) => o.status !== "Completed");
                   return (
@@ -1585,6 +1586,7 @@ export default function RescueDashboard() {
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>
@@ -1781,7 +1783,8 @@ export default function RescueDashboard() {
             {shelters.length === 0 ? (
               <p className="text-sm text-muted py-2">No emergency shelters found.</p>
             ) : (
-              <div className="grid md:grid-cols-2 gap-3">
+              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
+                <div className="grid md:grid-cols-2 gap-3">
                 {shelters.map((s) => {
                   const current = s.current_occupancy || s.occupancy || 0;
                   const capacity = s.capacity || 100;
@@ -1826,6 +1829,7 @@ export default function RescueDashboard() {
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>
