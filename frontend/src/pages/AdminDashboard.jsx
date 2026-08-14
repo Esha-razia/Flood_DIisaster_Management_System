@@ -709,7 +709,7 @@ const AdminDashboard = () => {
           {/* User Management */}
           <div className="dashboard-card p-6 mb-8">
             <div className="mb-6">
-              <h2 className="font-display text-2xl text-parchment">{t("userManagement")}</h2>
+              <h2 className="font-display text-2xl text-parchment">👥 {t("userManagement")}</h2>
               <p className="text-sm text-muted mt-1">{t("userManagementDesc")}</p>
             </div>
 
@@ -1002,7 +1002,7 @@ const AdminDashboard = () => {
           {/* Reports Section */}
           <div className="dashboard-card p-6 mb-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="font-display text-2xl text-parchment">{t("systemReports")}</h2>
+              <h2 className="font-display text-2xl text-parchment">📊 {t("systemReports")}</h2>
               <div className="flex gap-2">
                 <button
                   onClick={() => downloadReport('users')}
@@ -1047,7 +1047,7 @@ const AdminDashboard = () => {
           {/* Alerts Management */}
           <div className="dashboard-card p-6 mb-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="font-display text-2xl text-parchment">{t("alertsLog")}</h2>
+              <h2 className="font-display text-2xl text-parchment">🚨 {t("alertsLog")}</h2>
               <div className="text-sm text-muted">
                 {statistics.totalAlerts} total alerts ({statistics.highRiskAlerts} high risk)
               </div>
@@ -1114,7 +1114,7 @@ const AdminDashboard = () => {
           {/* Predictions View (FR-09) */}
           <div className="dashboard-card p-6 mb-8">
             <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-              <h2 className="font-display text-2xl text-parchment">{t("floodPredictions")}</h2>
+              <h2 className="font-display text-2xl text-parchment">🌧️ {t("floodPredictions")}</h2>
               <button onClick={() => downloadReport('predictions')} className="bg-white/10 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
                 {t("export")} ({filteredPredictions.length})
               </button>
@@ -1167,7 +1167,7 @@ const AdminDashboard = () => {
           <div className="dashboard-card p-6 mb-8">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="font-display text-2xl text-parchment">{t("shelters")}</h2>
+                <h2 className="font-display text-2xl text-parchment">🏢 {t("shelters")}</h2>
                 <p className="text-sm text-muted mt-1">{filteredShelters.length} shelter{filteredShelters.length !== 1 ? "s" : ""} registered</p>
               </div>
               <button onClick={() => setShowShelterForm(v => !v)} className="btn-secondary text-sm py-2.5">
@@ -1222,7 +1222,7 @@ const AdminDashboard = () => {
           <div className="dashboard-card p-6 mb-8">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="font-display text-2xl text-parchment">{t("hospitals")}</h2>
+                <h2 className="font-display text-2xl text-parchment">🏥 {t("hospitals")}</h2>
                 <p className="text-sm text-muted mt-1">{filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? "s" : ""} registered</p>
               </div>
               <button onClick={() => setShowHospitalForm(v => !v)} className="btn-secondary text-sm py-2.5">
@@ -1282,14 +1282,14 @@ const AdminDashboard = () => {
           {/* Interactive Map (FR-04) */}
           <div className="mb-8">
             <p className="eyebrow text-teal-400 mb-3">{t("liveMap")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("sheltersHospitalsBlockedRoads")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">🗺️ {t("sheltersHospitalsBlockedRoads")}</h2>
             <FloodMap height={460} canEdit={true} />
           </div>
 
           {/* Model Retraining (FR10-02) */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-marigold-400 mb-3">{t("mlBackend")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-2">{t("retrainModel")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-2">🤖 {t("retrainModel")}</h2>
             <p className="text-sm text-muted mb-5 max-w-2xl">
               {t("retrainDescription")}
             </p>
@@ -1314,7 +1314,7 @@ const AdminDashboard = () => {
           {/* Model Accuracy Tracking */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("mlBackend")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("modelAccuracyOverTime")}</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">📈 {t("modelAccuracyOverTime")}</h2>
             {accuracyHistory.length === 0 ? (
               <p className="text-sm text-muted">{t("noRetrainEvents")}</p>
             ) : (
@@ -1329,7 +1329,7 @@ const AdminDashboard = () => {
               </ResponsiveContainer>
             )}
             <div className="mt-6 pt-6 border-t border-white/10">
-              <h3 className="font-display text-lg text-parchment mb-3">{t("predictionConfidenceTrend")}</h3>
+              <h3 className="font-display text-lg text-parchment mb-3">📉 {t("predictionConfidenceTrend")}</h3>
               {confidenceTrend.length === 0 ? (
                 <p className="text-sm text-muted">{t("notEnoughHistory")}</p>
               ) : (
@@ -1349,7 +1349,7 @@ const AdminDashboard = () => {
           {/* Volunteers */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-marigold-400 mb-2">{t("safetyNetwork")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("registeredVolunteers")} ({volunteers.length})</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">👷 {t("registeredVolunteers")} ({volunteers.length})</h2>
             {volunteers.length === 0 ? (
               <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
             ) : (
@@ -1381,7 +1381,7 @@ const AdminDashboard = () => {
           {/* Donations / Resource Pledges */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("donationPledges")} ({donations.length})</h2>
+            <h2 className="font-display text-2xl text-parchment mb-4">🎁 {t("donationPledges")} ({donations.length})</h2>
             {donations.length === 0 ? (
               <p className="text-sm text-muted">{t("noDonationsYet")}</p>
             ) : (
@@ -1538,46 +1538,6 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          {/* ML Prediction Audit Log */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">📊 Citizen ML Flood Prediction Audit Log</h2>
-                <p className="text-sm text-muted mt-1">Real-time log of flood risk predictions run by citizens — spot high-risk regions early.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/30">
-                {accuracyHistory.length > 0 ? `${accuracyHistory.length} Model Versions` : "Live"} 
-              </span>
-            </div>
-            <div className="bg-white/5 rounded-xl border border-white/10 p-4">
-              <p className="text-sm text-muted mb-3">High-risk flood queries by location (based on citizen reports & severity distribution):</p>
-              <div className="space-y-2">
-                {(function() {
-                  const highRisk = communityReports.filter(r => r.severity === "High" || r.severity === "Critical");
-                  if (highRisk.length === 0) return <p className="text-xs text-muted">No high-risk citizen reports found yet.</p>;
-                  const grouped = highRisk.reduce((acc, r) => {
-                    const loc = r.region || r.location || "Unknown";
-                    acc[loc] = (acc[loc] || 0) + 1;
-                    return acc;
-                  }, {});
-                  return Object.entries(grouped)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([loc, count]) => (
-                      <div key={loc} className="flex items-center gap-3">
-                        <span className="text-xs text-white font-medium w-32 truncate">📍 {loc}</span>
-                        <div className="flex-1 bg-white/10 rounded-full h-2">
-                          <div
-                            className="bg-red-500 h-2 rounded-full"
-                            style={{ width: `${Math.min((count / highRisk.length) * 100, 100)}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs text-red-400 font-bold w-14 text-right">{count} High-Risk Report{count > 1 ? "s" : ""}</span>
-                      </div>
-                    ));
-                })()}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
