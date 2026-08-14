@@ -251,6 +251,9 @@ def initialize_sqlite_db(cursor, conn):
       services TEXT,
       latitude REAL,
       longitude REAL,
+      verified INTEGER DEFAULT 0,
+      occupancy INTEGER DEFAULT 0,
+      capacity INTEGER DEFAULT 50,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -458,6 +461,9 @@ def initialize_postgresql_db(cursor, conn):
       services TEXT,
       latitude REAL,
       longitude REAL,
+      verified INTEGER DEFAULT 0,
+      occupancy INTEGER DEFAULT 0,
+      capacity INTEGER DEFAULT 50,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -750,6 +756,30 @@ if not DB_AVAILABLE and pyodbc is not None:
             DB_AVAILABLE = False
             conn = None
             cursor = None
+
+# ── Migrations: add new columns to existing databases ──────────────────────
+if DB_AVAILABLE:
+    try:
+        # Add occupancy, capacity, verified to hospitals if they don't exist yet
+        if DB_TYPE == "sqlite":
+            existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(hospitals)").fetchall()]
+            if "occupancy" not in existing_cols:
+                cursor.execute("ALTER TABLE hospitals ADD COLUMN occupancy INTEGER DEFAULT 0")
+            if "capacity" not in existing_cols:
+                cursor.execute("ALTER TABLE hospitals ADD COLUMN capacity INTEGER DEFAULT 50")
+            if "verified" not in existing_cols:
+                cursor.execute("ALTER TABLE hospitals ADD COLUMN verified INTEGER DEFAULT 0")
+            conn.commit()
+        elif DB_TYPE in ("postgresql", "sql_server"):
+            for col, coltype, default in [("occupancy", "INTEGER", "0"), ("capacity", "INTEGER", "50"), ("verified", "INTEGER", "0")]:
+                try:
+                    cursor.execute(f"ALTER TABLE hospitals ADD COLUMN {col} {coltype} DEFAULT {default}")
+                    conn.commit()
+                except Exception:
+                    pass  # column already exists
+        print("[MIGRATION] hospitals table columns verified/added: occupancy, capacity, verified")
+    except Exception as mig_err:
+        print(f"[MIGRATION] hospitals migration error (non-fatal): {mig_err}")
 
 #  LOAD MODEL + SCALER (new multi-city models, trained on FLOOD_DATASET.csv)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2314,18 +2344,33 @@ def update_hospital_occupancy(hospital_id):
         occupancy = max(0, int(data.get("occupancy", 0)))
     except (TypeError, ValueError):
         return jsonify({"message": "occupancy must be a number"}), 400
+
+    # Always update in-memory list first so the API responds correctly
     for h in MEMORY_HOSPITALS:
         if h["id"] == hospital_id:
             h["occupancy"] = occupancy
             if "capacity" in data:
-                h["capacity"] = max(1, int(data["capacity"]))
+                try:
+                    h["capacity"] = max(1, int(data["capacity"]))
+                except (TypeError, ValueError):
+                    pass
+            break
+
+    # Persist to DB — use the correct placeholder for the DB engine
     if DB_AVAILABLE:
         try:
-            cursor.execute("UPDATE hospitals SET occupancy = ? WHERE id = ?", (occupancy, hospital_id))
+            ph = "?" if DB_TYPE == "sqlite" else "%s"
+            cursor.execute(
+                f"UPDATE hospitals SET occupancy = {ph} WHERE id = {ph}",
+                (occupancy, hospital_id)
+            )
             conn.commit()
         except Exception as e:
-            print("Failed to update hospital occupancy:", e)
-    return jsonify({"id": hospital_id, "occupancy": occupancy})
+            # Non-fatal: memory is already updated, client still gets 200
+            print(f"[WARN] Hospital occupancy DB update skipped: {e}")
+
+    return jsonify({"id": hospital_id, "occupancy": occupancy, "ok": True})
+
 
 # ---------------- COMMUNITY REPORTS (FR-06) ----------------
 MEMORY_COMMUNITY_REPORTS = []
