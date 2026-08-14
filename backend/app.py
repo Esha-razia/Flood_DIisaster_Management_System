@@ -583,6 +583,18 @@ def initialize_postgresql_db(cursor, conn):
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS emergency_events (
+      id SERIAL PRIMARY KEY,
+      title TEXT,
+      location TEXT,
+      event_date TEXT,
+      event_type TEXT,
+      status TEXT DEFAULT 'Scheduled',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
 
     # Same self-healing migration as the SQLite path above — critical here
     # because a real, already-deployed PostgreSQL database (like the one on
@@ -634,13 +646,12 @@ def initialize_postgresql_db(cursor, conn):
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
 
-    # Seed default accounts in PostgreSQL so login works immediately
+    # Seed default admin account in PostgreSQL so admin login works immediately
     try:
+        # Remove old default demo accounts
+        cursor.execute("DELETE FROM users WHERE LOWER(email) IN ('gov@example.com', 'rescue@example.com', 'citizen@example.com')")
         default_users = [
-            ("Admin User", "admin@example.com", "admin123", "admin"),
-            ("Gov Official", "gov@example.com", "gov123", "government_official"),
-            ("Rescue Worker", "rescue@example.com", "rescue123", "rescue_worker"),
-            ("Citizen User", "citizen@example.com", "citizen123", "citizen")
+            ("Admin User", "admin@example.com", "admin123", "admin")
         ]
         for name, uemail, upass, urole in default_users:
             cursor.execute("SELECT email FROM users WHERE LOWER(email) = %s", (uemail.lower(),))
@@ -4002,9 +4013,91 @@ def district_report_pdf(city):
     buf.seek(0)
     return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=f"district_report_{city}.pdf")
 
-# ==================================================================
-# END NEW FEATURES BATCH
-# ==================================================================
+# ---------------- EMERGENCY EVENTS & DRILLS ----------------
+MEMORY_EVENTS = [
+    {
+        "id": 1,
+        "title": "Karachi Coastal Monsoon Response Drill",
+        "location": "Karachi",
+        "event_date": "2026-08-25",
+        "event_type": "Emergency Drill",
+        "status": "Scheduled",
+        "notes": "Coordinating with NDMA and Rescue 1122 for simulated coastal evacuation."
+    },
+    {
+        "id": 2,
+        "title": "Lahore Relief Equipment Audit & Testing",
+        "location": "Lahore",
+        "event_date": "2026-08-28",
+        "event_type": "Equipment Audit",
+        "status": "Scheduled",
+        "notes": "Testing high-capacity dewatering pumps and inflatable lifeboats."
+    }
+]
+
+@app.route("/events", methods=["GET"])
+def get_events():
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT id, title, location, event_date, event_type, status, notes, created_at FROM emergency_events ORDER BY id DESC")
+            data = []
+            for row in cursor.fetchall():
+                data.append({
+                    "id": row.id, "title": row.title, "location": row.location,
+                    "event_date": row.event_date, "event_type": row.event_type,
+                    "status": row.status, "notes": row.notes or "",
+                    "created_at": str(row.created_at)
+                })
+            # Merge memory events if DB empty or missing
+            if data:
+                return jsonify(data)
+        except Exception as e:
+            print("EVENTS DB GET ERROR:", e)
+    return jsonify(MEMORY_EVENTS)
+
+@app.route("/events", methods=["POST"])
+def create_event():
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"message": "Title is required"}), 400
+    
+    event = {
+        "id": max([e["id"] for e in MEMORY_EVENTS], default=0) + 1,
+        "title": title,
+        "location": data.get("location", ""),
+        "event_date": data.get("event_date", ""),
+        "event_type": data.get("event_type", "Drill"),
+        "status": data.get("status", "Scheduled"),
+        "notes": data.get("notes", ""),
+        "created_at": str(datetime.now())
+    }
+    MEMORY_EVENTS.append(event)
+    if DB_AVAILABLE:
+        try:
+            cursor.execute(
+                "INSERT INTO emergency_events (title, location, event_date, event_type, status, notes) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                (title, data.get("location", ""), data.get("event_date", ""), data.get("event_type", "Drill"), data.get("status", "Scheduled"), data.get("notes", ""))
+            )
+            row = cursor.fetchone()
+            if row:
+                event["id"] = row.id
+            conn.commit()
+        except Exception as e:
+            print("EVENTS DB POST ERROR:", e)
+    return jsonify(event), 201
+
+@app.route("/events/<int:event_id>", methods=["DELETE"])
+def delete_event(event_id):
+    global MEMORY_EVENTS
+    MEMORY_EVENTS = [e for e in MEMORY_EVENTS if e["id"] != event_id]
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("DELETE FROM emergency_events WHERE id = %s", (event_id,))
+            conn.commit()
+        except Exception as e:
+            print("EVENTS DB DELETE ERROR:", e)
+    return jsonify({"message": "Event deleted successfully"})
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
