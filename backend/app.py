@@ -2219,11 +2219,8 @@ def verify_shelter(shelter_id):
             print("Failed to update shelter verification:", e)
     return jsonify({"id": shelter_id, "verified": verified})
 
-@app.route("/shelters/<int:shelter_id>/occupancy", methods=["PUT", "OPTIONS"])
+@app.route("/shelters/<int:shelter_id>/occupancy", methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"])
 def update_shelter_occupancy(shelter_id):
-    """A rescue worker updates how many people are currently at a shelter —
-    kept separate from the general edit endpoint for the same reason as
-    verification above."""
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
     data = request.json or {}
@@ -2323,8 +2320,8 @@ def create_hospital():
             cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=? AND LOWER(address)=?", (name.lower(), address.lower()))
             if cursor.fetchone().c == 0:
                 cursor.execute(
-                    "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy, capacity) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0, 50)
+                    "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
+                    (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0)
                 )
                 conn.commit()
             else:
@@ -2359,10 +2356,8 @@ def update_hospital(hospital_id):
             print("Failed to update hospital in database:", e)
     return jsonify(updated or {"id": hospital_id})
 
-@app.route("/hospitals/<int:hospital_id>/verify", methods=["PUT", "OPTIONS"])
+@app.route("/hospitals/<int:hospital_id>/verify", methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"])
 def verify_hospital(hospital_id):
-    """Same idea as /shelters/<id>/verify — kept as its own endpoint so this
-    flag can't be silently wiped by an unrelated general edit."""
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
     data = request.json or {}
@@ -2378,7 +2373,7 @@ def verify_hospital(hospital_id):
             print("Failed to update hospital verification:", e)
     return jsonify({"id": hospital_id, "verified": verified})
 
-@app.route("/hospitals/<int:hospital_id>/occupancy", methods=["PUT", "OPTIONS"])
+@app.route("/hospitals/<int:hospital_id>/occupancy", methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"])
 def update_hospital_occupancy(hospital_id):
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
