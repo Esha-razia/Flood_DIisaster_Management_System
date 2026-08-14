@@ -1066,9 +1066,19 @@ export default function CitizenDashboard() {
                           <div key={s.id} className="flex items-center justify-between text-sm border-b border-white/10 pb-2">
                             <div>
                               <p className="text-parchment font-medium">{lang === "ur" && s.name_ur ? s.name_ur : s.name}</p>
-                              <p className="text-xs text-muted">{s.distanceKm.toFixed(1)} {t("kmAway")}{s.capacity ? ` · ${t("capacityLabel")} ${s.capacity}` : ""}</p>
+                              <p className="text-xs text-muted">
+                                {s.distanceKm.toFixed(1)} {t("kmAway")}
+                                {s.capacity ? ` · 👥 ${s.current_occupancy || s.occupancy || 0} / ${s.capacity}` : ""}
+                              </p>
                             </div>
-                            <Link to={`/map?lat=${s.latitude}&lng=${s.longitude}&name=${encodeURIComponent(s.name)}`} className="text-xs text-teal-400 hover:text-teal-300 shrink-0 ml-2">{t("viewOnMap")}</Link>
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              <Link to={`/check-in/${s.id}`} className="text-xs font-semibold px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30">
+                                Check In 📍
+                              </Link>
+                              <Link to={`/map?lat=${s.latitude}&lng=${s.longitude}&name=${encodeURIComponent(s.name)}`} className="text-xs text-teal-400 hover:text-teal-300">
+                                {t("viewOnMap")}
+                              </Link>
+                            </div>
                           </div>
                         ))}
                       </div>

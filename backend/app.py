@@ -3933,6 +3933,15 @@ def shelter_checkin(shelter_id):
         "timestamp": str(datetime.now()),
     }
     MEMORY_CHECKINS.append(entry)
+    for s in MEMORY_SHELTERS:
+        if s["id"] == shelter_id:
+            s["occupancy"] = (s.get("occupancy") or 0) + 1
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE shelters SET occupancy = COALESCE(occupancy, 0) + 1 WHERE id = ?", (shelter_id,))
+            conn.commit()
+        except Exception as e:
+            print("Failed to update shelter occupancy on checkin:", e)
     return jsonify({"message": "Checked in successfully", "checkin": entry})
 
 @app.route("/shelters/<int:shelter_id>/checkins", methods=["GET"])

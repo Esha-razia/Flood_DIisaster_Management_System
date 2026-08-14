@@ -220,12 +220,24 @@ export default function RescueDashboard() {
     }
   };
 
-  const fetchHandoverNotes = async () => {
+  const [shelters, setShelters] = useState([]);
+
+  const fetchShelters = async () => {
     try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shift-handover`));
-      setHandoverNotes(res.data || []);
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shelters`));
+      setShelters(res.data || []);
     } catch (err) {
-      console.error("Failed to load handover notes:", err);
+      console.error("Failed to load shelters:", err);
+    }
+  };
+
+  const handleUpdateOccupancy = async (shelterId, count) => {
+    try {
+      await axios.put(`${API_BASE}/shelters/${shelterId}/occupancy`, { occupancy: Number(count) });
+      fetchShelters();
+      setActionFeedback("Shelter live occupancy updated successfully!");
+    } catch (err) {
+      alert("Failed to update shelter occupancy.");
     }
   };
 
@@ -447,7 +459,7 @@ export default function RescueDashboard() {
     await Promise.all([
       fetchAlerts(), fetchPredictions(), fetchOperations(), fetchRescueWorkers(),
       fetchVolunteers(), fetchStats(), fetchEquipment(), fetchHandoverNotes(),
-      fetchTeams(), fetchCommunityReports(),
+      fetchTeams(), fetchCommunityReports(), fetchShelters(),
     ]);
     setRefreshing(false);
   };
@@ -463,6 +475,7 @@ export default function RescueDashboard() {
     fetchHandoverNotes();
     fetchTeams();
     fetchCommunityReports();
+    fetchShelters();
     // A full 30s poll of everything was removed earlier because it kept
     // flashing empty/stale data — but that was caused by three real bugs
     // (a request race condition, a service worker mis-caching API calls,
@@ -1734,6 +1747,71 @@ export default function RescueDashboard() {
                         <p className="text-xs text-muted">{n.author} · {new Date(n.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
                         <button onClick={() => handleToggleResolveNote(n)} className="text-xs text-teal-300 hover:text-teal-200 shrink-0">
                           {n.resolved ? t("reopenNote") : t("markNoteResolved")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Ground Shelters & Live Occupancy Control */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="eyebrow text-teal-400 mb-1">Ground Facilities Control</p>
+                <h2 className="font-display text-2xl text-parchment">🏠 Ground Shelters Live Occupancy Manager</h2>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-300 border border-teal-500/30">
+                {shelters.length} Shelters Registered
+              </span>
+            </div>
+            <p className="text-sm text-muted mb-4">Update live headcounts for displaced citizens at emergency shelters to keep central command synced.</p>
+
+            {shelters.length === 0 ? (
+              <p className="text-sm text-muted py-2">No emergency shelters found.</p>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-3">
+                {shelters.map((s) => {
+                  const current = s.current_occupancy || s.occupancy || 0;
+                  const capacity = s.capacity || 100;
+                  const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                  const isOverflow = pct >= 90;
+                  return (
+                    <div key={s.id} className={`bg-white/[0.04] rounded-xl p-4 border flex flex-col justify-between gap-3 ${
+                      isOverflow ? "border-red-500/50 bg-red-500/10" : "border-white/10 hover:border-teal-500/30"
+                    }`}>
+                      <div>
+                        <div className="flex justify-between items-start mb-1">
+                          <h4 className="font-semibold text-white text-base">{s.name}</h4>
+                          {isOverflow && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted">📍 {s.address || s.city}</p>
+                        <div className="mt-2 flex justify-between text-xs font-medium">
+                          <span className="text-muted">Current Occupancy: <strong className="text-white">{current} / {capacity} people</strong></span>
+                          <span className={isOverflow ? "text-red-400 font-bold" : "text-teal-400"}>{pct}% Capacity</span>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-white/10 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          id={`occupancy-input-${s.id}`}
+                          defaultValue={current}
+                          placeholder="New Count"
+                          className="field-input py-1 px-2 text-xs w-28"
+                        />
+                        <button
+                          onClick={() => {
+                            const val = document.getElementById(`occupancy-input-${s.id}`)?.value;
+                            if (val !== undefined) handleUpdateOccupancy(s.id, val);
+                          }}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/30 font-semibold"
+                        >
+                          Update Count 🔢
                         </button>
                       </div>
                     </div>
