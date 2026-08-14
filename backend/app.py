@@ -2307,6 +2307,26 @@ def delete_hospital(hospital_id):
             print("Failed to delete hospital from database:", e)
     return jsonify({"message": "Hospital deleted successfully"})
 
+@app.route("/hospitals/<int:hospital_id>/occupancy", methods=["PUT"])
+def update_hospital_occupancy(hospital_id):
+    data = request.json or {}
+    try:
+        occupancy = max(0, int(data.get("occupancy", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"message": "occupancy must be a number"}), 400
+    for h in MEMORY_HOSPITALS:
+        if h["id"] == hospital_id:
+            h["occupancy"] = occupancy
+            if "capacity" in data:
+                h["capacity"] = max(1, int(data["capacity"]))
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE hospitals SET occupancy = ? WHERE id = ?", (occupancy, hospital_id))
+            conn.commit()
+        except Exception as e:
+            print("Failed to update hospital occupancy:", e)
+    return jsonify({"id": hospital_id, "occupancy": occupancy})
+
 # ---------------- COMMUNITY REPORTS (FR-06) ----------------
 MEMORY_COMMUNITY_REPORTS = []
 

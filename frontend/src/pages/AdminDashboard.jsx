@@ -1538,6 +1538,57 @@ const AdminDashboard = () => {
             )}
           </div>
 
+          {/* Hospitals Emergency Capacity & ICU Beds Monitor */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🏥 Hospitals Emergency & ICU Capacity Monitor</h2>
+                <p className="text-sm text-muted mt-1">Real-time tracking of emergency beds, ICU availability, and medical readiness across hospitals.</p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                {hospitals.filter(h => ((h.current_occupancy || h.occupancy || 0) / (h.capacity || 50)) >= 0.9).length} At Full Capacity
+              </span>
+            </div>
+            {hospitals.length === 0 ? (
+              <p className="text-sm text-muted py-4">No hospitals registered.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {hospitals.map((hospital) => {
+                    const current = hospital.current_occupancy || hospital.occupancy || 0;
+                    const capacity = hospital.capacity || 50;
+                    const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                    const isCritical = pct >= 90;
+                    const isWarning = pct >= 70 && pct < 90;
+                    const barColor = isCritical ? "bg-red-500" : isWarning ? "bg-amber-400" : "bg-emerald-500";
+                    return (
+                      <div key={hospital.id} className={`bg-white/5 rounded-xl p-4 border ${
+                        isCritical ? "border-red-500/50 bg-red-500/5" : isWarning ? "border-amber-500/30" : "border-white/10"
+                      }`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h4 className="text-white font-semibold text-sm">{hospital.name}</h4>
+                            <p className="text-xs text-muted">📍 {hospital.address || hospital.city || "Medical Facility"}</p>
+                          </div>
+                          {isCritical && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">ICU FULL 🚨</span>
+                          )}
+                        </div>
+                        <div className="w-full bg-white/10 rounded-full h-2 mb-1">
+                          <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }}></div>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted">{current} / {capacity} ICU / Emergency Beds</span>
+                          <span className={isCritical ? "text-red-400 font-bold" : isWarning ? "text-amber-400" : "text-emerald-400"}>{pct}% Occupied</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 

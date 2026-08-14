@@ -250,6 +250,27 @@ export default function RescueDashboard() {
     }
   };
 
+  const [hospitals, setHospitals] = useState([]);
+
+  const fetchHospitals = async () => {
+    try {
+      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/hospitals`));
+      setHospitals(res.data || []);
+    } catch (err) {
+      console.error("Failed to load hospitals:", err);
+    }
+  };
+
+  const handleUpdateHospitalOccupancy = async (hospitalId, count) => {
+    try {
+      await axios.put(`${API_BASE}/hospitals/${hospitalId}/occupancy`, { occupancy: Number(count) });
+      fetchHospitals();
+      setActionFeedback("Hospital ICU/Emergency occupancy updated successfully!");
+    } catch (err) {
+      alert("Failed to update hospital occupancy.");
+    }
+  };
+
   const handleAddEquipment = async (e) => {
     e.preventDefault();
     const name = newEquipment.name.trim();
@@ -468,7 +489,7 @@ export default function RescueDashboard() {
     await Promise.all([
       fetchAlerts(), fetchPredictions(), fetchOperations(), fetchRescueWorkers(),
       fetchVolunteers(), fetchStats(), fetchEquipment(), fetchHandoverNotes(),
-      fetchTeams(), fetchCommunityReports(), fetchShelters(),
+      fetchTeams(), fetchCommunityReports(), fetchShelters(), fetchHospitals(),
     ]);
     setRefreshing(false);
   };
@@ -485,6 +506,7 @@ export default function RescueDashboard() {
     fetchTeams();
     fetchCommunityReports();
     fetchShelters();
+    fetchHospitals();
     // A full 30s poll of everything was removed earlier because it kept
     // flashing empty/stale data — but that was caused by three real bugs
     // (a request race condition, a service worker mis-caching API calls,
@@ -1829,6 +1851,73 @@ export default function RescueDashboard() {
                     </div>
                   );
                 })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ground Hospitals & ICU Availability Manager */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="eyebrow text-emerald-400 mb-1">Emergency Medical Control</p>
+                <h2 className="font-display text-2xl text-parchment">🏥 Ground Hospitals ICU & Emergency Manager</h2>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                {hospitals.length} Hospitals Registered
+              </span>
+            </div>
+            <p className="text-sm text-muted mb-4">Update live ICU beds and emergency capacity across medical centers for central command routing.</p>
+
+            {hospitals.length === 0 ? (
+              <p className="text-sm text-muted py-2">No hospitals registered.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
+                <div className="grid md:grid-cols-2 gap-3">
+                  {hospitals.map((h) => {
+                    const current = h.current_occupancy || h.occupancy || 0;
+                    const capacity = h.capacity || 50;
+                    const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                    const isCritical = pct >= 90;
+                    return (
+                      <div key={h.id} className={`bg-white/[0.04] rounded-xl p-4 border flex flex-col justify-between gap-3 ${
+                        isCritical ? "border-red-500/50 bg-red-500/10" : "border-white/10 hover:border-emerald-500/30"
+                      }`}>
+                        <div>
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="font-semibold text-white text-base">{h.name}</h4>
+                            {isCritical && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">ICU FULL 🚨</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted">📍 {h.address || h.city}</p>
+                          <div className="mt-2 flex justify-between text-xs font-medium">
+                            <span className="text-muted">ICU Beds Occupied: <strong className="text-white">{current} / {capacity} beds</strong></span>
+                            <span className={isCritical ? "text-red-400 font-bold" : "text-emerald-400"}>{pct}% Capacity</span>
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-white/10 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            id={`hospital-occupancy-input-${h.id}`}
+                            defaultValue={current}
+                            placeholder="Occupied Beds"
+                            className="field-input py-1 px-2 text-xs w-28"
+                          />
+                          <button
+                            onClick={() => {
+                              const val = document.getElementById(`hospital-occupancy-input-${h.id}`)?.value;
+                              if (val !== undefined) handleUpdateHospitalOccupancy(h.id, val);
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-semibold"
+                          >
+                            Update Beds 🔢
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
