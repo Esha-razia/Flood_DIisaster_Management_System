@@ -2228,56 +2228,39 @@ def delete_shelter(shelter_id):
 # ---------------- HOSPITALS (FR-08) ----------------
 @app.route("/hospitals", methods=["GET"])
 def get_hospitals():
-    hospital_map = {}
+    data = []
+    seen_ids = set()
     for h in MEMORY_HOSPITALS:
         item = dict(h)
         item["occupancy"] = int(item.get("occupancy", 0) or 0)
         item["capacity"] = int(item.get("capacity", 50) or 50)
-        hospital_map[item["id"]] = item
+        data.append(item)
+        seen_ids.add(item["id"])
 
     if DB_AVAILABLE:
         try:
             cursor.execute("SELECT id, name, address, contact, services, latitude, longitude, verified, occupancy, capacity FROM hospitals ORDER BY id DESC")
             for row in cursor.fetchall():
-                hid = row.id
-                db_occ = int(getattr(row, "occupancy", 0) or 0)
-                db_cap = int(getattr(row, "capacity", 50) or 50)
-                db_ver = bool(getattr(row, "verified", 0))
-
-                if hid in hospital_map:
-                    hospital_map[hid]["occupancy"] = db_occ
-                    hospital_map[hid]["capacity"] = db_cap
-                    hospital_map[hid]["verified"] = db_ver
-                    if row.name: hospital_map[hid]["name"] = row.name
-                    if row.address: hospital_map[hid]["address"] = row.address
-                else:
-                    hospital_map[hid] = {
-                        "id": hid, "name": row.name, "name_ur": None, "address": row.address,
-                        "contact": row.contact, "services": row.services,
-                        "latitude": row.latitude, "longitude": row.longitude,
-                        "verified": db_ver,
-                        "occupancy": db_occ,
-                        "capacity": db_cap,
-                    }
+                hid = getattr(row, "id", None)
+                if hid and hid in seen_ids:
+                    target = next((x for x in data if x["id"] == hid), None)
+                    if target:
+                        target["occupancy"] = int(getattr(row, "occupancy", 0) or 0)
+                        target["capacity"] = int(getattr(row, "capacity", 50) or 50)
+                        target["verified"] = bool(getattr(row, "verified", 0))
+                elif hid:
+                    data.append({
+                        "id": hid, "name": getattr(row, "name", "Hospital"), "name_ur": None, "address": getattr(row, "address", ""),
+                        "contact": getattr(row, "contact", ""), "services": getattr(row, "services", "Emergency"),
+                        "latitude": getattr(row, "latitude", None), "longitude": getattr(row, "longitude", None),
+                        "verified": bool(getattr(row, "verified", 0)),
+                        "occupancy": int(getattr(row, "occupancy", 0) or 0),
+                        "capacity": int(getattr(row, "capacity", 50) or 50),
+                    })
         except Exception as e:
-            try:
-                cursor.execute("SELECT id, name, address, contact, services, latitude, longitude, verified FROM hospitals ORDER BY id DESC")
-                for row in cursor.fetchall():
-                    hid = row.id
-                    if hid in hospital_map:
-                        hospital_map[hid]["verified"] = bool(getattr(row, "verified", 0))
-                    else:
-                        hospital_map[hid] = {
-                            "id": hid, "name": row.name, "name_ur": None, "address": row.address,
-                            "contact": row.contact, "services": row.services,
-                            "latitude": row.latitude, "longitude": row.longitude,
-                            "verified": bool(getattr(row, "verified", 0)),
-                            "occupancy": 0, "capacity": 50
-                        }
-            except Exception as inner_e:
-                print("HOSPITALS DB ERROR:", inner_e)
+            print("HOSPITALS DB ERROR:", e)
 
-    return jsonify(list(hospital_map.values()))
+    return jsonify(data)
 
 @app.route("/hospitals", methods=["POST"])
 def create_hospital():
@@ -2309,8 +2292,8 @@ def create_hospital():
             cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=? AND LOWER(address)=?", (name.lower(), address.lower()))
             if cursor.fetchone().c == 0:
                 cursor.execute(
-                    "INSERT INTO hospitals (id, name, address, contact, services, latitude, longitude, verified, occupancy, capacity) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (hospital["id"], name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0, 50)
+                    "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy, capacity) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0, 50)
                 )
                 conn.commit()
             else:
@@ -2381,50 +2364,24 @@ def update_hospital_occupancy(hospital_id):
     except (TypeError, ValueError):
         return jsonify({"message": "occupancy must be a number"}), 400
 
-    # Update in-memory copy
-    found_in_mem = False
     for h in MEMORY_HOSPITALS:
         if h["id"] == hospital_id:
             h["occupancy"] = occupancy
             if "capacity" in data:
                 try: h["capacity"] = max(1, int(data["capacity"]))
                 except (TypeError, ValueError): pass
-            found_in_mem = True
             break
 
-    if not found_in_mem:
-        MEMORY_HOSPITALS.append({
-            "id": hospital_id,
-            "name": f"Hospital #{hospital_id}",
-            "address": "City",
-            "occupancy": occupancy,
-            "capacity": 50,
-            "verified": True
-        })
-
-    # Persist in DB (Insert if missing, Update if existing)
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE id = ?", (hospital_id,))
-            res = cursor.fetchone()
-            count = getattr(res, "c", 0) if res else 0
-
-            if count > 0:
-                cursor.execute("UPDATE hospitals SET occupancy = ? WHERE id = ?", (occupancy, hospital_id))
-            else:
-                target = next((h for h in MEMORY_HOSPITALS if h["id"] == hospital_id), None)
-                h_name = target["name"] if target else f"Hospital #{hospital_id}"
-                h_addr = target["address"] if target else "City"
-                cursor.execute(
-                    "INSERT INTO hospitals (id, name, address, contact, services, latitude, longitude, verified, occupancy, capacity) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (hospital_id, h_name, h_addr, "", "Emergency", None, None, 1, occupancy, 50)
-                )
+            cursor.execute("UPDATE hospitals SET occupancy = ? WHERE id = ?", (occupancy, hospital_id))
             conn.commit()
-            print(f"[DB PERSISTED] Hospital #{hospital_id} occupancy saved as {occupancy}")
         except Exception as e:
-            print(f"[WARN] Hospital occupancy DB upsert error: {e}")
+            print("Failed to update hospital occupancy:", e)
+            try: conn.rollback()
+            except Exception: pass
 
-    return jsonify({"id": hospital_id, "occupancy": occupancy, "ok": True})
+    return jsonify({"id": hospital_id, "occupancy": occupancy})
 
 MEMORY_COMMUNITY_REPORTS = []
 
