@@ -607,65 +607,11 @@ const AdminDashboard = () => {
       <Navbar />
       <div className="pt-24 pb-16">
         <div className="max-w-7xl mx-auto px-6">
-          {/* Header & System Monitor */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
-            <div>
-              <p className="eyebrow text-marigold-400 mb-3">{t("administration")}</p>
-              <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("controlPanel")}</h1>
-              <p className="text-muted max-w-lg">{t("controlPanelDesc")}</p>
-            </div>
-
-            {/* Quick Export Toolbar (Option E) */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => downloadCSV(communityReports, `citizen_reports_${Date.now()}.csv`)}
-                className="px-3 py-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5">
-                📥 Export Reports CSV
-              </button>
-              <button onClick={() => downloadCSV(volunteers, `volunteers_${Date.now()}.csv`)}
-                className="px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5">
-                📥 Export Volunteers CSV
-              </button>
-              <button onClick={() => downloadCSV(donations, `donations_${Date.now()}.csv`)}
-                className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5">
-                📥 Export Donations CSV
-              </button>
-              <button onClick={() => window.print()}
-                className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5">
-                🖨️ Print Summary Report
-              </button>
-            </div>
-          </div>
-
-          {/* System Health & Status Monitor (Option F) */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-8 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
-              <div>
-                <div className="text-muted font-medium">Backend API</div>
-                <div className="text-white font-semibold">🟢 Active (200 OK)</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-emerald-400"></span>
-              <div>
-                <div className="text-muted font-medium">Database</div>
-                <div className="text-white font-semibold">🟢 Connected</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-teal-400"></span>
-              <div>
-                <div className="text-muted font-medium">AI Model Engine</div>
-                <div className="text-white font-semibold">🟢 XGBoost Ready</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-marigold-400"></span>
-              <div>
-                <div className="text-muted font-medium">System Clock</div>
-                <div className="text-white font-mono font-semibold">{currentTime}</div>
-              </div>
-            </div>
+          {/* Header */}
+          <div className="mb-10">
+            <p className="eyebrow text-marigold-400 mb-3">{t("administration")}</p>
+            <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("controlPanel")}</h1>
+            <p className="text-muted max-w-lg">{t("controlPanelDesc")}</p>
           </div>
 
           {/* Statistics Cards */}
@@ -699,15 +645,7 @@ const AdminDashboard = () => {
                 <h2 className="font-display text-2xl text-parchment">{t("userManagement")}</h2>
                 <p className="text-sm text-muted mt-1">{t("userManagementDesc")}</p>
               </div>
-              <div className="flex flex-wrap gap-3 items-center">
-                {selectedUserIds.length > 0 && (
-                  <button
-                    onClick={handleBulkDeleteUsers}
-                    className="px-3 py-2.5 rounded-xl bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 text-xs font-semibold transition-colors"
-                  >
-                    🗑️ Delete Selected ({selectedUserIds.length})
-                  </button>
-                )}
+              <div className="flex flex-wrap gap-3">
                 <button
                   onClick={() => setShowCreateUser(true)}
                   className="btn-secondary text-sm py-2.5"
@@ -735,20 +673,6 @@ const AdminDashboard = () => {
               <table className="w-full text-left">
                 <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20">
                   <tr>
-                    <th className="py-3 px-4 text-muted w-10">
-                      <input
-                        type="checkbox"
-                        checked={filteredUsers.length > 0 && selectedUserIds.length === filteredUsers.length}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUserIds(filteredUsers.map(u => u.id).filter(Boolean));
-                          } else {
-                            setSelectedUserIds([]);
-                          }
-                        }}
-                        className="rounded border-white/20 bg-white/10 text-teal-500 focus:ring-0"
-                      />
-                    </th>
                     <th className="py-3 px-4 text-muted">{t("name")}</th>
                     <th className="py-3 px-4 text-muted">{t("email")}</th>
                     <th className="py-3 px-4 text-muted">{t("role")}</th>
@@ -758,26 +682,8 @@ const AdminDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
-                  {filteredUsers.map((user, index) => {
-                    const uId = user.id;
-                    const isSelected = uId && selectedUserIds.includes(uId);
-                    return (
-                    <tr key={index} className={`hover:bg-white/5 transition-colors ${isSelected ? "bg-white/10" : ""}`}>
-                      <td className="py-3 px-4">
-                        <input
-                          type="checkbox"
-                          checked={isSelected || false}
-                          onChange={(e) => {
-                            if (!uId) return;
-                            if (e.target.checked) {
-                              setSelectedUserIds(prev => [...prev, uId]);
-                            } else {
-                              setSelectedUserIds(prev => prev.filter(id => id !== uId));
-                            }
-                          }}
-                          className="rounded border-white/20 bg-white/10 text-teal-500 focus:ring-0"
-                        />
-                      </td>
+                  {filteredUsers.map((user, index) => (
+                    <tr key={index} className="hover:bg-white/5 transition-colors">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
@@ -815,8 +721,7 @@ const AdminDashboard = () => {
                         )}
                       </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -830,11 +735,6 @@ const AdminDashboard = () => {
                 <p className="text-sm text-muted mt-1">View, filter, analyze, and manage incident reports submitted by citizens across all stages.</p>
               </div>
               <div className="flex gap-2 flex-wrap items-center">
-                {selectedReportIds.length > 0 && (
-                  <button onClick={handleBulkDeleteReports} className="px-3 py-1.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold hover:bg-red-500/30">
-                    🗑️ Delete Selected ({selectedReportIds.length})
-                  </button>
-                )}
                 {["All", "Submitted", "Reviewed", "Action Taken", "Completed"].map(f => (
                   <button key={f} onClick={() => setReportsFilter(f)}
                     className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
@@ -921,22 +821,12 @@ const AdminDashboard = () => {
                       : report.status === "Action Taken" || report.status === "In Progress" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
                       : "text-amber-400";
 
-                    const isSelected = selectedReportIds.includes(report.id);
                     return (
-                      <div key={i} className={`bg-white/5 border rounded-xl p-5 hover:border-white/20 transition-all ${isSelected ? "border-teal-500/50 bg-teal-500/5" : "border-white/10"}`}>
+                      <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
                         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                           {/* Report Info */}
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) setSelectedReportIds(p => [...p, report.id]);
-                                  else setSelectedReportIds(p => p.filter(id => id !== report.id));
-                                }}
-                                className="rounded border-white/20 bg-white/10 text-teal-500 focus:ring-0 mr-1"
-                              />
                               <span className="text-xs text-muted font-mono">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${severityColor}`}>
                                 {report.severity || "—"}
@@ -1217,21 +1107,9 @@ const AdminDashboard = () => {
                         ✕
                       </button>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-white/5">
-                      <div className="flex flex-wrap gap-2">
-                        {s.capacity && <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">Cap: {s.capacity}</span>}
-                        {s.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{s.contact}</span>}
-                      </div>
-                      <button
-                        onClick={() => toggleVerifyShelter(s)}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors border ${
-                          s.verified
-                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                            : "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
-                        }`}
-                      >
-                        {s.verified ? "Verified ✅" : "+ Verify Shelter"}
-                      </button>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {s.capacity && <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">Cap: {s.capacity}</span>}
+                      {s.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{s.contact}</span>}
                     </div>
                   </div>
                 ))}
@@ -1284,84 +1162,13 @@ const AdminDashboard = () => {
                         ✕
                       </button>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-white/5">
-                      <div className="flex flex-wrap gap-2">
-                        {h.services && (
-                          <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
-                            {h.services === "Emergency" ? t("serviceEmergency") : h.services}
-                          </span>
-                        )}
-                        {h.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{h.contact}</span>}
-                      </div>
-                      <button
-                        onClick={() => toggleVerifyHospital(h)}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors border ${
-                          h.verified
-                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                            : "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
-                        }`}
-                      >
-                        {h.verified ? "Verified ✅" : "+ Verify Hospital"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Emergency Events & Drill Scheduler (Option G) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">📅 Emergency Events & Drills Manager</h2>
-                <p className="text-sm text-muted mt-1">Schedule and manage disaster readiness drills, equipment audits, and team training events.</p>
-              </div>
-              <button onClick={() => setShowEventForm(v => !v)} className="btn-secondary text-sm py-2.5">
-                {showEventForm ? "Cancel" : "+ Schedule Drill / Event"}
-              </button>
-            </div>
-
-            {showEventForm && (
-              <form onSubmit={handleCreateEvent} className="grid gap-3 md:grid-cols-2 bg-white/5 rounded-xl p-4 mb-4 border border-white/10">
-                <input required placeholder="Event / Drill Title (e.g. Coastal Monsoon Drill)" value={newEvent.title} onChange={(e) => setNewEvent(p => ({ ...p, title: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input placeholder="Location (e.g. Karachi / Lahore)" value={newEvent.location} onChange={(e) => setNewEvent(p => ({ ...p, location: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input type="date" value={newEvent.event_date} onChange={(e) => setNewEvent(p => ({ ...p, event_date: e.target.value }))}
-                  className="field-input py-2.5" />
-                <select value={newEvent.event_type} onChange={(e) => setNewEvent(p => ({ ...p, event_type: e.target.value }))} className="field-input py-2.5">
-                  <option value="Emergency Drill">Emergency Drill</option>
-                  <option value="Equipment Audit">Equipment Audit</option>
-                  <option value="Team Readiness Training">Team Readiness Training</option>
-                  <option value="Flood Relief Drive">Flood Relief Drive</option>
-                </select>
-                <input placeholder="Event Notes & Directives..." value={newEvent.notes} onChange={(e) => setNewEvent(p => ({ ...p, notes: e.target.value }))}
-                  className="field-input py-2.5 md:col-span-2" />
-                <button type="submit" className="md:col-span-2 btn-primary">Save Event / Drill</button>
-              </form>
-            )}
-
-            <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
-              <div className="grid sm:grid-cols-2 gap-3">
-                {events.map((evt) => (
-                  <div key={evt.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between gap-3">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          {evt.event_type}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {h.services && (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
+                          {h.services === "Emergency" ? t("serviceEmergency") : h.services}
                         </span>
-                        <span className="text-xs text-muted font-mono">{evt.event_date || "TBD"}</span>
-                      </div>
-                      <h4 className="font-semibold text-white text-base">{evt.title}</h4>
-                      <p className="text-xs text-muted mt-1">📍 {evt.location || "General"}</p>
-                      {evt.notes && <p className="text-xs text-parchment/80 mt-2 bg-white/5 p-2 rounded">{evt.notes}</p>}
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                      <span className="text-xs text-emerald-400 font-semibold">● {evt.status || "Scheduled"}</span>
-                      <button onClick={() => handleDeleteEvent(evt.id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
-                        Delete Event
-                      </button>
+                      )}
+                      {h.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{h.contact}</span>}
                     </div>
                   </div>
                 ))}
