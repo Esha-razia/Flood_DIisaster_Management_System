@@ -1227,6 +1227,61 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Hospitals Management (FR-08) */}
+          <div className="dashboard-card p-6 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">🏥 {t("hospitals") || "Hospitals"}</h2>
+                <p className="text-sm text-muted mt-1">{filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? "s" : ""} registered</p>
+              </div>
+              <button onClick={() => setShowHospitalForm(v => !v)} className="btn-secondary text-sm py-2.5">
+                {showHospitalForm ? t("cancel") : (t("addHospital") || "Add Hospital")}
+              </button>
+            </div>
+            {showHospitalForm && (
+              <form onSubmit={handleCreateHospital} className="grid gap-3 md:grid-cols-2 bg-white/5 rounded-xl p-4 mb-4 border border-white/10">
+                <input required placeholder={t("hospitalName") || "Hospital Name"} value={newHospital.name} onChange={(e) => setNewHospital(p => ({ ...p, name: e.target.value }))}
+                  className="field-input py-2.5" />
+                <input required placeholder={t("address") || "Address"} value={newHospital.address} onChange={(e) => setNewHospital(p => ({ ...p, address: e.target.value }))}
+                  className="field-input py-2.5" />
+                <input placeholder={t("contact") || "Contact Phone"} value={newHospital.contact} onChange={(e) => setNewHospital(p => ({ ...p, contact: e.target.value }))}
+                  className="field-input py-2.5" />
+                <input placeholder={t("services") || "Services (Emergency, Trauma, ICU)"} value={newHospital.services} onChange={(e) => setNewHospital(p => ({ ...p, services: e.target.value }))}
+                  className="field-input py-2.5" />
+                <button type="submit" className="md:col-span-2 btn-primary">{t("saveHospital") || "Save Hospital"}</button>
+              </form>
+            )}
+            <input
+              type="text"
+              value={hospitalSearch}
+              onChange={(e) => setHospitalSearch(e.target.value)}
+              placeholder={t("searchByNameAddress")}
+              className="field-input py-2.5 text-sm mb-4 max-w-sm"
+            />
+            {filteredHospitals.length === 0 && <p className="text-muted text-sm py-4">No hospitals registered.</p>}
+            <div className="max-h-72 overflow-y-auto pr-1 space-y-0 custom-scroll">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredHospitals.map((h) => (
+                  <div key={h.id} className="bg-white/8 rounded-xl p-4 border border-white/10 hover:border-emerald-500/40 transition-all flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-white text-sm truncate">{lang === "ur" && h.name_ur ? h.name_ur : h.name}</h4>
+                        <p className="text-xs text-muted truncate mt-0.5">{h.address}</p>
+                      </div>
+                      <button onClick={() => handleDeleteHospital(h.id)} className="shrink-0 text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors">
+                        ✕
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {h.services && <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium truncate max-w-full">🏥 {h.services}</span>}
+                      {h.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{h.contact}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
 
 
 
