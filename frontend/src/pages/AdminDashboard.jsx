@@ -739,7 +739,7 @@ const AdminDashboard = () => {
                     <th className="py-3 px-4 text-muted">{t("role")}</th>
                     <th className="py-3 px-4 text-muted">{t("status")}</th>
                     <th className="py-3 px-4 text-muted">Joined</th>
-                    <th className="py-3 px-4 text-muted text-right">Account Control</th>
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
@@ -774,20 +774,7 @@ const AdminDashboard = () => {
                       <td className="py-3 px-4 text-muted text-xs">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        {user.role !== "admin" && (
-                          <button
-                            onClick={() => toggleUserLock(user)}
-                            className={`text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors ${
-                              (user.status ? user.status === "Active" : user.active !== false)
-                                ? "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
-                                : "bg-green-500/20 text-green-300 border-green-500/30 hover:bg-green-500/30"
-                            }`}
-                          >
-                            {(user.status ? user.status === "Active" : user.active !== false) ? "Lock 🔒" : "Unlock 🔓"}
-                          </button>
-                        )}
-                      </td>
+
                     </tr>
                   ))}
                 </tbody>
