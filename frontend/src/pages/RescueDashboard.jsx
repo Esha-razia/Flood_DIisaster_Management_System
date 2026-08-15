@@ -241,12 +241,15 @@ export default function RescueDashboard() {
   };
 
   const handleUpdateOccupancy = async (shelterId, count) => {
+    const val = parseInt(count, 10);
+    const newOccupancy = isNaN(val) ? 0 : Math.max(0, val);
     try {
-      await axios.put(`${API_BASE}/shelters/${shelterId}/occupancy`, { occupancy: Number(count) });
+      await axios.put(`${API_BASE}/shelters/${shelterId}/occupancy`, { occupancy: newOccupancy });
       fetchShelters();
       setActionFeedback("Shelter live occupancy updated successfully!");
     } catch (err) {
-      alert("Failed to update shelter occupancy.");
+      console.error("Failed to update shelter occupancy:", err);
+      alert(err?.response?.data?.message || err?.message || "Failed to update shelter occupancy.");
     }
   };
 
@@ -262,12 +265,15 @@ export default function RescueDashboard() {
   };
 
   const handleUpdateHospitalOccupancy = async (hospitalId, count) => {
+    const val = parseInt(count, 10);
+    const newOccupancy = isNaN(val) ? 0 : Math.max(0, val);
     try {
-      await axios.put(`${API_BASE}/hospitals/${hospitalId}/occupancy`, { occupancy: Number(count) });
+      await axios.put(`${API_BASE}/hospitals/${hospitalId}/occupancy`, { occupancy: newOccupancy });
       fetchHospitals();
       setActionFeedback("Hospital live occupancy updated successfully!");
     } catch (err) {
-      alert("Failed to update hospital occupancy.");
+      console.error("Failed to update hospital occupancy:", err);
+      alert(err?.response?.data?.message || err?.message || "Failed to update hospital occupancy.");
     }
   };
 
