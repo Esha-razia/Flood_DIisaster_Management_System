@@ -3889,17 +3889,6 @@ def create_volunteer():
     log_event("info", f"New volunteer registered: {name} ({volunteer['city']})")
     return jsonify(volunteer), 201
 
-@app.route("/volunteers/<int:vol_id>", methods=["DELETE"])
-def delete_volunteer(vol_id):
-    MEMORY_VOLUNTEERS[:] = [v for v in MEMORY_VOLUNTEERS if v["id"] != vol_id]
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("DELETE FROM volunteers WHERE id = ?", (vol_id,))
-            conn.commit()
-        except Exception as db_error:
-            log_event("error", f"Failed to delete volunteer from database: {db_error}")
-    return jsonify({"message": "Volunteer removed"})
-
 # ---------------- FAMILY / EMERGENCY CONTACTS ----------------
 MEMORY_FAMILY_CONTACTS = []  # {id, owner_email, name, phone, relation}
 
