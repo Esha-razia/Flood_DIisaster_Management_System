@@ -2223,7 +2223,7 @@ def verify_shelter(shelter_id):
 def update_shelter_occupancy(shelter_id):
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or request.json or {}
     try:
         occupancy = max(0, int(data.get("occupancy", 0)))
     except (TypeError, ValueError):
@@ -2377,7 +2377,7 @@ def verify_hospital(hospital_id):
 def update_hospital_occupancy(hospital_id):
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or request.json or {}
     try:
         occupancy = max(0, int(data.get("occupancy", 0)))
     except (TypeError, ValueError):
