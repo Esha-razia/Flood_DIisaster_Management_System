@@ -55,6 +55,12 @@ export default function Login() {
         password: password.trim()
       });
 
+      if (response.data.role === 'admin') {
+        setError('Admin accounts cannot sign in here. Please use the dedicated Administrator Portal below.');
+        setLoading(false);
+        return;
+      }
+
       // Save user role in localStorage
       localStorage.setItem('userRole', response.data.role);
       localStorage.setItem('userName', response.data.name);
@@ -64,7 +70,7 @@ export default function Login() {
       // Show success message
       setSuccess(t('loginSuccessRedirect'));
       
-      // Role-based redirection
+      // Role-based redirection (citizens, rescue workers, gov officials)
       setTimeout(() => {
         const userRole = response.data.role;
         switch(userRole) {
@@ -76,9 +82,6 @@ export default function Login() {
             break;
           case 'government_official':
             navigate('/gov-dashboard');
-            break;
-          case 'admin':
-            navigate('/admin-dashboard');
             break;
           default:
             navigate('/citizen-dashboard');

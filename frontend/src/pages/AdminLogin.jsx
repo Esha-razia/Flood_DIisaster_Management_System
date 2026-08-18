@@ -41,8 +41,8 @@ export default function AdminLogin() {
 
     try {
       // Map username 'admin' to default admin email if not an email format, ensuring compatibility with all backend versions
-      const emailPayload = cleanUser.includes('@') 
-        ? cleanUser.toLowerCase() 
+      const emailPayload = cleanUser.includes('@')
+        ? cleanUser.toLowerCase()
         : (cleanUser.toLowerCase() === 'admin' ? 'admin@example.com' : cleanUser.toLowerCase());
 
       const payload = {
@@ -53,11 +53,9 @@ export default function AdminLogin() {
 
       let response;
       try {
-        // Try standard /login endpoint first as it exists in all backend deployments
         response = await axios.post(`${API_BASE}/login`, payload);
       } catch (postErr) {
         if (postErr.response?.status === 404) {
-          // Fallback to /admin/login if /login is not found
           response = await axios.post(`${API_BASE}/admin/login`, payload);
         } else {
           throw postErr;
@@ -65,7 +63,7 @@ export default function AdminLogin() {
       }
 
       if (response.data.role !== 'admin') {
-        setError('Access Denied: This portal is strictly restricted to Authorized System Administrators.');
+        setError('Access Denied: This portal is strictly restricted to System Administrators.');
         setLoading(false);
         return;
       }
@@ -76,7 +74,7 @@ export default function AdminLogin() {
       localStorage.setItem('userEmail', response.data.email || 'admin@example.com');
       if (response.data.id) localStorage.setItem('userId', response.data.id);
 
-      setSuccess('Administrator authentication successful! Redirecting to Command Center...');
+      setSuccess('Administrator login successful! Redirecting...');
 
       setTimeout(() => {
         navigate('/admin-dashboard');
@@ -91,99 +89,78 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0f18] via-[#0d1522] to-[#0a0f18] text-parchment font-sans flex flex-col justify-between">
+    <div className="min-h-screen bg-ink text-parchment font-sans">
       <Navbar />
-      <div className="pt-28 pb-16 px-4 flex-1 flex items-center justify-center">
-        <div className="max-w-md w-full mx-auto">
-          {/* Security Badge */}
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold uppercase tracking-wider mb-3">
-              <span className="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
-              Restricted Area · Authorized Personnel Only
-            </div>
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-red-500/20 border border-amber-500/30 mx-auto flex items-center justify-center text-3xl shadow-lg shadow-amber-500/10 mb-3">
-              🛡️
-            </div>
-            <h1 className="font-display text-3xl text-parchment tracking-tight">Admin Command Portal</h1>
-            <p className="text-sm text-muted mt-1">Flood Disaster Management System Administration</p>
-          </div>
-
-          {/* Login Card */}
-          <div className="bg-white/[0.04] backdrop-blur-2xl rounded-2xl p-8 border border-white/10 shadow-2xl relative overflow-hidden">
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
-            <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none"></div>
-
-            <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
-              {error && (
-                <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-3.5 flex items-start gap-3 text-red-300 text-sm">
-                  <span className="text-base shrink-0">⚠️</span>
-                  <span>{error}</span>
-                </div>
-              )}
-              {success && (
-                <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-xl p-3.5 flex items-start gap-3 text-emerald-300 text-sm">
-                  <span className="text-base shrink-0">✅</span>
-                  <span>{success}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                  Admin Username / ID
-                </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
-                  placeholder="Enter admin username (e.g. admin)"
-                  autoComplete="username"
-                  required
-                />
+      <div className="pt-24 pb-16">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="max-w-md mx-auto">
+            <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl">
+              <div className="text-center mb-8">
+                <h1 className="font-display text-3xl text-parchment mb-2">Admin Portal</h1>
+                <p className="text-muted">Sign in with your administrator credentials</p>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                  Master Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
-                  placeholder="Enter security password"
-                  autoComplete="current-password"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-ink font-bold rounded-xl shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-ink border-t-transparent rounded-full animate-spin"></span>
-                    Authenticating Administrator...
-                  </>
-                ) : (
-                  <>
-                    <span>Unlock Admin Console</span>
-                    <span>→</span>
-                  </>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                    <p className="text-red-400 text-sm">{error}</p>
+                  </div>
                 )}
-              </button>
+                {success && (
+                  <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                    <p className="text-green-400 text-sm">{success}</p>
+                  </div>
+                )}
 
-              <div className="pt-4 border-t border-white/10 text-center">
-                <Link
-                  to="/login"
-                  className="text-xs text-muted hover:text-teal-300 transition-colors inline-flex items-center gap-1"
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2">Admin Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Enter admin username (e.g. admin)"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Enter admin password"
+                    required
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center">
+                    <input type="checkbox" className="mr-2" />
+                    <span className="text-sm text-muted">Remember me</span>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
                 >
-                  ← Return to Public Citizen Login
-                </Link>
-              </div>
-            </form>
+                  {loading ? 'Authenticating...' : 'Sign In as Admin'}
+                </button>
+
+                <div className="pt-4 mt-2 border-t border-white/10 text-center">
+                  <Link
+                    to="/login"
+                    className="text-sm text-teal-400 hover:text-teal-300 transition-colors"
+                  >
+                    ← Return to Citizen & Staff Sign In
+                  </Link>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>
