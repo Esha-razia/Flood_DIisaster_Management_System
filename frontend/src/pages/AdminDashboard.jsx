@@ -963,12 +963,6 @@ const AdminDashboard = () => {
                 >
                   ← Back to Command Center
                 </button>
-                <button
-                  onClick={() => setShowCreateUser(true)}
-                  className="btn-primary text-xs py-2 px-4 cursor-pointer"
-                >
-                  + Create New User
-                </button>
               </div>
 
               <div className="dashboard-card p-6">
@@ -1848,72 +1842,7 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* MODALS: CREATE USER & CREATE ALERT                                        */}
-      {/* ========================================================================= */}
-      {showCreateUser && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-ink-soft rounded-2xl p-8 max-w-md w-full border border-white/15 shadow-2xl">
-            <h2 className="font-display text-2xl text-parchment mb-4">Create System User</h2>
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.name}
-                  onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
-                  className="field-input py-2.5 text-sm"
-                  placeholder="e.g. Dr. Ahmad Khan"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
-                  className="field-input py-2.5 text-sm"
-                  placeholder="e.g. ahmad@flood.gov.pk"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))}
-                  className="field-input py-2.5 text-sm"
-                  placeholder="Min 6 characters"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">System Role</label>
-                <select
-                  value={newUser.role}
-                  onChange={(e) => setNewUser(p => ({ ...p, role: e.target.value }))}
-                  className="field-input py-2.5 text-sm"
-                >
-                  <option value="citizen">Citizen (General Public)</option>
-                  <option value="rescue_worker">Rescue Worker (1122 Field Operator)</option>
-                  <option value="government_official">Government Official (Policy Maker)</option>
-                  <option value="admin">System Administrator</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-4 border-t border-white/10">
-                <button type="button" onClick={() => setShowCreateUser(false)} className="btn-secondary text-xs flex-1 py-2.5">
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary text-xs flex-1 py-2.5">
-                  Create User
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+
 
       {showAlertModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
