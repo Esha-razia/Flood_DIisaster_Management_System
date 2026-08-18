@@ -634,37 +634,19 @@ const AdminDashboard = () => {
       <div className="pt-20 pb-16 flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
 
-          {/* Top Administrative Bar with Hamburger Menu Toggle & Live Time */}
+          {/* Top Administrative Bar */}
           <div className="bg-white/[0.03] backdrop-blur-xl rounded-2xl p-4 sm:p-5 border border-white/10 shadow-2xl mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Button */}
-              <button
-                onClick={() => setSidebarOpen(v => !v)}
-                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-parchment transition-all flex items-center gap-2 text-sm font-semibold cursor-pointer"
-                title="Toggle Navigation Menu"
-              >
-                <span className="text-lg">{sidebarOpen ? '✕' : '☰'}</span>
-                <span className="hidden sm:inline">Menu</span>
-              </button>
-
-              <div className="h-6 w-px bg-white/15 hidden sm:block"></div>
-
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-400">Admin Command Console</span>
-                </div>
-                <h1 className="font-display text-xl sm:text-2xl text-parchment leading-tight">
-                  {navigationSections.find(s => s.id === activeSection)?.icon} {navigationSections.find(s => s.id === activeSection)?.label}
-                </h1>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-400">Admin Command Console</span>
               </div>
+              <h1 className="font-display text-xl sm:text-2xl text-parchment leading-tight mt-0.5">
+                {navigationSections.find(s => s.id === activeSection)?.icon} {navigationSections.find(s => s.id === activeSection)?.label}
+              </h1>
             </div>
 
             <div className="flex items-center gap-3 ml-auto">
-              <div className="hidden md:flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 text-xs font-mono text-muted">
-                <span>🕒</span>
-                <span>{currentTime}</span>
-              </div>
               <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1.5">
                 <span>🛡️</span>
                 <span>Administrator</span>
@@ -679,10 +661,7 @@ const AdminDashboard = () => {
               return (
                 <button
                   key={sec.id}
-                  onClick={() => {
-                    setActiveSection(sec.id);
-                    setSidebarOpen(false);
-                  }}
+                  onClick={() => setActiveSection(sec.id)}
                   className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 flex items-center gap-2 border cursor-pointer ${
                     isActive
                       ? 'bg-amber-500 border-amber-400 text-ink shadow-lg shadow-amber-500/20 font-bold'
@@ -702,70 +681,6 @@ const AdminDashboard = () => {
               );
             })}
           </div>
-
-          {/* Collapsible Sidebar Drawer (Modal overlay on mobile & expandable drawer) */}
-          {sidebarOpen && (
-            <div className="fixed inset-0 z-50 flex">
-              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>
-              <div className="relative w-80 max-w-[85vw] bg-[#0c131f] border-r border-white/15 p-6 shadow-2xl z-10 flex flex-col justify-between overflow-y-auto">
-                <div>
-                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">🛡️</span>
-                      <div>
-                        <h3 className="font-display text-lg text-parchment">Admin Hub</h3>
-                        <p className="text-xs text-muted">System Settings & Controls</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSidebarOpen(false)}
-                      className="text-muted hover:text-white p-1 rounded-lg bg-white/5 hover:bg-white/10"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {navigationSections.map((sec) => {
-                      const isActive = activeSection === sec.id;
-                      return (
-                        <button
-                          key={sec.id}
-                          onClick={() => {
-                            setActiveSection(sec.id);
-                            setSidebarOpen(false);
-                          }}
-                          className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
-                            isActive
-                              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
-                              : 'bg-transparent border-transparent text-muted hover:bg-white/5 hover:text-parchment'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl">{sec.icon}</span>
-                            <div>
-                              <div className="text-sm font-medium">{sec.label}</div>
-                              <div className="text-[11px] text-muted line-clamp-1">{sec.desc}</div>
-                            </div>
-                          </div>
-                          {sec.badge !== null && (
-                            <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded-full text-white">
-                              {sec.badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="pt-4 mt-6 border-t border-white/10 text-xs text-muted flex items-center justify-between">
-                  <span>Server: Connected</span>
-                  <span className="text-emerald-400">● 100% Operational</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* ========================================================================= */}
           {/* SECTION 1: COMMAND CENTER OVERVIEW & INTERACTIVE CARDS                    */}
@@ -1674,7 +1589,6 @@ const AdminDashboard = () => {
                         <th className="py-2.5 px-3">City</th>
                         <th className="py-2.5 px-3">Skills</th>
                         <th className="py-2.5 px-3">Status</th>
-                        <th className="py-2.5 px-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/10">
@@ -1690,14 +1604,6 @@ const AdminDashboard = () => {
                             }`}>
                               {vol.availability || 'Available'}
                             </span>
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <button
-                              onClick={() => toggleVolunteerDeploy(vol)}
-                              className="text-[10px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-parchment font-semibold"
-                            >
-                              Toggle Deploy
-                            </button>
                           </td>
                         </tr>
                       ))}
