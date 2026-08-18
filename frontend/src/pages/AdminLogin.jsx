@@ -131,40 +131,30 @@ export default function AdminLogin() {
                 <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
                   Admin Username / ID
                 </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-muted pointer-events-none">
-                    👤
-                  </span>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
-                    placeholder="Enter admin username (e.g. admin)"
-                    autoComplete="username"
-                    required
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
+                  placeholder="Enter admin username (e.g. admin)"
+                  autoComplete="username"
+                  required
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
                   Master Password
                 </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-muted pointer-events-none">
-                    🔑
-                  </span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
-                    placeholder="Enter security password"
-                    autoComplete="current-password"
-                    required
-                  />
-                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-muted/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all text-sm"
+                  placeholder="Enter security password"
+                  autoComplete="current-password"
+                  required
+                />
               </div>
 
               <button

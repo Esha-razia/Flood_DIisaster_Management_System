@@ -608,7 +608,7 @@ const AdminDashboard = () => {
     { id: 'alerts', label: 'Alerts & Advisories', icon: '🚨', badge: alerts.length, desc: 'Emergency warnings, predictions forecast, & advisories' },
     { id: 'ground', label: 'Ground Ops & Logistics', icon: '🦺', badge: volunteers.length, desc: 'Volunteers roster, donation pledges, & field gear' },
     { id: 'aimodel', label: 'AI Model & Analytics', icon: '🤖', badge: null, desc: 'Machine learning retraining, accuracy logs, & confidence trends' },
-    { id: 'events_logs', label: 'Drills, Events & Logs', icon: '📅', badge: events.length, desc: 'Scheduled emergency drills, audit logs, & JSON exports' },
+    { id: 'events_logs', label: 'System Logs & Reports', icon: '📋', badge: null, desc: 'System activity audit logs & JSON data exports' },
   ];
 
   if (loading) {
@@ -964,7 +964,7 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Card 7: Events & Logs */}
+                  {/* Card 7: Logs & Reports */}
                   <div
                     onClick={() => setActiveSection('events_logs')}
                     className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-blue-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
@@ -972,17 +972,17 @@ const AdminDashboard = () => {
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <span className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                          📅
+                          📋
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-500/20 text-blue-300">
-                          {events.length} Drills
+                          Audit
                         </span>
                       </div>
-                      <h3 className="font-semibold text-white text-lg mb-1">Drills, Events & Audit Logs</h3>
-                      <p className="text-xs text-muted mb-4">Schedule disaster drills, view real-time system audit logs, & download JSON summary reports.</p>
+                      <h3 className="font-semibold text-white text-lg mb-1">System Audit Logs & Reports</h3>
+                      <p className="text-xs text-muted mb-4">View real-time system audit logs, security streams, & download JSON summary reports.</p>
                     </div>
                     <div className="text-xs text-blue-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      <span>View Drills & Logs</span>
+                      <span>View Logs & Reports</span>
                       <span>→</span>
                     </div>
                   </div>
@@ -1048,22 +1048,12 @@ const AdminDashboard = () => {
                 >
                   ← Back to Command Center
                 </button>
-                <div className="flex items-center gap-2">
-                  {selectedUserIds.length > 0 && (
-                    <button
-                      onClick={handleBulkDeleteUsers}
-                      className="px-3 py-2 rounded-xl bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold hover:bg-red-500/30"
-                    >
-                      Delete Selected ({selectedUserIds.length})
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowCreateUser(true)}
-                    className="btn-primary text-xs py-2 px-4 cursor-pointer"
-                  >
-                    + Create New User
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowCreateUser(true)}
+                  className="btn-primary text-xs py-2 px-4 cursor-pointer"
+                >
+                  + Create New User
+                </button>
               </div>
 
               <div className="dashboard-card p-6">
@@ -1085,42 +1075,21 @@ const AdminDashboard = () => {
                   <table className="w-full text-left">
                     <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="py-3 px-4 text-muted w-10">
-                          <input
-                            type="checkbox"
-                            checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedUserIds(filteredUsers.map(u => u.id));
-                              else setSelectedUserIds([]);
-                            }}
-                          />
-                        </th>
                         <th className="py-3 px-4 text-muted">User Name</th>
                         <th className="py-3 px-4 text-muted">Email / ID</th>
                         <th className="py-3 px-4 text-muted">System Role</th>
                         <th className="py-3 px-4 text-muted">Status</th>
                         <th className="py-3 px-4 text-muted">Joined Date</th>
-                        <th className="py-3 px-4 text-muted text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/10 text-sm">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-muted">No users matched your search.</td>
+                          <td colSpan={5} className="py-8 text-center text-muted">No users matched your search.</td>
                         </tr>
                       ) : (
                         filteredUsers.map((user, index) => (
                           <tr key={index} className="hover:bg-white/5 transition-colors">
-                            <td className="py-3 px-4">
-                              <input
-                                type="checkbox"
-                                checked={selectedUserIds.includes(user.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) setSelectedUserIds(p => [...p, user.id]);
-                                  else setSelectedUserIds(p => p.filter(id => id !== user.id));
-                                }}
-                              />
-                            </td>
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
@@ -1142,16 +1111,6 @@ const AdminDashboard = () => {
                             </td>
                             <td className="py-3 px-4 text-muted text-xs">
                               {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              {user.role !== 'admin' && (
-                                <button
-                                  onClick={() => handleDeleteUser(user.id)}
-                                  className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors"
-                                >
-                                  Delete
-                                </button>
-                              )}
                             </td>
                           </tr>
                         ))
@@ -1307,24 +1266,6 @@ const AdminDashboard = () => {
                                   <span>📍 {report.region || "—"}</span>
                                   <span>🕐 {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleString() : "—"}</span>
                                 </div>
-                              </div>
-                              <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end">
-                                {report.status === "Submitted" && (
-                                  <button
-                                    onClick={() => handleConvertToAlert(report)}
-                                    className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 font-semibold"
-                                  >
-                                    Convert to Alert 🚨
-                                  </button>
-                                )}
-                                {report.status !== "Completed" && (
-                                  <button
-                                    onClick={() => handleConvertToRescueOp(report)}
-                                    className="text-xs px-3 py-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 font-semibold"
-                                  >
-                                    Dispatch Rescue 🦺
-                                  </button>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -1932,55 +1873,6 @@ const AdminDashboard = () => {
                 >
                   ← Back to Command Center
                 </button>
-                <button
-                  onClick={() => setShowEventForm(v => !v)}
-                  className="btn-primary text-xs py-2 px-4 cursor-pointer"
-                >
-                  {showEventForm ? 'Cancel Event' : '+ Schedule Drill / Event'}
-                </button>
-              </div>
-
-              {/* Add Event Form */}
-              {showEventForm && (
-                <div className="dashboard-card p-6 bg-blue-500/[0.03] border-blue-500/30">
-                  <h3 className="font-display text-xl text-blue-300 mb-3">Schedule Emergency Drill / Exercise</h3>
-                  <form onSubmit={handleCreateEvent} className="grid gap-3 md:grid-cols-2">
-                    <input required placeholder="Event / Drill Title" value={newEvent.title} onChange={(e) => setNewEvent(p => ({ ...p, title: e.target.value }))} className="field-input py-2.5" />
-                    <input required placeholder="Location / Region" value={newEvent.location} onChange={(e) => setNewEvent(p => ({ ...p, location: e.target.value }))} className="field-input py-2.5" />
-                    <input type="date" value={newEvent.event_date} onChange={(e) => setNewEvent(p => ({ ...p, event_date: e.target.value }))} className="field-input py-2.5" />
-                    <select value={newEvent.event_type} onChange={(e) => setNewEvent(p => ({ ...p, event_type: e.target.value }))} className="field-input py-2.5">
-                      <option value="Emergency Drill">Emergency Evacuation Drill</option>
-                      <option value="Rescue Simulation">Rescue Simulation Exercise</option>
-                      <option value="Volunteer Briefing">Volunteer Relief Briefing</option>
-                    </select>
-                    <button type="submit" className="md:col-span-2 btn-primary py-2.5">Save Scheduled Event</button>
-                  </form>
-                </div>
-              )}
-
-              {/* Scheduled Events */}
-              <div className="dashboard-card p-6">
-                <h2 className="font-display text-2xl text-parchment mb-2">📅 Scheduled Emergency Drills & Operations</h2>
-                <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scroll">
-                  {events.length === 0 ? (
-                    <p className="text-muted text-sm py-4">No upcoming emergency drills scheduled.</p>
-                  ) : (
-                    events.map((ev) => (
-                      <div key={ev.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex justify-between items-center gap-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-semibold">{ev.event_type || "Drill"}</span>
-                            <span className="text-white font-semibold text-base">{ev.title}</span>
-                          </div>
-                          <p className="text-xs text-muted">📍 {ev.location} · 📅 {ev.event_date || "Upcoming"}</p>
-                        </div>
-                        <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-300 p-2 rounded bg-red-500/10">
-                          Delete
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
               </div>
 
               {/* System Audit Logs */}
