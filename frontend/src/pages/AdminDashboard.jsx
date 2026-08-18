@@ -9,6 +9,12 @@ import { API_BASE } from "../config";
 
 const AdminDashboard = () => {
   const { t, lang } = useLanguage();
+  
+  // Navigation Section State
+  const [activeSection, setActiveSection] = useState('overview'); // overview, users, reports, facilities, alerts, ground, aimodel, events_logs
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Data States
   const [users, setUsers] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [predictions, setPredictions] = useState([]);
@@ -46,16 +52,20 @@ const AdminDashboard = () => {
   const [selectedReportIds, setSelectedReportIds] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const [rescueOps, setRescueOps] = useState([]);
   const [advisories, setAdvisories] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [handoverNotes, setHandoverNotes] = useState([]);
   const [volunteerSkillFilter, setVolunteerSkillFilter] = useState("");
+
+  const [retrainFile, setRetrainFile] = useState(null);
+  const [retraining, setRetraining] = useState(false);
+  const [retrainResult, setRetrainResult] = useState(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetchUsers();
@@ -72,6 +82,7 @@ const AdminDashboard = () => {
     fetchAdvisories();
     fetchEquipment();
     fetchHandoverNotes();
+    fetchEvents();
 
     // 5s real-time live sync for Hospitals, Shelters, and Community Reports
     const syncInterval = setInterval(() => {
@@ -214,17 +225,6 @@ const AdminDashboard = () => {
     } catch (err) { console.error(err); }
   };
 
-  const toggleUserLock = async (user) => {
-    const currentStatus = user.status ? user.status === "Active" : user.active !== false;
-    const newStatus = currentStatus ? "Inactive" : "Active";
-    try {
-      await axios.put(`${API_BASE}/users/${user.id}/status`, { status: newStatus });
-      fetchUsers();
-    } catch (err) {
-      alert("Failed to update user status.");
-    }
-  };
-
   const toggleVolunteerDeploy = async (vol) => {
     const newStatus = vol.availability === "Deployed" ? "Available" : "Deployed";
     try {
@@ -250,6 +250,7 @@ const AdminDashboard = () => {
       setNewEvent({ title: "", location: "", event_date: "", event_type: "Emergency Drill", notes: "" });
       setShowEventForm(false);
       fetchEvents();
+      alert("Event created successfully!");
     } catch (err) {
       alert("Failed to create emergency event.");
     }
@@ -262,26 +263,6 @@ const AdminDashboard = () => {
       fetchEvents();
     } catch (err) {
       alert("Failed to delete event.");
-    }
-  };
-
-  const toggleVerifyShelter = async (shelter) => {
-    const newStatus = !shelter.verified;
-    try {
-      await axios.put(`${API_BASE}/shelters/${shelter.id}/verify`, { verified: newStatus });
-      fetchShelters();
-    } catch (err) {
-      alert("Failed to update shelter verification.");
-    }
-  };
-
-  const toggleVerifyHospital = async (hospital) => {
-    const newStatus = !hospital.verified;
-    try {
-      await axios.put(`${API_BASE}/hospitals/${hospital.id}/verify`, { verified: newStatus });
-      fetchHospitals();
-    } catch (err) {
-      alert("Failed to update hospital verification.");
     }
   };
 
@@ -354,6 +335,7 @@ const AdminDashboard = () => {
       setShowShelterForm(false);
       setNewShelter({ name: "", address: "", capacity: "", contact: "" });
       fetchShelters();
+      alert("Shelter created successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create shelter.");
     }
@@ -368,10 +350,6 @@ const AdminDashboard = () => {
       alert("Failed to delete shelter.");
     }
   };
-
-  const [retrainFile, setRetrainFile] = useState(null);
-  const [retraining, setRetraining] = useState(false);
-  const [retrainResult, setRetrainResult] = useState(null);
 
   const handleRetrainModel = async (e) => {
     e.preventDefault();
@@ -405,6 +383,7 @@ const AdminDashboard = () => {
       setShowHospitalForm(false);
       setNewHospital({ name: "", address: "", contact: "", services: "" });
       fetchHospitals();
+      alert("Hospital registered successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create hospital.");
     }
@@ -451,70 +430,37 @@ const AdminDashboard = () => {
 
   const handleDeleteUser = async (userId) => {
     if (!confirm("Are you sure you want to delete this user?")) return;
-    
     try {
       const response = await axios.delete(`${API_BASE}/users/${userId}`);
-      
       if (response.data.message) {
         alert("User deleted successfully!");
       }
-      
       fetchUsers();
     } catch (err) {
       console.error("User deletion error:", err);
-      if (err.response?.data?.error) {
-        alert("Failed to delete user: " + err.response.data.error);
-      } else {
-        alert("Failed to delete user. Please try again.");
-      }
-    }
-  };
-
-  const handleToggleUserStatus = async (user) => {
-    try {
-      const isActive = user.status ? user.status === "Active" : user.active !== false;
-      const endpoint = isActive ? "deactivate" : "activate";
-      const response = await axios.put(`${API_BASE}/users/${user.id}/${endpoint}`);
-
-      if (response.data.message) {
-        alert(`User ${isActive ? "deactivated" : "activated"} successfully!`);
-      }
-
-      fetchUsers();
-    } catch (err) {
-      console.error("User status toggle error:", err);
-      if (err.response?.data?.error) {
-        alert("Failed to update user status: " + err.response.data.error);
-      } else {
-        alert("Failed to update user status. Please try again.");
-      }
+      alert("Failed to delete user.");
     }
   };
 
   const downloadReport = (type) => {
     try {
-      let data, filename, headers;
-      
+      let data, filename;
       switch(type) {
         case 'users':
           data = JSON.stringify(users, null, 2);
           filename = 'users_report.json';
-          headers = { 'Content-Type': 'application/json' };
           break;
         case 'alerts':
           data = JSON.stringify(alerts, null, 2);
           filename = 'alerts_report.json';
-          headers = { 'Content-Type': 'application/json' };
           break;
         case 'predictions':
           data = JSON.stringify(predictions, null, 2);
           filename = 'predictions_report.json';
-          headers = { 'Content-Type': 'application/json' };
           break;
         default:
           return;
       }
-      
       const blob = new Blob([data], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -524,11 +470,10 @@ const AdminDashboard = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
       alert(`${type.charAt(0).toUpperCase() + type.slice(1)} report downloaded successfully!`);
     } catch (err) {
       console.error('Download error:', err);
-      alert('Failed to download report. Please try again.');
+      alert('Failed to download report.');
     }
   };
 
@@ -548,21 +493,15 @@ const AdminDashboard = () => {
         ...newUser,
         status: "Active"
       });
-      
       if (response.data.message) {
         alert("User created successfully!");
       }
-      
       setShowCreateUser(false);
       setNewUser({ name: "", email: "", password: "", role: "citizen" });
       fetchUsers();
     } catch (err) {
       console.error("User creation error:", err);
-      if (err.response?.data?.error) {
-        alert("Failed to create user: " + err.response.data.error);
-      } else {
-        alert("Failed to create user. Please try again.");
-      }
+      alert(err.response?.data?.error || "Failed to create user.");
     }
   };
 
@@ -570,21 +509,15 @@ const AdminDashboard = () => {
     e.preventDefault();
     try {
       const response = await axios.post(`${API_BASE}/alerts`, newAlert);
-      
       if (response.data.message) {
         alert("Alert created successfully!");
       }
-      
       setShowAlertModal(false);
       setNewAlert({ message: "", location: "", risk: "Medium" });
       fetchAlerts();
     } catch (err) {
       console.error("Alert creation error:", err);
-      if (err.response?.data?.error) {
-        alert("Failed to create alert: " + err.response.data.error);
-      } else {
-        alert("Failed to create alert. Please try again.");
-      }
+      alert(err.response?.data?.error || "Failed to create alert.");
     }
   };
 
@@ -625,10 +558,14 @@ const AdminDashboard = () => {
     admins: users.filter(u => u.role === "admin").length,
     totalAlerts: alerts.length,
     highRiskAlerts: alerts.filter(a => a.risk === "High").length,
-    totalPredictions: predictions.length
+    totalPredictions: predictions.length,
+    overflowShelters: shelters.filter(s => ((s.current_occupancy || s.occupancy || 0) / (s.capacity || 100)) >= 0.9).length,
+    overflowHospitals: hospitals.filter(h => ((h.occupancy || 0) / (h.capacity || 50)) >= 0.9).length,
+    pendingReports: communityReports.filter(r => r.status === "Submitted").length,
+    activeRescueOps: rescueOps.filter(o => o.status !== "Completed").length,
+    activeVolunteers: volunteers.filter(v => v.availability !== "Deployed").length,
   };
 
-  // FR09-03: filter predictions by date range or risk level
   const filteredPredictions = predictions.filter(p => {
     if (predictionFilters.risk !== "All" && p.risk !== predictionFilters.risk) return false;
     if (predictionFilters.from && new Date(p.created_at) < new Date(predictionFilters.from)) return false;
@@ -663,15 +600,26 @@ const AdminDashboard = () => {
     }
   };
 
+  const navigationSections = [
+    { id: 'overview', label: 'Command Center', icon: '📊', badge: null, desc: 'High-level metrics, real-time map, & department access' },
+    { id: 'users', label: 'User Accounts', icon: '👥', badge: users.length, desc: 'Manage system credentials, roles, & registrations' },
+    { id: 'reports', label: 'Citizen Reports', icon: '🗂️', badge: communityReports.filter(r => r.status === 'Submitted').length, desc: 'Incident moderation, status transitions, & analytics' },
+    { id: 'facilities', label: 'Shelters & Hospitals', icon: '🏢', badge: shelters.length + hospitals.length, desc: 'Disaster relief camps, hospital beds, & overflow tracking' },
+    { id: 'alerts', label: 'Alerts & Advisories', icon: '🚨', badge: alerts.length, desc: 'Emergency warnings, predictions forecast, & advisories' },
+    { id: 'ground', label: 'Ground Ops & Logistics', icon: '🦺', badge: volunteers.length, desc: 'Volunteers roster, donation pledges, & field gear' },
+    { id: 'aimodel', label: 'AI Model & Analytics', icon: '🤖', badge: null, desc: 'Machine learning retraining, accuracy logs, & confidence trends' },
+    { id: 'events_logs', label: 'Drills, Events & Logs', icon: '📅', badge: events.length, desc: 'Scheduled emergency drills, audit logs, & JSON exports' },
+  ];
+
   if (loading) {
     return (
       <div className="min-h-screen bg-ink text-parchment font-sans">
         <Navbar />
         <div className="pt-24 pb-16">
           <div className="max-w-7xl mx-auto px-6">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto"></div>
-              <p className="mt-4 text-muted">{t("loadingAdminData")}</p>
+            <div className="text-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mx-auto"></div>
+              <p className="mt-4 text-muted">Loading Admin Command Center...</p>
             </div>
           </div>
         </div>
@@ -680,975 +628,1488 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-ink via-ink-soft to-ink text-parchment font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0f18] via-[#0d1522] to-[#0a0f18] text-parchment font-sans flex flex-col justify-between">
       <Navbar />
-      <div className="pt-24 pb-16">
-        <div className="max-w-7xl mx-auto px-6">
-          {/* Header */}
-          <div className="mb-10">
-            <p className="eyebrow text-marigold-400 mb-3">{t("administration")}</p>
-            <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("controlPanel")}</h1>
-            <p className="text-muted max-w-lg">{t("controlPanelDesc")}</p>
-          </div>
 
-          {/* Statistics Cards */}
-          <div className="grid md:grid-cols-5 gap-4 mb-10">
-            <div className="stat-tile">
-              <div className="font-display text-3xl text-parchment mb-1">{statistics.totalUsers}</div>
-              <div className="eyebrow text-muted">{t("totalUsers")}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="font-display text-3xl text-teal-400 mb-1">{statistics.citizens}</div>
-              <div className="eyebrow text-muted">{t("citizens")}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="font-display text-3xl text-marigold-400 mb-1">{statistics.rescueWorkers}</div>
-              <div className="eyebrow text-muted">{t("rescueWorkers")}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="font-display text-3xl text-teal-400 mb-1">{statistics.governmentOfficials}</div>
-              <div className="eyebrow text-muted">{t("govOfficials")}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="font-display text-3xl text-marigold-400 mb-1">{statistics.admins}</div>
-              <div className="eyebrow text-muted">{t("admins")}</div>
-            </div>
-          </div>
+      <div className="pt-20 pb-16 flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
 
-          {/* User Management */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="mb-6">
-              <h2 className="font-display text-2xl text-parchment">👥 {t("userManagement")}</h2>
-              <p className="text-sm text-muted mt-1">{t("userManagementDesc")}</p>
+          {/* Top Administrative Bar with Hamburger Menu Toggle & Live Time */}
+          <div className="bg-white/[0.03] backdrop-blur-xl rounded-2xl p-4 sm:p-5 border border-white/10 shadow-2xl mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {/* Hamburger Button */}
+              <button
+                onClick={() => setSidebarOpen(v => !v)}
+                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-parchment transition-all flex items-center gap-2 text-sm font-semibold cursor-pointer"
+                title="Toggle Navigation Menu"
+              >
+                <span className="text-lg">{sidebarOpen ? '✕' : '☰'}</span>
+                <span className="hidden sm:inline">Menu</span>
+              </button>
+
+              <div className="h-6 w-px bg-white/15 hidden sm:block"></div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-400">Admin Command Console</span>
+                </div>
+                <h1 className="font-display text-xl sm:text-2xl text-parchment leading-tight">
+                  {navigationSections.find(s => s.id === activeSection)?.icon} {navigationSections.find(s => s.id === activeSection)?.label}
+                </h1>
+              </div>
             </div>
 
-            <input
-              type="text"
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)}
-              placeholder={t("searchByNameEmailRole")}
-              className="field-input py-2.5 text-sm mb-4 max-w-sm"
-            />
-
-            <div className="max-h-72 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
-              <table className="w-full text-left">
-                <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20">
-                  <tr>
-                    <th className="py-3 px-4 text-muted">{t("name")}</th>
-                    <th className="py-3 px-4 text-muted">{t("email")}</th>
-                    <th className="py-3 px-4 text-muted">{t("role")}</th>
-                    <th className="py-3 px-4 text-muted">{t("status")}</th>
-                    <th className="py-3 px-4 text-muted">Joined</th>
-
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {filteredUsers.map((user, index) => (
-                    <tr key={index} className="hover:bg-white/5 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                            {(user.name || "U").charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-white font-medium">{user.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-muted">{user.email}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getRoleColor(user.role)}`}>
-                          {getRoleDisplayName(user.role)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {(() => {
-                          const isActive = user.status ? user.status === "Active" : user.active !== false;
-                          return (
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              isActive ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
-                            }`}>
-                              {isActive ? t("active") : "Locked 🔒"}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="py-3 px-4 text-muted text-xs">
-                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
-                      </td>
-
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex items-center gap-3 ml-auto">
+              <div className="hidden md:flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 text-xs font-mono text-muted">
+                <span>🕒</span>
+                <span>{currentTime}</span>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>Administrator</span>
+              </div>
             </div>
           </div>
 
-          {/* Citizen Reports Moderation & Analytics Hub (Option B) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🗂️ Citizen Reports Moderation & Analytics</h2>
-                <p className="text-sm text-muted mt-1">View, filter, analyze, and manage incident reports submitted by citizens across all stages.</p>
-              </div>
-              <div className="flex gap-2 flex-wrap items-center">
-                {["All", "Submitted", "Reviewed", "Action Taken", "Completed"].map(f => (
-                  <button key={f} onClick={() => setReportsFilter(f)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
-                      reportsFilter === f
-                        ? "bg-teal-500 border-teal-400 text-white"
-                        : "bg-white/5 border-white/20 text-muted hover:bg-white/10"
-                    }`}>{f}</button>
-                ))}
-              </div>
-            </div>
-
-            {/* Reports Analytics Breakdown Hub (Option B) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-white/5 border border-white/10 rounded-xl p-4">
-              <div>
-                <div className="text-xs text-muted font-medium mb-1">Total Received Reports</div>
-                <div className="text-2xl font-display text-parchment">{communityReports.length}</div>
-                <div className="text-xs text-teal-400 mt-1">
-                  Completed: {communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length} ({communityReports.length ? Math.round((communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length / communityReports.length) * 100) : 0}%)
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted font-medium mb-1.5">Severity Distribution</div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between text-red-400">
-                    <span>Critical / High</span>
-                    <span>{communityReports.filter(r => r.severity === "Critical" || r.severity === "High").length}</span>
-                  </div>
-                  <div className="flex justify-between text-amber-400">
-                    <span>Medium</span>
-                    <span>{communityReports.filter(r => r.severity === "Medium").length}</span>
-                  </div>
-                  <div className="flex justify-between text-green-400">
-                    <span>Low</span>
-                    <span>{communityReports.filter(r => r.severity === "Low" || !r.severity).length}</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted font-medium mb-1.5">Resolution Progress</div>
-                <div className="w-full bg-white/10 rounded-full h-3.5 overflow-hidden flex">
-                  <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length / communityReports.length) * 100 : 0}%` }} className="bg-emerald-400 h-full" title="Completed"></div>
-                  <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Action Taken" || r.status === "In Progress").length / communityReports.length) * 100 : 0}%` }} className="bg-teal-400 h-full" title="Action Taken"></div>
-                  <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Submitted").length / communityReports.length) * 100 : 0}%` }} className="bg-amber-400 h-full" title="Submitted"></div>
-                </div>
-                <div className="flex justify-between text-[10px] text-muted mt-1.5">
-                  <span className="text-emerald-400">● Done</span>
-                  <span className="text-teal-400">● In Ops</span>
-                  <span className="text-amber-400">● Pending</span>
-                </div>
-              </div>
-            </div>
-
-            {(() => {
-              const isReportInFilter = (r, filter) => {
-                if (filter === "All") return true;
-                if (filter === "Submitted") return r.status === "Submitted";
-                if (filter === "Reviewed") return r.status === "Reviewed" || r.status === "Under Review" || r.status === "Approved";
-                if (filter === "Action Taken") return r.status === "Action Taken" || r.status === "In Progress" || r.status === "Converted to Alert" || r.status === "Converted to Rescue Op";
-                if (filter === "Completed") return r.status === "Completed" || r.status === "Resolved";
-                return r.status === filter;
-              };
-              const filteredList = communityReports.filter(r => isReportInFilter(r, reportsFilter));
-
-              if (filteredList.length === 0) {
-                return (
-                  <div className="text-center py-10 text-muted">
-                    <div className="text-4xl mb-3">📋</div>
-                    <p>No reports found for "{reportsFilter}".</p>
-                  </div>
-                );
-              }
-
+          {/* Quick Category Navigation Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-6 scrollbar-none custom-scroll">
+            {navigationSections.map((sec) => {
+              const isActive = activeSection === sec.id;
               return (
-                <div className="max-h-64 overflow-y-auto pr-1 space-y-4 custom-scroll">
-                  {filteredList.map((report, i) => {
-                    const severityColor = report.severity === "High" || report.severity === "Critical"
-                      ? "text-red-400 bg-red-500/10 border-red-500/30"
-                      : report.severity === "Medium"
-                      ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
-                      : "text-green-400 bg-green-500/10 border-green-500/30";
-
-                    const statusColor = report.status === "Completed" || report.status === "Resolved" ? "text-emerald-400"
-                      : report.status === "Reviewed" || report.status === "Approved" ? "text-blue-400"
-                      : report.status === "Action Taken" || report.status === "In Progress" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
-                      : "text-amber-400";
-
-                    return (
-                      <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
-                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                          {/* Report Info */}
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <span className="text-xs text-muted font-mono">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${severityColor}`}>
-                                {report.severity || "—"}
-                              </span>
-                              <span className={`text-xs font-semibold ${statusColor}`}>
-                                ● {report.status}
-                              </span>
-                            </div>
-                            <h4 className="text-white font-semibold text-lg mb-1">
-                              {report.type || report.incident_type || "Incident"} — {report.location}
-                            </h4>
-                            <p className="text-muted text-sm mb-2 line-clamp-2">{report.description}</p>
-                            <div className="flex flex-wrap gap-4 text-xs text-muted">
-                              <span>👤 {report.authorName || report.author_name || "Anonymous"}</span>
-                              <span>📧 {report.authorEmail || report.author_email || "—"}</span>
-                              <span>📍 {report.region || "—"}</span>
-                              <span>🕐 {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleString() : "—"}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Government Emergency Advisories Control (From Gov Portal) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">📢 Emergency Advisories Broadcasts</h2>
-                <p className="text-sm text-muted mt-1">Official government disaster warnings, evacuation notices, and regional advisories.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-marigold-500/10 text-marigold-400 border border-marigold-500/30">
-                {advisories.length} Active Advisories
-              </span>
-            </div>
-
-            {advisories.length === 0 ? (
-              <p className="text-sm text-muted py-4">No active government advisories broadcasted.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {advisories.map((adv) => (
-                    <div key={adv.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between gap-2">
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/20 text-red-300 border border-red-500/30">
-                            📍 {adv.region || "All Regions"}
-                          </span>
-                          <span className="text-xs text-muted font-mono">{adv.created_at ? new Date(adv.created_at).toLocaleDateString() : "Live"}</span>
-                        </div>
-                        <h4 className="font-semibold text-white text-base">{adv.title}</h4>
-                        <p className="text-xs text-muted mt-1 bg-white/5 p-2 rounded line-clamp-3">{adv.message}</p>
-                      </div>
-                      <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
-                        <span className="text-muted">Issued by: <strong className="text-white">{adv.issued_by || "Government Official"}</strong></span>
-                        <button onClick={() => handleDeleteAdvisory(adv.id)} className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
-                          Revoke Advisory
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* System Overview */}
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
-              <h3 className="text-xl font-semibold text-white mb-4">{t("userDistribution")}</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-green-400">{t("citizens")}</span>
-                  <span className="text-white">{statistics.citizens}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-yellow-400">{t("rescueWorkers")}</span>
-                  <span className="text-white">{statistics.rescueWorkers}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-teal-400">{t("govOfficials")}</span>
-                  <span className="text-white">{statistics.governmentOfficials}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-red-400">{t("admins")}</span>
-                  <span className="text-white">{statistics.admins}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
-              <h3 className="text-xl font-semibold text-white mb-4">{t("alertStatistics")}</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted">{t("totalAlerts")}</span>
-                  <span className="text-white">{statistics.totalAlerts}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">{t("highRiskAlerts")}</span>
-                  <span className="text-white">{statistics.highRiskAlerts}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">{t("totalPredictionsLabel")}</span>
-                  <span className="text-white">{statistics.totalPredictions}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Reports Section */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-display text-2xl text-parchment">📊 {t("systemReports")}</h2>
-              <div className="flex gap-2">
                 <button
-                  onClick={() => downloadReport('users')}
-                  className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  key={sec.id}
+                  onClick={() => {
+                    setActiveSection(sec.id);
+                    setSidebarOpen(false);
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 flex items-center gap-2 border cursor-pointer ${
+                    isActive
+                      ? 'bg-amber-500 border-amber-400 text-ink shadow-lg shadow-amber-500/20 font-bold'
+                      : 'bg-white/[0.04] border-white/10 text-muted hover:text-white hover:bg-white/10'
+                  }`}
                 >
-                  {t('downloadUsersReport')}
-                </button>
-                <button
-                  onClick={() => downloadReport('alerts')}
-                  className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  {t('downloadAlertsReport')}
-                </button>
-                <button
-                  onClick={() => downloadReport('predictions')}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  {t('downloadPredictionsReport')}
-                </button>
-              </div>
-            </div>
-            
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-white/10 rounded-lg p-4">
-                <h4 className="text-lg font-semibold text-white mb-2">{t("totalUsersLabel")}</h4>
-                <p className="text-3xl font-bold text-teal-400">{statistics.totalUsers}</p>
-                <p className="text-sm text-muted">{t("registeredAccounts")}</p>
-              </div>
-              <div className="bg-white/10 rounded-lg p-4">
-                <h4 className="text-lg font-semibold text-white mb-2">{t("totalAlerts")}</h4>
-                <p className="text-3xl font-bold text-yellow-400">{statistics.totalAlerts}</p>
-                <p className="text-sm text-muted">{t("systemAlertsGenerated")}</p>
-              </div>
-              <div className="bg-white/10 rounded-lg p-4">
-                <h4 className="text-lg font-semibold text-white mb-2">{t("totalPredictionsLabel")}</h4>
-                <p className="text-3xl font-bold text-green-400">{statistics.totalPredictions}</p>
-                <p className="text-sm text-muted">{t("riskAssessmentsMade")}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Alerts Management */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-display text-2xl text-parchment">🚨 {t("alertsLog")}</h2>
-              <div className="text-sm text-muted">
-                {statistics.totalAlerts} total alerts ({statistics.highRiskAlerts} high risk)
-              </div>
-            </div>
-            
-            <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-              {alerts.length === 0 && <p className="text-muted text-sm">{t("noAlertsYet") || "No alerts active."}</p>}
-              {alerts.map((alert, index) => (
-                <div key={index} className="bg-white/10 rounded-lg p-4 border border-white/20">
-                  <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="text-lg font-bold text-white">{alert.message}</h4>
-                        {alert.status === "Cancelled" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-muted border border-white/10">{t("cancelled")}</span>
-                        )}
-                      </div>
-                      <p className="text-muted mb-2">{alert.location}</p>
-                      <p className="text-sm text-muted">
-                        {new Date(alert.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRiskColor(alert.risk)}`}>
-                        {alert.risk}
-                      </span>
-                      {alert.status !== "Cancelled" && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              await axios.put(`${API_BASE}/alerts/${alert.id}`, { status: 'Cancelled' });
-                              fetchAlerts();
-                            } catch (err) {
-                              console.error('Cancel alert failed:', err);
-                            }
-                          }}
-                          className="btn-secondary text-xs py-1.5 px-3"
-                        >
-                          Cancel
-                        </button>
-                      )}
-                      <button
-                        onClick={async () => {
-                          if (!confirm('Delete this alert?')) return;
-                          try {
-                            await axios.delete(`${API_BASE}/alerts/${alert.id}`);
-                            fetchAlerts();
-                            alert('Alert deleted successfully!');
-                          } catch (err) {
-                            console.error('Delete alert failed:', err);
-                            alert('Failed to delete alert.');
-                          }
-                        }}
-                        className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Predictions View (FR-09) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-              <h2 className="font-display text-2xl text-parchment">🌧️ {t("floodPredictions")}</h2>
-              <button onClick={() => downloadReport('predictions')} className="bg-white/10 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
-                {t("export")} ({filteredPredictions.length})
-              </button>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3 mb-5">
-              <select value={predictionFilters.risk} onChange={(e) => setPredictionFilters(p => ({ ...p, risk: e.target.value }))}
-                className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500">
-                <option value="All">{t("allRiskLevels")}</option>
-                <option value="Low">Low</option>
-                <option value="Medium">{t("mediumSeverity")}</option>
-                <option value="High">{t("highSeverity")}</option>
-              </select>
-              <input type="date" value={predictionFilters.from} onChange={(e) => setPredictionFilters(p => ({ ...p, from: e.target.value }))}
-                className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              <input type="date" value={predictionFilters.to} onChange={(e) => setPredictionFilters(p => ({ ...p, to: e.target.value }))}
-                className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500" />
-            </div>
-            <div className="max-h-72 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
-              <table className="min-w-full text-left">
-                <thead className="sticky top-0 bg-slate-900 z-10 border-b border-white/20 text-muted text-sm">
-                  <tr>
-                    <th className="px-3 py-2.5">{t("location2")}</th>
-                    <th className="px-3 py-2.5">{t("riskLabel")}</th>
-                    <th className="px-3 py-2.5">{t("confidence")}</th>
-                    <th className="px-3 py-2.5">{t("rainfallLabel")}</th>
-                    <th className="px-3 py-2.5">{t("riverLevelLabel")}</th>
-                    <th className="px-3 py-2.5">{t("timestamp")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {filteredPredictions.map((p, i) => (
-                    <tr key={i} className="text-parchment text-sm hover:bg-white/5 transition-colors">
-                      <td className="px-3 py-3 font-medium">{p.location || "—"}</td>
-                      <td className="px-3 py-3"><span className={`font-semibold ${getRiskColor(p.risk)}`}>{p.risk}</span></td>
-                      <td className="px-3 py-3 font-mono">{p.confidence ? `${(p.confidence * 100).toFixed(1)}%` : "—"}</td>
-                      <td className="px-3 py-3">{p.rainfall ? `${p.rainfall} mm` : "—"}</td>
-                      <td className="px-3 py-3">{p.river_level ? `${p.river_level} m` : "—"}</td>
-                      <td className="px-3 py-3 text-muted text-xs">{p.created_at ? new Date(p.created_at).toLocaleString() : "—"}</td>
-                    </tr>
-                  ))}
-                  {filteredPredictions.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center text-muted">{t("noPredictionsMatch")}</td></tr>
+                  <span>{sec.icon}</span>
+                  <span>{sec.label}</span>
+                  {sec.badge !== null && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      isActive ? 'bg-black text-amber-300' : 'bg-white/15 text-white'
+                    }`}>
+                      {sec.badge}
+                    </span>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Shelters Management (FR-07) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🏢 {t("shelters")}</h2>
-                <p className="text-sm text-muted mt-1">{filteredShelters.length} shelter{filteredShelters.length !== 1 ? "s" : ""} registered</p>
-              </div>
-              <button onClick={() => setShowShelterForm(v => !v)} className="btn-secondary text-sm py-2.5">
-                {showShelterForm ? t("cancel") : t("addShelter")}
-              </button>
-            </div>
-            {showShelterForm && (
-              <form onSubmit={handleCreateShelter} className="grid gap-3 md:grid-cols-2 bg-white/5 rounded-xl p-4 mb-4 border border-white/10">
-                <input required placeholder={t("shelterName")} value={newShelter.name} onChange={(e) => setNewShelter(p => ({ ...p, name: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input required placeholder={t("address")} value={newShelter.address} onChange={(e) => setNewShelter(p => ({ ...p, address: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input type="number" placeholder={t("capacity")} value={newShelter.capacity} onChange={(e) => setNewShelter(p => ({ ...p, capacity: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input placeholder={t("contact")} value={newShelter.contact} onChange={(e) => setNewShelter(p => ({ ...p, contact: e.target.value }))}
-                  className="field-input py-2.5" />
-                <button type="submit" className="md:col-span-2 btn-primary">{t("saveShelter")}</button>
-              </form>
-            )}
-            <input
-              type="text"
-              value={shelterSearch}
-              onChange={(e) => setShelterSearch(e.target.value)}
-              placeholder={t("searchByNameAddress")}
-              className="field-input py-2.5 text-sm mb-4 max-w-sm"
-            />
-            {filteredShelters.length === 0 && <p className="text-muted text-sm py-4">{t("noSheltersRegistered")}</p>}
-            <div className="max-h-72 overflow-y-auto pr-1 space-y-0 custom-scroll">
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredShelters.map((s) => (
-                  <div key={s.id} className="bg-white/8 rounded-xl p-4 border border-white/10 hover:border-teal-500/40 transition-all flex flex-col gap-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-white text-sm truncate">{lang === "ur" && s.name_ur ? s.name_ur : s.name}</h4>
-                        <p className="text-xs text-muted truncate mt-0.5">{s.address}</p>
+          {/* Collapsible Sidebar Drawer (Modal overlay on mobile & expandable drawer) */}
+          {sidebarOpen && (
+            <div className="fixed inset-0 z-50 flex">
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>
+              <div className="relative w-80 max-w-[85vw] bg-[#0c131f] border-r border-white/15 p-6 shadow-2xl z-10 flex flex-col justify-between overflow-y-auto">
+                <div>
+                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🛡️</span>
+                      <div>
+                        <h3 className="font-display text-lg text-parchment">Admin Hub</h3>
+                        <p className="text-xs text-muted">System Settings & Controls</p>
                       </div>
-                      <button onClick={() => handleDeleteShelter(s.id)} className="shrink-0 text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors">
-                        ✕
-                      </button>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {s.capacity && <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">Cap: {s.capacity}</span>}
-                      {s.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{s.contact}</span>}
-                    </div>
+                    <button
+                      onClick={() => setSidebarOpen(false)}
+                      className="text-muted hover:text-white p-1 rounded-lg bg-white/5 hover:bg-white/10"
+                    >
+                      ✕
+                    </button>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
 
-          {/* Hospitals Management (FR-08) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🏥 {t("hospitals") || "Hospitals"}</h2>
-                <p className="text-sm text-muted mt-1">{filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? "s" : ""} registered</p>
-              </div>
-              <button onClick={() => setShowHospitalForm(v => !v)} className="btn-secondary text-sm py-2.5">
-                {showHospitalForm ? t("cancel") : (t("addHospital") || "Add Hospital")}
-              </button>
-            </div>
-            {showHospitalForm && (
-              <form onSubmit={handleCreateHospital} className="grid gap-3 md:grid-cols-2 bg-white/5 rounded-xl p-4 mb-4 border border-white/10">
-                <input required placeholder={t("hospitalName") || "Hospital Name"} value={newHospital.name} onChange={(e) => setNewHospital(p => ({ ...p, name: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input required placeholder={t("address") || "Address"} value={newHospital.address} onChange={(e) => setNewHospital(p => ({ ...p, address: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input placeholder={t("contact") || "Contact Phone"} value={newHospital.contact} onChange={(e) => setNewHospital(p => ({ ...p, contact: e.target.value }))}
-                  className="field-input py-2.5" />
-                <input placeholder={t("services") || "Services (Emergency, Trauma, ICU)"} value={newHospital.services} onChange={(e) => setNewHospital(p => ({ ...p, services: e.target.value }))}
-                  className="field-input py-2.5" />
-                <button type="submit" className="md:col-span-2 btn-primary">{t("saveHospital") || "Save Hospital"}</button>
-              </form>
-            )}
-            <input
-              type="text"
-              value={hospitalSearch}
-              onChange={(e) => setHospitalSearch(e.target.value)}
-              placeholder={t("searchByNameAddress")}
-              className="field-input py-2.5 text-sm mb-4 max-w-sm"
-            />
-            {filteredHospitals.length === 0 && <p className="text-muted text-sm py-4">No hospitals registered.</p>}
-            <div className="max-h-72 overflow-y-auto pr-1 space-y-0 custom-scroll">
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredHospitals.map((h) => (
-                  <div key={h.id} className="bg-white/8 rounded-xl p-4 border border-white/10 hover:border-emerald-500/40 transition-all flex flex-col gap-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-white text-sm truncate">{lang === "ur" && h.name_ur ? h.name_ur : h.name}</h4>
-                        <p className="text-xs text-muted truncate mt-0.5">{h.address}</p>
-                      </div>
-                      <button onClick={() => handleDeleteHospital(h.id)} className="shrink-0 text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors">
-                        ✕
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {h.services && <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium truncate max-w-full">🏥 {h.services}</span>}
-                      {h.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{h.contact}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-
-
-
-
-          {/* Interactive Map (FR-04) */}
-          <div className="mb-8">
-            <p className="eyebrow text-teal-400 mb-3">{t("liveMap")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">🗺️ {t("sheltersHospitalsBlockedRoads")}</h2>
-            <FloodMap height={460} canEdit={true} />
-          </div>
-
-          {/* Model Retraining (FR10-02) */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-marigold-400 mb-3">{t("mlBackend")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-2">🤖 {t("retrainModel")}</h2>
-            <p className="text-sm text-muted mb-5 max-w-2xl">
-              {t("retrainDescription")}
-            </p>
-            <form onSubmit={handleRetrainModel} className="flex flex-wrap items-center gap-4">
-              <input
-                type="file"
-                accept=".csv"
-                onChange={(e) => setRetrainFile(e.target.files[0])}
-                className="text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white/10 file:text-parchment hover:file:bg-white/20"
-              />
-              <button type="submit" disabled={!retrainFile || retraining} className="btn-primary text-sm py-2.5 disabled:opacity-50">
-                {retraining ? "Retraining… this can take a minute" : "Retrain model"}
-              </button>
-            </form>
-            {retrainResult && (
-              <div className={`mt-4 rounded-lg p-3 text-sm ${retrainResult.ok ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300" : "bg-amber-500/10 border border-amber-500/20 text-amber-300"}`}>
-                {retrainResult.message}
-              </div>
-            )}
-          </div>
-
-          {/* Model Accuracy Tracking */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("mlBackend")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">📈 {t("modelAccuracyOverTime")}</h2>
-            {accuracyHistory.length === 0 ? (
-              <p className="text-sm text-muted">{t("noRetrainEvents")}</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={accuracyHistory.map((a, i) => ({ ...a, index: i + 1, accuracyPct: a.accuracy * 100 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#233047" />
-                  <XAxis dataKey="index" stroke="#93A0B4" tick={{ fontSize: 11 }} label={{ value: "Retrain #", position: "insideBottom", offset: -2, fill: "#93A0B4", fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} stroke="#93A0B4" tick={{ fontSize: 11 }} unit="%" />
-                  <Tooltip contentStyle={{ backgroundColor: '#101826', border: '1px solid #233047', borderRadius: '10px' }} labelStyle={{ color: '#F3EDE1' }} formatter={(v) => [`${v.toFixed(1)}%`, "Accuracy"]} />
-                  <Line type="monotone" dataKey="accuracyPct" stroke="#3FBDB6" strokeWidth={2} dot={{ fill: "#3FBDB6", r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-            <div className="mt-6 pt-6 border-t border-white/10">
-              <h3 className="font-display text-lg text-parchment mb-3">📉 {t("predictionConfidenceTrend")}</h3>
-              {confidenceTrend.length === 0 ? (
-                <p className="text-sm text-muted">{t("notEnoughHistory")}</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={confidenceTrend.map((c) => ({ ...c, confPct: c.avg_confidence * 100 }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#233047" />
-                    <XAxis dataKey="date" stroke="#93A0B4" tick={{ fontSize: 10 }} />
-                    <YAxis domain={[0, 100]} stroke="#93A0B4" tick={{ fontSize: 11 }} unit="%" />
-                    <Tooltip contentStyle={{ backgroundColor: '#101826', border: '1px solid #233047', borderRadius: '10px' }} labelStyle={{ color: '#F3EDE1' }} formatter={(v) => [`${v.toFixed(1)}%`, "Avg. confidence"]} />
-                    <Line type="monotone" dataKey="confPct" stroke="#E8A33D" strokeWidth={2} dot={{ fill: "#E8A33D", r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          {/* Volunteers */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-marigold-400 mb-2">{t("safetyNetwork")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">👷 {t("registeredVolunteers")} ({volunteers.length})</h2>
-            {volunteers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noVolunteersYet")}</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-muted">
-                    <tr>
-                      <th className="py-2.5 px-3">{t("name")}</th>
-                      <th className="py-2.5 px-3">{t("phoneCol")}</th>
-                      <th className="py-2.5 px-3">{t("cityCol")}</th>
-                      <th className="py-2.5 px-3">{t("skillsCol")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {volunteers.map((v) => (
-                      <tr key={v.id} className="hover:bg-white/5 transition-colors">
-                        <td className="py-2.5 px-3 text-white font-medium">{v.name}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.phone}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.city}</td>
-                        <td className="py-2.5 px-3 text-muted">{v.skills}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Donations / Resource Pledges */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">🎁 {t("donationPledges")} ({donations.length})</h2>
-            {donations.length === 0 ? (
-              <p className="text-sm text-muted">{t("noDonationsYet")}</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scroll">
-                {donations.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between bg-white/[0.04] border border-white/10 hover:border-white/20 rounded-xl px-4 py-3 text-sm transition-all">
-                    <div>
-                      <span className="text-white font-semibold">{d.item}</span>
-                      <span className="text-muted"> × {d.quantity} — {d.donor_name}</span>
-                    </div>
-                    <span className="text-xs text-teal-300 bg-teal-500/10 border border-teal-500/30 rounded-full px-2.5 py-0.5 font-medium">{d.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Relief Equipment & Emergency Gear Overview (From Rescue Portal) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🚤 Relief Equipment & Emergency Gear</h2>
-                <p className="text-sm text-muted mt-1">Tracking lifeboats, dewatering pumps, life jackets, and regional emergency supplies.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                {equipment.length} Assets Registered
-              </span>
-            </div>
-
-            {equipment.length === 0 ? (
-              <p className="text-sm text-muted py-4">No relief equipment items registered.</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-muted">
-                    <tr>
-                      <th className="py-2.5 px-3">Equipment Name</th>
-                      <th className="py-2.5 px-3">Quantity</th>
-                      <th className="py-2.5 px-3">City / Location</th>
-                      <th className="py-2.5 px-3">Notes & Operational Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {equipment.map((eq) => (
-                      <tr key={eq.id} className="hover:bg-white/5 transition-colors">
-                        <td className="py-2.5 px-3 text-white font-medium">{eq.name}</td>
-                        <td className="py-2.5 px-3 text-teal-400 font-bold">{eq.quantity || 1} units</td>
-                        <td className="py-2.5 px-3 text-muted">📍 {eq.city || "Central Warehouse"}</td>
-                        <td className="py-2.5 px-3 text-muted">{eq.notes || "Operational"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Ground Team Shift Handover Notes Log (From Rescue Portal) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">📝 Ground Operational Handover Notes</h2>
-                <p className="text-sm text-muted mt-1">Field officer shift handovers, operational briefings, and critical ground updates.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/30">
-                {handoverNotes.length} Handover Notes
-              </span>
-            </div>
-
-            {handoverNotes.length === 0 ? (
-              <p className="text-sm text-muted py-4">No shift handover notes logged by ground teams.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {handoverNotes.map((hn) => {
-                    const isUrgent = hn.priority === "Urgent" || hn.priority === "High";
-                    return (
-                      <div key={hn.id} className={`bg-white/5 rounded-xl p-4 border flex flex-col justify-between gap-2 ${
-                        isUrgent ? "border-red-500/40 bg-red-500/5" : "border-white/10"
-                      }`}>
-                        <div>
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              isUrgent ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-white/10 text-muted"
-                            }`}>
-                              {hn.priority || "Normal Priority"}
+                  <div className="space-y-1.5">
+                    {navigationSections.map((sec) => {
+                      const isActive = activeSection === sec.id;
+                      return (
+                        <button
+                          key={sec.id}
+                          onClick={() => {
+                            setActiveSection(sec.id);
+                            setSidebarOpen(false);
+                          }}
+                          className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between border cursor-pointer ${
+                            isActive
+                              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
+                              : 'bg-transparent border-transparent text-muted hover:bg-white/5 hover:text-parchment'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{sec.icon}</span>
+                            <div>
+                              <div className="text-sm font-medium">{sec.label}</div>
+                              <div className="text-[11px] text-muted line-clamp-1">{sec.desc}</div>
+                            </div>
+                          </div>
+                          {sec.badge !== null && (
+                            <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded-full text-white">
+                              {sec.badge}
                             </span>
-                            <span className="text-xs text-muted font-mono">{hn.created_at ? new Date(hn.created_at).toLocaleDateString() : "Shift Log"}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="pt-4 mt-6 border-t border-white/10 text-xs text-muted flex items-center justify-between">
+                  <span>Server: Connected</span>
+                  <span className="text-emerald-400">● 100% Operational</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 1: COMMAND CENTER OVERVIEW & INTERACTIVE CARDS                    */}
+          {/* ========================================================================= */}
+          {activeSection === 'overview' && (
+            <div className="space-y-8 animate-fadeIn">
+              {/* Quick Stat Tiles */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Total Users</div>
+                  <div className="text-2xl font-display text-parchment mt-1">{statistics.totalUsers}</div>
+                  <div className="text-[10px] text-teal-400 mt-0.5">{statistics.citizens} Citizens</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Rescue Team</div>
+                  <div className="text-2xl font-display text-amber-400 mt-1">{statistics.rescueWorkers}</div>
+                  <div className="text-[10px] text-muted mt-0.5">{statistics.activeRescueOps} active ops</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Gov Staff</div>
+                  <div className="text-2xl font-display text-teal-300 mt-1">{statistics.governmentOfficials}</div>
+                  <div className="text-[10px] text-muted mt-0.5">{advisories.length} advisories</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Shelters</div>
+                  <div className="text-2xl font-display text-emerald-400 mt-1">{shelters.length}</div>
+                  <div className="text-[10px] text-red-400 mt-0.5">{statistics.overflowShelters} at capacity</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Hospitals</div>
+                  <div className="text-2xl font-display text-emerald-300 mt-1">{hospitals.length}</div>
+                  <div className="text-[10px] text-red-400 mt-0.5">{statistics.overflowHospitals} at capacity</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Alerts Active</div>
+                  <div className="text-2xl font-display text-red-400 mt-1">{statistics.totalAlerts}</div>
+                  <div className="text-[10px] text-red-300 mt-0.5">{statistics.highRiskAlerts} high-risk</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Citizen Reports</div>
+                  <div className="text-2xl font-display text-marigold-400 mt-1">{communityReports.length}</div>
+                  <div className="text-[10px] text-amber-300 mt-0.5">{statistics.pendingReports} pending</div>
+                </div>
+                <div className="bg-white/[0.04] p-4 rounded-xl border border-white/10">
+                  <div className="text-xs text-muted">Volunteers</div>
+                  <div className="text-2xl font-display text-indigo-400 mt-1">{volunteers.length}</div>
+                  <div className="text-[10px] text-emerald-300 mt-0.5">{statistics.activeVolunteers} ready</div>
+                </div>
+              </div>
+
+              {/* Department Navigation Cards Grid */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">🧭 Administrative Departments & Control Panels</h2>
+                    <p className="text-sm text-muted">Select any department card below or use the burger menu above to access dedicated controls.</p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Card 1: Users */}
+                  <div
+                    onClick={() => setActiveSection('users')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-teal-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          👥
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-teal-500/20 text-teal-300">
+                          {users.length} Users
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">User Management</h3>
+                      <p className="text-xs text-muted mb-4">Manage accounts, create users, assign roles (citizens, rescue, government), and manage credentials.</p>
+                    </div>
+                    <div className="text-xs text-teal-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Open User Controls</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Reports */}
+                  <div
+                    onClick={() => setActiveSection('reports')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-amber-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🗂️
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500/20 text-amber-300">
+                          {communityReports.length} Reports
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Citizen Incident Reports</h3>
+                      <p className="text-xs text-muted mb-4">Moderate citizen submissions, review severity, convert to alerts or dispatch rescue ops.</p>
+                    </div>
+                    <div className="text-xs text-amber-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Moderate Reports</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Facilities */}
+                  <div
+                    onClick={() => setActiveSection('facilities')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-emerald-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🏢
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300">
+                          {shelters.length + hospitals.length} Facilities
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Shelters & Hospitals Hub</h3>
+                      <p className="text-xs text-muted mb-4">Manage relief shelter camps, emergency hospitals, live bed occupancy, & overload monitors.</p>
+                    </div>
+                    <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Manage Facilities</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Alerts */}
+                  <div
+                    onClick={() => setActiveSection('alerts')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-red-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🚨
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-red-500/20 text-red-300">
+                          {alerts.length} Alerts
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Alerts, Forecasts & Advisories</h3>
+                      <p className="text-xs text-muted mb-4">Broadcast emergency alerts, view AI predictions history, & manage public advisories.</p>
+                    </div>
+                    <div className="text-xs text-red-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Manage Warnings</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 5: Ground Ops */}
+                  <div
+                    onClick={() => setActiveSection('ground')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-indigo-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🦺
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-500/20 text-indigo-300">
+                          {volunteers.length} Volunteers
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Ground Ops & Logistics</h3>
+                      <p className="text-xs text-muted mb-4">Registered volunteers roster, donation pledges, emergency relief equipment, & handover notes.</p>
+                    </div>
+                    <div className="text-xs text-indigo-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Review Ground Ops</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 6: AI Model */}
+                  <div
+                    onClick={() => setActiveSection('aimodel')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-purple-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🤖
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-purple-500/20 text-purple-300">
+                          AI Engine
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">AI Model & Analytics</h3>
+                      <p className="text-xs text-muted mb-4">Retrain Random Forest flood prediction model from CSV, view accuracy history & confidence charts.</p>
+                    </div>
+                    <div className="text-xs text-purple-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Model Analytics</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 7: Events & Logs */}
+                  <div
+                    onClick={() => setActiveSection('events_logs')}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-blue-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          📅
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-500/20 text-blue-300">
+                          {events.length} Drills
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Drills, Events & Audit Logs</h3>
+                      <p className="text-xs text-muted mb-4">Schedule disaster drills, view real-time system audit logs, & download JSON summary reports.</p>
+                    </div>
+                    <div className="text-xs text-blue-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>View Drills & Logs</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+
+                  {/* Card 8: Live Map */}
+                  <div
+                    onClick={() => {
+                      const el = document.getElementById('command-center-map');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-cyan-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                          🗺️
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300">
+                          GIS Live
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-white text-lg mb-1">Interactive Map & GIS</h3>
+                      <p className="text-xs text-muted mb-4">View spatial distribution of flood zones, shelters, hospitals, & reported road blocks.</p>
+                    </div>
+                    <div className="text-xs text-cyan-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>Inspect Live Map</span>
+                      <span>↓</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Live Map Section */}
+              <div id="command-center-map" className="dashboard-card p-6 border border-white/10 rounded-2xl">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">🗺️ National Flood & Facilities Situation Map</h2>
+                    <p className="text-sm text-muted">Geographical distribution of emergency shelters, hospitals, & blocked transit roads.</p>
+                  </div>
+                  <button
+                    onClick={() => setActiveSection('facilities')}
+                    className="btn-secondary text-xs py-2 px-3"
+                  >
+                    Manage Facility Locations →
+                  </button>
+                </div>
+                <div className="rounded-xl overflow-hidden border border-white/10">
+                  <FloodMap height={420} canEdit={true} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 2: USER MANAGEMENT                                                */}
+          {/* ========================================================================= */}
+          {activeSection === 'users' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 flex-wrap pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+                <div className="flex items-center gap-2">
+                  {selectedUserIds.length > 0 && (
+                    <button
+                      onClick={handleBulkDeleteUsers}
+                      className="px-3 py-2 rounded-xl bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold hover:bg-red-500/30"
+                    >
+                      Delete Selected ({selectedUserIds.length})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowCreateUser(true)}
+                    className="btn-primary text-xs py-2 px-4 cursor-pointer"
+                  >
+                    + Create New User
+                  </button>
+                </div>
+              </div>
+
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">👥 Registered User Accounts</h2>
+                    <p className="text-sm text-muted mt-0.5">Manage citizens, rescue staff, government officials, and system admins.</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Search by name, email, or role..."
+                    className="field-input py-2 px-4 text-xs w-full sm:w-72"
+                  />
+                </div>
+
+                <div className="max-h-[500px] overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
+                  <table className="w-full text-left">
+                    <thead className="sticky top-0 bg-ink-soft z-10 border-b border-white/20 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th className="py-3 px-4 text-muted w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedUserIds(filteredUsers.map(u => u.id));
+                              else setSelectedUserIds([]);
+                            }}
+                          />
+                        </th>
+                        <th className="py-3 px-4 text-muted">User Name</th>
+                        <th className="py-3 px-4 text-muted">Email / ID</th>
+                        <th className="py-3 px-4 text-muted">System Role</th>
+                        <th className="py-3 px-4 text-muted">Status</th>
+                        <th className="py-3 px-4 text-muted">Joined Date</th>
+                        <th className="py-3 px-4 text-muted text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10 text-sm">
+                      {filteredUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-muted">No users matched your search.</td>
+                        </tr>
+                      ) : (
+                        filteredUsers.map((user, index) => (
+                          <tr key={index} className="hover:bg-white/5 transition-colors">
+                            <td className="py-3 px-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedUserIds.includes(user.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) setSelectedUserIds(p => [...p, user.id]);
+                                  else setSelectedUserIds(p => p.filter(id => id !== user.id));
+                                }}
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-teal-400 to-marigold-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                                  {(user.name || "U").charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-white font-medium">{user.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-muted text-xs font-mono">{user.email}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getRoleColor(user.role)}`}>
+                                {getRoleDisplayName(user.role)}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                {user.status || 'Active'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-muted text-xs">
+                              {user.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {user.role !== 'admin' && (
+                                <button
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 3: CITIZEN REPORTS MODERATION & ANALYTICS                         */}
+          {/* ========================================================================= */}
+          {activeSection === 'reports' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 flex-wrap pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+                {selectedReportIds.length > 0 && (
+                  <button
+                    onClick={handleBulkDeleteReports}
+                    className="px-3 py-2 rounded-xl bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold hover:bg-red-500/30"
+                  >
+                    Delete Selected Reports ({selectedReportIds.length})
+                  </button>
+                )}
+              </div>
+
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">🗂️ Citizen Reports Moderation & Analytics Hub</h2>
+                    <p className="text-sm text-muted mt-1">Review emergency submissions, verify severity, and dispatch relief ops.</p>
+                  </div>
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {["All", "Submitted", "Reviewed", "Action Taken", "Completed"].map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setReportsFilter(f)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors border cursor-pointer ${
+                          reportsFilter === f
+                            ? "bg-teal-500 border-teal-400 text-white shadow-md shadow-teal-500/20"
+                            : "bg-white/5 border-white/20 text-muted hover:bg-white/10"
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reports Analytics Breakdown Hub */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-white/5 border border-white/10 rounded-xl p-4">
+                  <div>
+                    <div className="text-xs text-muted font-medium mb-1">Total Received Reports</div>
+                    <div className="text-2xl font-display text-parchment">{communityReports.length}</div>
+                    <div className="text-xs text-teal-400 mt-1">
+                      Completed: {communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length} ({communityReports.length ? Math.round((communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length / communityReports.length) * 100) : 0}%)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted font-medium mb-1.5">Severity Distribution</div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between text-red-400">
+                        <span>Critical / High</span>
+                        <span>{communityReports.filter(r => r.severity === "Critical" || r.severity === "High").length}</span>
+                      </div>
+                      <div className="flex justify-between text-amber-400">
+                        <span>Medium</span>
+                        <span>{communityReports.filter(r => r.severity === "Medium").length}</span>
+                      </div>
+                      <div className="flex justify-between text-green-400">
+                        <span>Low</span>
+                        <span>{communityReports.filter(r => r.severity === "Low" || !r.severity).length}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted font-medium mb-1.5">Resolution Progress</div>
+                    <div className="w-full bg-white/10 rounded-full h-3.5 overflow-hidden flex">
+                      <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Completed" || r.status === "Resolved").length / communityReports.length) * 100 : 0}%` }} className="bg-emerald-400 h-full" title="Completed"></div>
+                      <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Action Taken" || r.status === "In Progress").length / communityReports.length) * 100 : 0}%` }} className="bg-teal-400 h-full" title="Action Taken"></div>
+                      <div style={{ width: `${communityReports.length ? (communityReports.filter(r => r.status === "Submitted").length / communityReports.length) * 100 : 0}%` }} className="bg-amber-400 h-full" title="Submitted"></div>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted mt-1.5">
+                      <span className="text-emerald-400">● Done</span>
+                      <span className="text-teal-400">● In Ops</span>
+                      <span className="text-amber-400">● Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reports List */}
+                {(() => {
+                  const isReportInFilter = (r, filter) => {
+                    if (filter === "All") return true;
+                    if (filter === "Submitted") return r.status === "Submitted";
+                    if (filter === "Reviewed") return r.status === "Reviewed" || r.status === "Under Review" || r.status === "Approved";
+                    if (filter === "Action Taken") return r.status === "Action Taken" || r.status === "In Progress" || r.status === "Converted to Alert" || r.status === "Converted to Rescue Op";
+                    if (filter === "Completed") return r.status === "Completed" || r.status === "Resolved";
+                    return r.status === filter;
+                  };
+                  const filteredList = communityReports.filter(r => isReportInFilter(r, reportsFilter));
+
+                  if (filteredList.length === 0) {
+                    return (
+                      <div className="text-center py-12 text-muted bg-white/[0.02] rounded-xl border border-white/5">
+                        <div className="text-4xl mb-2">📋</div>
+                        <p>No reports found in category "{reportsFilter}".</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="max-h-[500px] overflow-y-auto pr-1 space-y-3 custom-scroll">
+                      {filteredList.map((report, i) => {
+                        const severityColor = report.severity === "High" || report.severity === "Critical"
+                          ? "text-red-400 bg-red-500/10 border-red-500/30"
+                          : report.severity === "Medium"
+                          ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
+                          : "text-green-400 bg-green-500/10 border-green-500/30";
+
+                        const statusColor = report.status === "Completed" || report.status === "Resolved" ? "text-emerald-400"
+                          : report.status === "Reviewed" || report.status === "Approved" ? "text-blue-400"
+                          : report.status === "Action Taken" || report.status === "In Progress" || report.status === "Converted to Alert" || report.status === "Converted to Rescue Op" ? "text-teal-400"
+                          : "text-amber-400";
+
+                        return (
+                          <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all">
+                            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                  <span className="text-xs text-muted font-mono">{report.trackingId || report.tracking_id || `#${report.id}`}</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${severityColor}`}>
+                                    {report.severity || "—"}
+                                  </span>
+                                  <span className={`text-xs font-semibold ${statusColor}`}>
+                                    ● {report.status}
+                                  </span>
+                                </div>
+                                <h4 className="text-white font-semibold text-lg mb-1">
+                                  {report.type || report.incident_type || "Incident"} — {report.location}
+                                </h4>
+                                <p className="text-muted text-sm mb-2">{report.description}</p>
+                                <div className="flex flex-wrap gap-4 text-xs text-muted">
+                                  <span>👤 {report.authorName || report.author_name || "Anonymous"}</span>
+                                  <span>📧 {report.authorEmail || report.author_email || "—"}</span>
+                                  <span>📍 {report.region || "—"}</span>
+                                  <span>🕐 {report.createdAt || report.created_at ? new Date(report.createdAt || report.created_at).toLocaleString() : "—"}</span>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end">
+                                {report.status === "Submitted" && (
+                                  <button
+                                    onClick={() => handleConvertToAlert(report)}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 font-semibold"
+                                  >
+                                    Convert to Alert 🚨
+                                  </button>
+                                )}
+                                {report.status !== "Completed" && (
+                                  <button
+                                    onClick={() => handleConvertToRescueOp(report)}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 font-semibold"
+                                  >
+                                    Dispatch Rescue 🦺
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-xs text-parchment font-medium bg-white/5 p-2.5 rounded mt-1 line-clamp-3">"{hn.note}"</p>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 4: GROUND FACILITIES (SHELTERS & HOSPITALS)                       */}
+          {/* ========================================================================= */}
+          {activeSection === 'facilities' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowShelterForm(v => !v)}
+                    className="btn-secondary text-xs py-2 px-3 cursor-pointer"
+                  >
+                    {showShelterForm ? 'Cancel Shelter' : '+ Add Shelter'}
+                  </button>
+                  <button
+                    onClick={() => setShowHospitalForm(v => !v)}
+                    className="btn-primary text-xs py-2 px-3 cursor-pointer"
+                  >
+                    {showHospitalForm ? 'Cancel Hospital' : '+ Add Hospital'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Add Shelter Form (collapsible) */}
+              {showShelterForm && (
+                <div className="dashboard-card p-6 bg-teal-500/[0.03] border-teal-500/30">
+                  <h3 className="font-display text-xl text-teal-300 mb-3">Add Emergency Shelter</h3>
+                  <form onSubmit={handleCreateShelter} className="grid gap-3 md:grid-cols-2">
+                    <input required placeholder="Shelter Name" value={newShelter.name} onChange={(e) => setNewShelter(p => ({ ...p, name: e.target.value }))} className="field-input py-2.5" />
+                    <input required placeholder="Address / Location" value={newShelter.address} onChange={(e) => setNewShelter(p => ({ ...p, address: e.target.value }))} className="field-input py-2.5" />
+                    <input type="number" placeholder="Max Capacity (e.g. 200)" value={newShelter.capacity} onChange={(e) => setNewShelter(p => ({ ...p, capacity: e.target.value }))} className="field-input py-2.5" />
+                    <input placeholder="Contact Phone (+92...)" value={newShelter.contact} onChange={(e) => setNewShelter(p => ({ ...p, contact: e.target.value }))} className="field-input py-2.5" />
+                    <button type="submit" className="md:col-span-2 btn-primary py-2.5">Save Shelter</button>
+                  </form>
+                </div>
+              )}
+
+              {/* Add Hospital Form (collapsible) */}
+              {showHospitalForm && (
+                <div className="dashboard-card p-6 bg-emerald-500/[0.03] border-emerald-500/30">
+                  <h3 className="font-display text-xl text-emerald-300 mb-3">Add Emergency Hospital / Trauma Center</h3>
+                  <form onSubmit={handleCreateHospital} className="grid gap-3 md:grid-cols-2">
+                    <input required placeholder="Hospital Name" value={newHospital.name} onChange={(e) => setNewHospital(p => ({ ...p, name: e.target.value }))} className="field-input py-2.5" />
+                    <input required placeholder="Address / City" value={newHospital.address} onChange={(e) => setNewHospital(p => ({ ...p, address: e.target.value }))} className="field-input py-2.5" />
+                    <input placeholder="Emergency Contact Phone" value={newHospital.contact} onChange={(e) => setNewHospital(p => ({ ...p, contact: e.target.value }))} className="field-input py-2.5" />
+                    <input placeholder="Services (e.g. Emergency, ICU, Trauma)" value={newHospital.services} onChange={(e) => setNewHospital(p => ({ ...p, services: e.target.value }))} className="field-input py-2.5" />
+                    <button type="submit" className="md:col-span-2 btn-primary py-2.5">Save Hospital</button>
+                  </form>
+                </div>
+              )}
+
+              {/* Live Capacity & Overflow Monitors */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Shelter Monitor */}
+                <div className="dashboard-card p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="font-display text-xl text-parchment">🏢 Shelter Occupancy Monitor</h3>
+                      <p className="text-xs text-muted mt-0.5">Live headcount vs shelter capacity</p>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                      {statistics.overflowShelters} Overloaded
+                    </span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scroll">
+                    {shelters.map((s) => {
+                      const current = s.current_occupancy || s.occupancy || 0;
+                      const capacity = s.capacity || 100;
+                      const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                      const isCritical = pct >= 90;
+                      return (
+                        <div key={s.id} className="bg-white/5 p-3 rounded-xl border border-white/10">
+                          <div className="flex justify-between text-xs mb-1.5 font-medium">
+                            <span className="text-white truncate max-w-[200px]">{s.name}</span>
+                            <span className={isCritical ? "text-red-400 font-bold" : "text-teal-400"}>{current}/{capacity} ({pct}%)</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div style={{ width: `${pct}%` }} className={`h-2 rounded-full ${isCritical ? 'bg-red-500' : 'bg-teal-500'}`}></div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-muted">
-                          <span>👤 {hn.author || "Rescue Officer"} — {hn.location || "Sector"}</span>
-                          <span className={hn.resolved ? "text-emerald-400" : "text-amber-400 font-semibold"}>
-                            {hn.resolved ? "Resolved ✓" : "● Active Shift Note"}
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Hospital Monitor */}
+                <div className="dashboard-card p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="font-display text-xl text-parchment">🏥 Hospital Bed Capacity Monitor</h3>
+                      <p className="text-xs text-muted mt-0.5">Live patient bed occupancy</p>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      {statistics.overflowHospitals} Overloaded
+                    </span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scroll">
+                    {hospitals.map((h) => {
+                      const current = h.occupancy || 0;
+                      const capacity = h.capacity || 50;
+                      const pct = Math.min(Math.round((current / capacity) * 100), 100);
+                      const isCritical = pct >= 90;
+                      return (
+                        <div key={h.id} className="bg-white/5 p-3 rounded-xl border border-white/10">
+                          <div className="flex justify-between text-xs mb-1.5 font-medium">
+                            <span className="text-white truncate max-w-[200px]">{h.name}</span>
+                            <span className={isCritical ? "text-red-400 font-bold" : "text-emerald-400"}>{current}/{capacity} ({pct}%)</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div style={{ width: `${pct}%` }} className={`h-2 rounded-full ${isCritical ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Registered Shelters Directory */}
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="font-display text-2xl text-parchment">🏢 Registered Emergency Shelters</h3>
+                    <p className="text-xs text-muted mt-0.5">{filteredShelters.length} shelters registered</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={shelterSearch}
+                    onChange={(e) => setShelterSearch(e.target.value)}
+                    placeholder="Search shelters by name or city..."
+                    className="field-input py-2 px-3 text-xs w-full sm:w-64"
+                  />
+                </div>
+                <div className="max-h-64 overflow-y-auto pr-1 space-y-0 custom-scroll">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {filteredShelters.map((s) => (
+                      <div key={s.id} className="bg-white/8 rounded-xl p-4 border border-white/10 hover:border-teal-500/40 transition-all flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-white text-sm truncate">{lang === "ur" && s.name_ur ? s.name_ur : s.name}</h4>
+                            <p className="text-xs text-muted truncate mt-0.5">📍 {s.address}</p>
+                          </div>
+                          <button onClick={() => handleDeleteShelter(s.id)} className="shrink-0 text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {s.capacity && <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">Cap: {s.capacity}</span>}
+                          {s.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{s.contact}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Registered Hospitals Directory */}
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="font-display text-2xl text-parchment">🏥 Registered Hospitals & Medical Centers</h3>
+                    <p className="text-xs text-muted mt-0.5">{filteredHospitals.length} hospitals registered</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={hospitalSearch}
+                    onChange={(e) => setHospitalSearch(e.target.value)}
+                    placeholder="Search hospitals by name or city..."
+                    className="field-input py-2 px-3 text-xs w-full sm:w-64"
+                  />
+                </div>
+                <div className="max-h-64 overflow-y-auto pr-1 space-y-0 custom-scroll">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {filteredHospitals.map((h) => (
+                      <div key={h.id} className="bg-white/8 rounded-xl p-4 border border-white/10 hover:border-emerald-500/40 transition-all flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-white text-sm truncate">{lang === "ur" && h.name_ur ? h.name_ur : h.name}</h4>
+                            <p className="text-xs text-muted truncate mt-0.5">📍 {h.address}</p>
+                          </div>
+                          <button onClick={() => handleDeleteHospital(h.id)} className="shrink-0 text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20">
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {h.services && <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium truncate max-w-full">🏥 {h.services}</span>}
+                          {h.contact && <span className="px-2 py-0.5 rounded-full bg-white/10 text-muted">{h.contact}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 5: ALERTS, FORECASTS & ADVISORIES                                 */}
+          {/* ========================================================================= */}
+          {activeSection === 'alerts' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+                <button
+                  onClick={() => setShowAlertModal(true)}
+                  className="btn-primary text-xs py-2 px-4 cursor-pointer"
+                >
+                  + Create Emergency Alert
+                </button>
+              </div>
+
+              {/* Active Alerts */}
+              <div className="dashboard-card p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-display text-2xl text-parchment">🚨 Active Emergency Alerts</h2>
+                  <span className="text-xs text-muted">{alerts.length} active alerts</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto space-y-3 pr-1 custom-scroll">
+                  {alerts.length === 0 ? (
+                    <p className="text-muted text-sm py-4">No active emergency alerts recorded.</p>
+                  ) : (
+                    alerts.map((alert, index) => (
+                      <div key={index} className="bg-white/10 rounded-xl p-4 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${getRiskColor(alert.risk)} bg-white/10`}>
+                              {alert.risk} Risk
+                            </span>
+                            <span className="text-white font-semibold text-base">{alert.message}</span>
+                          </div>
+                          <p className="text-xs text-muted">📍 {alert.location} · {alert.created_at ? new Date(alert.created_at).toLocaleString() : "Live"}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {alert.status !== "Cancelled" && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await axios.put(`${API_BASE}/alerts/${alert.id}`, { status: 'Cancelled' });
+                                  fetchAlerts();
+                                } catch (err) { console.error(err); }
+                              }}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-muted"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Delete alert?')) return;
+                              try {
+                                await axios.delete(`${API_BASE}/alerts/${alert.id}`);
+                                fetchAlerts();
+                              } catch (err) { console.error(err); }
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Predictions View */}
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">🌧️ AI Flood Risk Forecasts History</h2>
+                    <p className="text-xs text-muted">Filtered results: {filteredPredictions.length} predictions</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={predictionFilters.risk}
+                      onChange={(e) => setPredictionFilters(p => ({ ...p, risk: e.target.value }))}
+                      className="field-input py-1.5 px-3 text-xs"
+                    >
+                      <option value="All">All Risk Levels</option>
+                      <option value="High">High Risk Only</option>
+                      <option value="Medium">Medium Risk Only</option>
+                      <option value="Low">Low Risk Only</option>
+                    </select>
+                    <button
+                      onClick={() => downloadCSV(filteredPredictions, "flood_predictions_export.csv")}
+                      className="btn-secondary text-xs py-1.5 px-3"
+                    >
+                      Export CSV 📥
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-60 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-ink-soft border-b border-white/15 text-muted">
+                      <tr>
+                        <th className="py-2.5 px-3">Location</th>
+                        <th className="py-2.5 px-3">Risk</th>
+                        <th className="py-2.5 px-3">Confidence</th>
+                        <th className="py-2.5 px-3">Rainfall</th>
+                        <th className="py-2.5 px-3">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {filteredPredictions.map((p, i) => (
+                        <tr key={i} className="hover:bg-white/5">
+                          <td className="py-2 px-3 text-white font-medium">📍 {p.location}</td>
+                          <td className="py-2 px-3">
+                            <span className={`px-2 py-0.5 rounded-full font-bold ${getRiskColor(p.risk)} bg-white/5`}>{p.risk}</span>
+                          </td>
+                          <td className="py-2 px-3 text-muted">{p.confidence ? `${Math.round(p.confidence * 100)}%` : "—"}</td>
+                          <td className="py-2 px-3 text-muted">{p.rainfall || "—"}</td>
+                          <td className="py-2 px-3 text-muted">{p.created_at ? new Date(p.created_at).toLocaleString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Public Advisories Broadcasts */}
+              <div className="dashboard-card p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">📢 Government Public Advisories</h2>
+                    <p className="text-xs text-muted">Official emergency notifications issued to citizens</p>
+                  </div>
+                  <span className="text-xs text-amber-400">{advisories.length} active</span>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scroll">
+                  {advisories.map((adv) => (
+                    <div key={adv.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex justify-between items-start gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold bg-red-500/20 text-red-300 px-2 py-0.5 rounded">📍 {adv.region || "National"}</span>
+                          <span className="text-white font-semibold text-sm">{adv.title}</span>
+                        </div>
+                        <p className="text-xs text-muted">{adv.message}</p>
+                      </div>
+                      <button onClick={() => handleDeleteAdvisory(adv.id)} className="text-xs text-red-400 hover:text-red-300 p-1.5 rounded bg-red-500/10 shrink-0">
+                        Revoke
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 6: GROUND OPERATIONS, VOLUNTEERS & RESOURCES                       */}
+          {/* ========================================================================= */}
+          {activeSection === 'ground' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+              </div>
+
+              {/* Registered Volunteers */}
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">👷 Registered Volunteers Roster</h2>
+                    <p className="text-xs text-muted">{volunteers.length} registered relief volunteers</p>
+                  </div>
+                  <input
+                    type="text"
+                    value={volunteerSkillFilter}
+                    onChange={(e) => setVolunteerSkillFilter(e.target.value)}
+                    placeholder="Filter by skill or city..."
+                    className="field-input py-1.5 px-3 text-xs w-full sm:w-60"
+                  />
+                </div>
+                <div className="max-h-60 overflow-y-auto overflow-x-auto custom-scroll border border-white/10 rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-ink-soft border-b border-white/15 text-muted">
+                      <tr>
+                        <th className="py-2.5 px-3">Volunteer Name</th>
+                        <th className="py-2.5 px-3">Contact</th>
+                        <th className="py-2.5 px-3">City</th>
+                        <th className="py-2.5 px-3">Skills</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {volunteers.map((vol) => (
+                        <tr key={vol.id} className="hover:bg-white/5">
+                          <td className="py-2 px-3 text-white font-medium">{vol.name}</td>
+                          <td className="py-2 px-3 text-muted">{vol.phone}</td>
+                          <td className="py-2 px-3 text-muted">📍 {vol.city || "—"}</td>
+                          <td className="py-2 px-3 text-teal-300">{vol.skills || "General Relief"}</td>
+                          <td className="py-2 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              vol.availability === 'Deployed' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'
+                            }`}>
+                              {vol.availability || 'Available'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              onClick={() => toggleVolunteerDeploy(vol)}
+                              className="text-[10px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-parchment font-semibold"
+                            >
+                              Toggle Deploy
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Donations & Equipment Grid */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Donations */}
+                <div className="dashboard-card p-6">
+                  <h3 className="font-display text-xl text-parchment mb-2">🎁 Relief Donations & Supplies Pledges</h3>
+                  <p className="text-xs text-muted mb-4">{donations.length} incoming supplies recorded</p>
+                  <div className="max-h-52 overflow-y-auto space-y-2 pr-1 custom-scroll">
+                    {donations.map((d) => (
+                      <div key={d.id} className="bg-white/5 p-3 rounded-xl border border-white/10 flex justify-between items-center text-xs">
+                        <div>
+                          <span className="text-white font-semibold">{d.quantity}x {d.item}</span>
+                          <p className="text-muted text-[11px]">Donor: {d.donor_name || "Anonymous"} · {d.contact || "—"}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-semibold">{d.status || 'Pledged'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Equipment */}
+                <div className="dashboard-card p-6">
+                  <h3 className="font-display text-xl text-parchment mb-2">🚤 Emergency Rescue Equipment</h3>
+                  <p className="text-xs text-muted mb-4">{equipment.length} assets registered in field</p>
+                  <div className="max-h-52 overflow-y-auto space-y-2 pr-1 custom-scroll">
+                    {equipment.map((eq) => (
+                      <div key={eq.id} className="bg-white/5 p-3 rounded-xl border border-white/10 flex justify-between items-center text-xs">
+                        <div>
+                          <span className="text-white font-semibold">{eq.name} (Qty: {eq.quantity})</span>
+                          <p className="text-muted text-[11px]">Location: 📍 {eq.city || "Field Base"}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">Active</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Handover Notes */}
+              <div className="dashboard-card p-6">
+                <h3 className="font-display text-xl text-parchment mb-2">📝 Operational Shift Handover Notes</h3>
+                <p className="text-xs text-muted mb-4">{handoverNotes.length} shift logs submitted by rescue teams</p>
+                <div className="max-h-52 overflow-y-auto space-y-2 pr-1 custom-scroll">
+                  {handoverNotes.map((hn) => (
+                    <div key={hn.id} className="bg-white/5 p-3 rounded-xl border border-white/10 flex justify-between items-start text-xs">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${hn.priority === 'Urgent' ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-muted'}`}>{hn.priority || 'Normal'}</span>
+                          <span className="text-white font-medium">{hn.note}</span>
+                        </div>
+                        <p className="text-[10px] text-muted">By: {hn.author || "Rescue Team"} · {hn.created_at ? new Date(hn.created_at).toLocaleString() : "Live"}</p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${hn.resolved ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                        {hn.resolved ? 'Resolved' : 'Active'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 7: AI MODEL & ACCURACY ANALYTICS                                   */}
+          {/* ========================================================================= */}
+          {activeSection === 'aimodel' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+              </div>
+
+              {/* Retrain Model */}
+              <div className="dashboard-card p-6">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-mono font-semibold uppercase text-purple-400">ML Backend Engine</span>
+                </div>
+                <h2 className="font-display text-2xl text-parchment mb-2">🤖 Retrain Machine Learning Model</h2>
+                <p className="text-sm text-muted mb-4 max-w-2xl">
+                  Upload newly collected flood meteorological training data (.csv format) to retrain the Random Forest Classifier.
+                </p>
+                <form onSubmit={handleRetrainModel} className="flex flex-wrap items-center gap-4">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setRetrainFile(e.target.files[0])}
+                    className="text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-parchment hover:file:bg-white/20 cursor-pointer"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!retrainFile || retraining}
+                    className="btn-primary text-xs py-2.5 px-4 disabled:opacity-50 cursor-pointer"
+                  >
+                    {retraining ? "Retraining Model..." : "Deploy Retrain Job"}
+                  </button>
+                </form>
+                {retrainResult && (
+                  <div className={`mt-4 rounded-xl p-3.5 text-sm ${
+                    retrainResult.ok ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300" : "bg-amber-500/15 border border-amber-500/30 text-amber-300"
+                  }`}>
+                    {retrainResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Accuracy Charts */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Accuracy Chart */}
+                <div className="dashboard-card p-6">
+                  <h3 className="font-display text-xl text-parchment mb-1">📈 Model Accuracy History</h3>
+                  <p className="text-xs text-muted mb-4">Accuracy % progression across retrain events</p>
+                  <div className="h-64 w-full">
+                    {accuracyHistory.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-xs text-muted">Retrain model to populate accuracy trend.</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={accuracyHistory}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="timestamp" stroke="#64748b" textAnchor="end" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} />
+                          <Line type="monotone" dataKey="accuracy" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Confidence Trend */}
+                <div className="dashboard-card p-6">
+                  <h3 className="font-display text-xl text-parchment mb-1">📊 Prediction Confidence Trend</h3>
+                  <p className="text-xs text-muted mb-4">Average prediction certainty over time</p>
+                  <div className="h-64 w-full">
+                    {confidenceTrend.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-xs text-muted">No historical confidence logs available yet.</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={confidenceTrend}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="date" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} />
+                          <Line type="monotone" dataKey="avg_confidence" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECTION 8: EMERGENCY DRILLS, SYSTEM LOGS & JSON EXPORTS                   */}
+          {/* ========================================================================= */}
+          {activeSection === 'events_logs' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSection('overview')}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  ← Back to Command Center
+                </button>
+                <button
+                  onClick={() => setShowEventForm(v => !v)}
+                  className="btn-primary text-xs py-2 px-4 cursor-pointer"
+                >
+                  {showEventForm ? 'Cancel Event' : '+ Schedule Drill / Event'}
+                </button>
+              </div>
+
+              {/* Add Event Form */}
+              {showEventForm && (
+                <div className="dashboard-card p-6 bg-blue-500/[0.03] border-blue-500/30">
+                  <h3 className="font-display text-xl text-blue-300 mb-3">Schedule Emergency Drill / Exercise</h3>
+                  <form onSubmit={handleCreateEvent} className="grid gap-3 md:grid-cols-2">
+                    <input required placeholder="Event / Drill Title" value={newEvent.title} onChange={(e) => setNewEvent(p => ({ ...p, title: e.target.value }))} className="field-input py-2.5" />
+                    <input required placeholder="Location / Region" value={newEvent.location} onChange={(e) => setNewEvent(p => ({ ...p, location: e.target.value }))} className="field-input py-2.5" />
+                    <input type="date" value={newEvent.event_date} onChange={(e) => setNewEvent(p => ({ ...p, event_date: e.target.value }))} className="field-input py-2.5" />
+                    <select value={newEvent.event_type} onChange={(e) => setNewEvent(p => ({ ...p, event_type: e.target.value }))} className="field-input py-2.5">
+                      <option value="Emergency Drill">Emergency Evacuation Drill</option>
+                      <option value="Rescue Simulation">Rescue Simulation Exercise</option>
+                      <option value="Volunteer Briefing">Volunteer Relief Briefing</option>
+                    </select>
+                    <button type="submit" className="md:col-span-2 btn-primary py-2.5">Save Scheduled Event</button>
+                  </form>
+                </div>
+              )}
+
+              {/* Scheduled Events */}
+              <div className="dashboard-card p-6">
+                <h2 className="font-display text-2xl text-parchment mb-2">📅 Scheduled Emergency Drills & Operations</h2>
+                <div className="max-h-60 overflow-y-auto space-y-3 pr-1 custom-scroll">
+                  {events.length === 0 ? (
+                    <p className="text-muted text-sm py-4">No upcoming emergency drills scheduled.</p>
+                  ) : (
+                    events.map((ev) => (
+                      <div key={ev.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex justify-between items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-semibold">{ev.event_type || "Drill"}</span>
+                            <span className="text-white font-semibold text-base">{ev.title}</span>
+                          </div>
+                          <p className="text-xs text-muted">📍 {ev.location} · 📅 {ev.event_date || "Upcoming"}</p>
+                        </div>
+                        <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-300 p-2 rounded bg-red-500/10">
+                          Delete
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* System Audit Logs */}
+              <div className="dashboard-card p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl text-parchment">🔍 System Activity Audit Logs</h2>
+                    <p className="text-xs text-muted">Live audit events & security activity</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      fetchLogs();
+                      setShowLogs(v => !v);
+                    }}
+                    className="btn-secondary text-xs py-2 px-3"
+                  >
+                    {showLogs ? 'Hide Audit Stream' : 'Load Audit Stream'}
+                  </button>
+                </div>
+                {showLogs && (
+                  <div className="max-h-60 overflow-y-auto font-mono text-xs space-y-2 bg-black/40 p-4 rounded-xl border border-white/10 custom-scroll">
+                    {logs.length === 0 ? (
+                      <p className="text-muted">No audit logs recorded yet.</p>
+                    ) : (
+                      logs.map((lg, i) => (
+                        <div key={i} className="flex gap-2">
+                          <span className="text-muted">[{new Date(lg.created_at || Date.now()).toLocaleTimeString()}]</span>
+                          <span className={lg.level === 'error' ? 'text-red-400 font-bold' : lg.level === 'warning' ? 'text-amber-400' : 'text-teal-400'}>
+                            [{lg.level?.toUpperCase()}]
                           </span>
+                          <span className="text-parchment">{lg.message}</span>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Shelter Live Occupancy & Overflow Warning */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🏢 Shelter Occupancy & Overflow Monitor</h2>
-                <p className="text-sm text-muted mt-1">Real-time capacity tracking with overflow alerts for displaced citizens.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                {shelters.filter(s => ((s.current_occupancy || s.occupancy || 0) / (s.capacity || 100)) >= 0.9).length} At Capacity
-              </span>
-            </div>
-            {shelters.length === 0 ? (
-              <p className="text-sm text-muted py-4">No shelters registered.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {shelters.map((shelter) => {
-                    const current = shelter.current_occupancy || shelter.occupancy || 0;
-                    const capacity = shelter.capacity || 100;
-                    const pct = Math.min(Math.round((current / capacity) * 100), 100);
-                    const isCritical = pct >= 90;
-                    const isWarning = pct >= 70 && pct < 90;
-                    const barColor = isCritical ? "bg-red-500" : isWarning ? "bg-amber-400" : "bg-teal-500";
-                    return (
-                      <div key={shelter.id} className={`bg-white/5 rounded-xl p-4 border ${
-                        isCritical ? "border-red-500/50 bg-red-500/5" : isWarning ? "border-amber-500/30" : "border-white/10"
-                      }`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="text-white font-semibold text-sm">{shelter.name}</h4>
-                            <p className="text-xs text-muted">📍 {shelter.city || shelter.location}</p>
-                          </div>
-                          {isCritical && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
-                          )}
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-2 mb-1">
-                          <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }}></div>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-muted">{current} / {capacity} people</span>
-                          <span className={isCritical ? "text-red-400 font-bold" : isWarning ? "text-amber-400" : "text-teal-400"}>{pct}% Full</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* System JSON Reports */}
+              <div className="dashboard-card p-6">
+                <h2 className="font-display text-2xl text-parchment mb-2">📥 Data Exports & System Reports</h2>
+                <p className="text-sm text-muted mb-4">Download comprehensive administrative data in JSON format for offline archival.</p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => downloadReport('users')}
+                    className="bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Download Users Report (JSON) 👥
+                  </button>
+                  <button
+                    onClick={() => downloadReport('alerts')}
+                    className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Download Alerts Report (JSON) 🚨
+                  </button>
+                  <button
+                    onClick={() => downloadReport('predictions')}
+                    className="bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Download Predictions Report (JSON) 🌧️
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Hospital Live Bed Occupancy & Capacity Monitor */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🏥 Hospital Occupancy & Bed Capacity Monitor</h2>
-                <p className="text-sm text-muted mt-1">Real-time medical bed capacity tracking and emergency hospital overload alerts.</p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                {hospitals.filter(h => ((h.occupancy || 0) / (h.capacity || 50)) >= 0.9).length} At Capacity
-              </span>
-            </div>
-            {hospitals.length === 0 ? (
-              <p className="text-sm text-muted py-4">No hospitals registered.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 space-y-3 custom-scroll">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {hospitals.map((hospital) => {
-                    const current = hospital.occupancy || 0;
-                    const capacity = hospital.capacity || 50;
-                    const pct = Math.min(Math.round((current / capacity) * 100), 100);
-                    const isCritical = pct >= 90;
-                    const isWarning = pct >= 70 && pct < 90;
-                    const barColor = isCritical ? "bg-red-500" : isWarning ? "bg-amber-400" : "bg-emerald-500";
-                    return (
-                      <div key={hospital.id} className={`bg-white/5 rounded-xl p-4 border ${
-                        isCritical ? "border-red-500/50 bg-red-500/5" : isWarning ? "border-amber-500/30" : "border-white/10"
-                      }`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="text-white font-semibold text-sm">{hospital.name}</h4>
-                            <p className="text-xs text-muted">📍 {hospital.address || hospital.city || "Location unavailable"}</p>
-                          </div>
-                          {isCritical && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
-                          )}
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-2 mb-1">
-                          <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }}></div>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-muted">{current} / {capacity} beds occupied</span>
-                          <span className={isCritical ? "text-red-400 font-bold" : isWarning ? "text-amber-400" : "text-emerald-400"}>{pct}% Full</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* Create User Modal */}
+      {/* ========================================================================= */}
+      {/* MODALS: CREATE USER & CREATE ALERT                                        */}
+      {/* ========================================================================= */}
       {showCreateUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-ink-soft rounded-2xl p-8 max-w-md w-full">
-            <h2 className="font-display text-2xl text-parchment mb-6">{t("createNewUserBtn")}</h2>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-ink-soft rounded-2xl p-8 max-w-md w-full border border-white/15 shadow-2xl">
+            <h2 className="font-display text-2xl text-parchment mb-4">Create System User</h2>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("name")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">Full Name</label>
                 <input
                   type="text"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                  className="field-input"
-                  placeholder={t("enterName")}
                   required
+                  value={newUser.name}
+                  onChange={(e) => setNewUser(p => ({ ...p, name: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
+                  placeholder="e.g. Dr. Ahmad Khan"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("email")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">Email Address</label>
                 <input
                   type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                  className="field-input"
-                  placeholder={t("enterEmail")}
                   required
+                  value={newUser.email}
+                  onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
+                  placeholder="e.g. ahmad@flood.gov.pk"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("passwordLabel")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">Password</label>
                 <input
                   type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                  className="field-input"
-                  placeholder={t("enterPassword")}
                   required
+                  value={newUser.password}
+                  onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
+                  placeholder="Min 6 characters"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("role")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">System Role</label>
                 <select
                   value={newUser.role}
-                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) => setNewUser(p => ({ ...p, role: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
                 >
-                  <option value="citizen">{t("citizenSingular")}</option>
-                  <option value="rescue_worker">{t("rescueWorkerSingular")}</option>
-                  <option value="government_official">{t("govOfficials")}</option>
+                  <option value="citizen">Citizen (General Public)</option>
+                  <option value="rescue_worker">Rescue Worker (1122 Field Operator)</option>
+                  <option value="government_official">Government Official (Policy Maker)</option>
+                  <option value="admin">System Administrator</option>
                 </select>
               </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  className="flex-1 bg-teal-500 hover:bg-teal-600 text-white py-2 rounded-lg transition-colors"
-                >
-                  Create User
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateUser(false)}
-                  className="flex-1 bg-white/10 hover:bg-white/10 text-white py-2 rounded-lg transition-colors"
-                >
+              <div className="flex gap-3 pt-4 border-t border-white/10">
+                <button type="button" onClick={() => setShowCreateUser(false)} className="btn-secondary text-xs flex-1 py-2.5">
                   Cancel
+                </button>
+                <button type="submit" className="btn-primary text-xs flex-1 py-2.5">
+                  Create User
                 </button>
               </div>
             </form>
@@ -1656,65 +2117,58 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Create Alert Modal */}
       {showAlertModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-ink-soft rounded-2xl p-8 max-w-md w-full">
-            <h2 className="font-display text-2xl text-parchment mb-6">{t("createAlertBtn")}</h2>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-ink-soft rounded-2xl p-8 max-w-md w-full border border-white/15 shadow-2xl">
+            <h2 className="font-display text-2xl text-parchment mb-4">Broadcast Emergency Alert</h2>
             <form onSubmit={handleCreateAlert} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("alertMessage")}</label>
-                <textarea
-                  value={newAlert.message}
-                  onChange={(e) => setNewAlert({...newAlert, message: e.target.value})}
-                  className="field-input"
-                  placeholder={t("enterAlertMessage")}
-                  rows="3"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("location2")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">Alert Message</label>
                 <input
                   type="text"
-                  value={newAlert.location}
-                  onChange={(e) => setNewAlert({...newAlert, location: e.target.value})}
-                  className="field-input"
-                  placeholder={t("enterLocation")}
                   required
+                  value={newAlert.message}
+                  onChange={(e) => setNewAlert(p => ({ ...p, message: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
+                  placeholder="e.g. Flash Flood Warning for Taunsa River Basin"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">{t("riskLevelLabel")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">Affected Location / City</label>
+                <input
+                  type="text"
+                  required
+                  value={newAlert.location}
+                  onChange={(e) => setNewAlert(p => ({ ...p, location: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
+                  placeholder="e.g. Dera Ghazi Khan"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted mb-1">Risk Severity</label>
                 <select
                   value={newAlert.risk}
-                  onChange={(e) => setNewAlert({...newAlert, risk: e.target.value})}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  onChange={(e) => setNewAlert(p => ({ ...p, risk: e.target.value }))}
+                  className="field-input py-2.5 text-sm"
                 >
-                  <option value="Low">Low</option>
-                  <option value="Medium">{t("mediumSeverity")}</option>
-                  <option value="High">{t("highSeverity")}</option>
+                  <option value="High">High (Immediate Danger)</option>
+                  <option value="Medium">Medium (Elevated Threat)</option>
+                  <option value="Low">Low (Advisory Notice)</option>
                 </select>
               </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg transition-colors"
-                >
-                  {t("createAlertBtn")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAlertModal(false)}
-                  className="flex-1 bg-white/10 hover:bg-white/10 text-white py-2 rounded-lg transition-colors"
-                >
+              <div className="flex gap-3 pt-4 border-t border-white/10">
+                <button type="button" onClick={() => setShowAlertModal(false)} className="btn-secondary text-xs flex-1 py-2.5">
                   Cancel
+                </button>
+                <button type="submit" className="btn-primary text-xs flex-1 py-2.5 bg-red-600 hover:bg-red-500">
+                  Broadcast Alert 🚨
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
       <Footer />
     </div>
   );

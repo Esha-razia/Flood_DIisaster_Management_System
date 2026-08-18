@@ -66,20 +66,7 @@ def health_check():
 import sqlite3
 import threading
 
-class SQLiteRowObject:
-    def __init__(self, cursor, row):
-        for idx, col in enumerate(cursor.description):
-            name = col[0]
-            val = row[idx]
-            if name in ('created_at', 'completed_at', 'updated_at') and isinstance(val, str):
-                try:
-                    val = val.replace(" ", "T")
-                    val = datetime.fromisoformat(val)
-                except Exception:
-                    pass
-            setattr(self, name, val)
-
-class PostgreSQLRowObject:
+class UniversalRowObject:
     def __init__(self, description, row):
         for idx, col in enumerate(description):
             name = col[0]
@@ -92,33 +79,26 @@ class PostgreSQLRowObject:
                     pass
             setattr(self, name, val)
 
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return getattr(self, list(self.__dict__.keys())[item])
+        return getattr(self, item, None)
+
+SQLiteRowObject = UniversalRowObject
+PostgreSQLRowObject = UniversalRowObject
+
 class CompatibleCursor:
     def __init__(self, real_conn, db_type, parent_connection=None):
-        # Holding the CONNECTION (not a single cursor) lets us hand out a
-        # brand new low-level cursor on every execute() call below — this is
-        # what actually fixes "Recursive use of cursors not allowed": that
-        # SQLite error happens when the *same* cursor object is reused for a
-        # new query while an earlier query on it hasn't been fully consumed
-        # yet (e.g. one request's DB save overlapping another request's DB
-        # read on the single shared cursor this app used everywhere). A
-        # fresh cursor per call means calls can never collide like that.
         self.real_conn = real_conn
         self.db_type = db_type
-        self.parent_connection = parent_connection  # CompatibleConnection, for reconnecting on a dead PostgreSQL link
-        self.real_cursor = real_conn.cursor()  # kept for direct attribute access (e.g. .description)
+        self.parent_connection = parent_connection
+        self.real_cursor = real_conn.cursor()
 
     def execute(self, query, params=None):
         pg_query = query.replace("?", "%s") if self.db_type == "postgresql" else query
-        # Explicitly closing the previous low-level cursor before opening a
-        # new one matters for SQLite specifically: an unclosed cursor's
-        # prepared statement can still be considered "active" by SQLite even
-        # after this object stops referencing it (Python's garbage collector
-        # doesn't finalize it immediately), and issuing a new execute() on
-        # the same connection while that's true is exactly what SQLite's
-        # "Recursive use of cursors not allowed" error means. This showed up
-        # in practice on any endpoint (like /map-markers) that made several
-        # DB calls back-to-back in one request — each call's fresh cursor
-        # could collide with the still-lingering previous one.
         try:
             self.real_cursor.close()
         except Exception:
@@ -130,18 +110,6 @@ class CompatibleCursor:
             else:
                 return self.real_cursor.execute(pg_query)
         except Exception as e:
-            # Managed PostgreSQL (like Render's) closes connections that sit
-            # idle for a while, and a free-tier backend waking up from sleep
-            # can also leave the old connection dead. Without this, every
-            # query on this shared connection would keep failing the same
-            # way until the process was manually restarted — which is
-            # exactly what looked like "registration/login randomly breaks
-            # every few minutes". One reconnect-and-retry fixes it silently.
-            # (Retries on ANY exception here, not just ones that "look like"
-            # a connection error by message text — psycopg2's wording for a
-            # dead connection varies too much to match reliably, and a
-            # reconnect is cheap/harmless to attempt even if the original
-            # error was unrelated.)
             if self.db_type == "postgresql" and self.parent_connection is not None:
                 try:
                     self.real_conn = self.parent_connection._reconnect()
@@ -151,19 +119,19 @@ class CompatibleCursor:
                     else:
                         return self.real_cursor.execute(pg_query)
                 except Exception:
-                    raise e  # reconnect attempt itself failed — surface the original error
+                    raise e
             raise
 
     def fetchone(self):
         row = self.real_cursor.fetchone()
-        if row and self.db_type == "postgresql":
-            return PostgreSQLRowObject(self.real_cursor.description, row)
+        if row and getattr(self.real_cursor, 'description', None):
+            return UniversalRowObject(self.real_cursor.description, row)
         return row
 
     def fetchall(self):
         rows = self.real_cursor.fetchall()
-        if rows and self.db_type == "postgresql":
-            return [PostgreSQLRowObject(self.real_cursor.description, r) for r in rows]
+        if rows and getattr(self.real_cursor, 'description', None):
+            return [UniversalRowObject(self.real_cursor.description, r) for r in rows]
         return rows
 
     def __getattr__(self, name):
@@ -726,16 +694,16 @@ if DATABASE_URL:
         print(f"PostgreSQL connection failed after 3 attempts: {last_pg_error}")
         print("Falling back to other database options...")
 
-# 2. Try SQL Server (local development primary database)
 if not DB_AVAILABLE and pyodbc is not None:
     try:
-        conn = pyodbc.connect(
+        raw_conn = pyodbc.connect(
             "DRIVER={ODBC Driver 17 for SQL Server};"
             "SERVER=localhost;"
             "DATABASE=flood_db;"
             "Trusted_Connection=yes;",
             timeout=2
         )
+        conn = CompatibleConnection(raw_conn, "sql_server")
         cursor = conn.cursor()
         DB_AVAILABLE = True
         DB_TYPE = "sql_server"
@@ -776,7 +744,6 @@ if not DB_AVAILABLE and pyodbc is not None:
 # ── Migrations: add new columns to existing databases ──────────────────────
 if DB_AVAILABLE:
     try:
-        # Add occupancy, capacity, verified to hospitals if they don't exist yet
         if DB_TYPE == "sqlite":
             existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(hospitals)").fetchall()]
             if "occupancy" not in existing_cols:
@@ -785,6 +752,9 @@ if DB_AVAILABLE:
                 cursor.execute("ALTER TABLE hospitals ADD COLUMN capacity INTEGER DEFAULT 50")
             if "verified" not in existing_cols:
                 cursor.execute("ALTER TABLE hospitals ADD COLUMN verified INTEGER DEFAULT 0")
+            user_cols = [row[1] for row in cursor.execute("PRAGMA table_info(users)").fetchall()]
+            if "status" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'Active'")
             conn.commit()
         elif DB_TYPE in ("postgresql", "sql_server"):
             for col, coltype, default in [("occupancy", "INTEGER", "0"), ("capacity", "INTEGER", "50"), ("verified", "INTEGER", "0")]:
@@ -792,10 +762,16 @@ if DB_AVAILABLE:
                     cursor.execute(f"ALTER TABLE hospitals ADD COLUMN {col} {coltype} DEFAULT {default}")
                     conn.commit()
                 except Exception:
-                    pass  # column already exists
-        print("[MIGRATION] hospitals table columns verified/added: occupancy, capacity, verified")
+                    pass
+            for col, coltype, default in [("status", "VARCHAR(50)", "'Active'"), ("is_verified", "INT", "0"), ("otp", "VARCHAR(20)", "NULL"), ("on_duty", "INT", "1")]:
+                try:
+                    cursor.execute(f"ALTER TABLE users ADD {col} {coltype} DEFAULT {default}")
+                    conn.commit()
+                except Exception:
+                    pass
+        print("[MIGRATION] users & hospitals table columns verified/added")
     except Exception as mig_err:
-        print(f"[MIGRATION] hospitals migration error (non-fatal): {mig_err}")
+        print(f"[MIGRATION] migration error (non-fatal): {mig_err}")
 
 #  LOAD MODEL + SCALER (new multi-city models, trained on FLOOD_DATASET.csv)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -960,52 +936,63 @@ def register():
 
 # ---------------- LOGIN ----------------
 @app.route("/login", methods=["POST"])
+@app.route("/admin/login", methods=["POST"])
 def login():
     data = request.json or {}
-    email = (data.get("email") or "").strip().lower()
+    identifier = (data.get("username") or data.get("email") or "").strip().lower()
     password = (data.get("password") or "").strip()
 
-    if not email or not password:
-        return jsonify({"message": "Email and password are required"}), 400
+    print(f"[LOGIN ATTEMPT] Identifier: '{identifier}', password: '{password}'")
 
-    # Check the database FIRST when available -- it's the authoritative,
-    # persistent record. MEMORY_USERS is only a same-session convenience
-    # cache and resets on every server restart, so checking it first (or
-    # only) is exactly what caused "Invalid credentials" for real,
-    # previously-registered accounts after any backend restart.
+    if not identifier or not password:
+        return jsonify({"message": "Username/Email and password are required"}), 400
+
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email,))
+            cursor.execute(
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(name)) = ? OR (LOWER(?) = 'admin' AND role = 'admin')",
+                (identifier, identifier, identifier)
+            )
             db_user = cursor.fetchone()
         except Exception as e:
-            log_event("error", f"Login DB query error for {email}: {e}")
+            print(f"[LOGIN DB ERROR] Query failed for '{identifier}': {e}")
+            log_event("error", f"Login DB query error for {identifier}: {e}")
             db_user = None
 
-        if db_user and getattr(db_user, "password", "") == password:
-            status = getattr(db_user, "status", "Active")
-            if status != "Active":
-                return jsonify({"message": "User account is deactivated"}), 403
-            log_event("info", f"Login success (DB): {email}")
-            return jsonify({
-                "message": "Login success",
-                "id": db_user.id,
-                "role": db_user.role,
-                "name": db_user.name,
-                "email": db_user.email
-            })
+        if db_user:
+            db_pass = str(getattr(db_user, "password", "") or "").strip()
+            if db_pass == password or db_pass.lower() == password.lower():
+                status = getattr(db_user, "status", "Active") or "Active"
+                if status != "Active":
+                    print(f"[LOGIN BLOCKED] User '{identifier}' account status is '{status}'")
+                    return jsonify({"message": "User account is deactivated"}), 403
+                print(f"[LOGIN SUCCESS DB] User '{identifier}' logged in successfully!")
+                log_event("info", f"Login success (DB): {identifier}")
+                return jsonify({
+                    "message": "Login success",
+                    "id": getattr(db_user, "id", None),
+                    "role": getattr(db_user, "role", "citizen"),
+                    "name": getattr(db_user, "name", ""),
+                    "email": getattr(db_user, "email", identifier)
+                })
+            else:
+                print(f"[LOGIN FAIL] Password mismatch for '{identifier}'!")
+        else:
+            print(f"[LOGIN FAIL] No user found in DB for identifier '{identifier}'")
 
-    # Fall back to the in-memory list (covers the seeded default admin and
-    # any DB-unavailable deployments)
     user = next(
         (u for u in MEMORY_USERS
-         if u.get("email", "").strip().lower() == email
-         and u.get("password", "") == password),
+         if (u.get("email", "").strip().lower() == identifier
+             or u.get("name", "").strip().lower() == identifier
+             or (identifier == "admin" and u.get("role") == "admin"))
+         and (u.get("password", "").strip() == password or u.get("password", "").strip().lower() == password.lower())),
         None
     )
     if user:
         if user.get("status", "Active") != "Active":
             return jsonify({"message": "User account is deactivated"}), 403
-        log_event("info", f"Login success (memory): {email}")
+        print(f"[LOGIN SUCCESS MEMORY] User '{identifier}' logged in successfully!")
+        log_event("info", f"Login success (memory): {identifier}")
         return jsonify({
             "message": "Login success",
             "id": user["id"],
@@ -1014,7 +1001,7 @@ def login():
             "email": user["email"]
         })
 
-    log_event("warning", f"Failed login attempt for {email}")
+    log_event("warning", f"Failed login attempt for {identifier}")
     return jsonify({"message": "Invalid credentials"}), 401
 
 # ---------------- USERS MANAGEMENT ----------------
@@ -1030,14 +1017,15 @@ def get_users():
             for row in rows:
                 db_emails.add(row.email)
                 on_duty_val = getattr(row, "on_duty", 1)
+                c_at = getattr(row, "created_at", None)
                 data.append({
-                    "id": row.id,
-                    "name": row.name,
-                    "email": row.email,
-                    "role": row.role,
-                    "status": getattr(row, "status", "Active"),
+                    "id": getattr(row, "id", None),
+                    "name": getattr(row, "name", ""),
+                    "email": getattr(row, "email", ""),
+                    "role": getattr(row, "role", "citizen"),
+                    "status": getattr(row, "status", "Active") or "Active",
                     "on_duty": bool(on_duty_val) if on_duty_val is not None else True,
-                    "created_at": row.created_at.isoformat() if row.created_at else None
+                    "created_at": c_at.isoformat() if hasattr(c_at, "isoformat") else str(c_at) if c_at else None
                 })
         except Exception as e:
             print("USERS DB ERROR:", e)
@@ -1046,13 +1034,14 @@ def get_users():
                 rows = cursor.fetchall()
                 for row in rows:
                     db_emails.add(row.email)
+                    c_at = getattr(row, "created_at", None)
                     data.append({
-                        "id": row.id,
-                        "name": row.name,
-                        "email": row.email,
-                        "role": row.role,
+                        "id": getattr(row, "id", None),
+                        "name": getattr(row, "name", ""),
+                        "email": getattr(row, "email", ""),
+                        "role": getattr(row, "role", "citizen"),
                         "status": "Active",
-                        "created_at": row.created_at.isoformat() if row.created_at else None
+                        "created_at": c_at.isoformat() if hasattr(c_at, "isoformat") else str(c_at) if c_at else None
                     })
             except Exception as e2:
                 print("USERS DB fallback failed:", e2)

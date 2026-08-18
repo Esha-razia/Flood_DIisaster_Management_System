@@ -153,10 +153,20 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
                 >
                   {loading ? t('analysing') : t('signIn')}
                 </button>
+
+                <div className="pt-4 mt-2 border-t border-white/10 text-center flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted">
+                  <span>Authorized Staff?</span>
+                  <Link
+                    to="/admin-login"
+                    className="text-amber-400 hover:text-amber-300 font-semibold transition-colors inline-flex items-center gap-1"
+                  >
+                    🛡️ Administrator Portal →
+                  </Link>
+                </div>
               </form>
             </div>
           </div>
