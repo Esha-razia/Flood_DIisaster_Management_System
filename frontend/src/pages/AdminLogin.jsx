@@ -40,10 +40,29 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_BASE}/admin/login`, {
+      // Map username 'admin' to default admin email if not an email format, ensuring compatibility with all backend versions
+      const emailPayload = cleanUser.includes('@') 
+        ? cleanUser.toLowerCase() 
+        : (cleanUser.toLowerCase() === 'admin' ? 'admin@example.com' : cleanUser.toLowerCase());
+
+      const payload = {
         username: cleanUser,
+        email: emailPayload,
         password: password.trim()
-      });
+      };
+
+      let response;
+      try {
+        // Try standard /login endpoint first as it exists in all backend deployments
+        response = await axios.post(`${API_BASE}/login`, payload);
+      } catch (postErr) {
+        if (postErr.response?.status === 404) {
+          // Fallback to /admin/login if /login is not found
+          response = await axios.post(`${API_BASE}/admin/login`, payload);
+        } else {
+          throw postErr;
+        }
+      }
 
       if (response.data.role !== 'admin') {
         setError('Access Denied: This portal is strictly restricted to Authorized System Administrators.');
@@ -54,14 +73,14 @@ export default function AdminLogin() {
       // Save admin credentials
       localStorage.setItem('userRole', 'admin');
       localStorage.setItem('userName', response.data.name || 'System Admin');
-      localStorage.setItem('userEmail', response.data.email || 'admin@flood.system');
+      localStorage.setItem('userEmail', response.data.email || 'admin@example.com');
       if (response.data.id) localStorage.setItem('userId', response.data.id);
 
       setSuccess('Administrator authentication successful! Redirecting to Command Center...');
 
       setTimeout(() => {
         navigate('/admin-dashboard');
-      }, 1200);
+      }, 1000);
     } catch (err) {
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
       setError(serverMessage || err.message || 'Invalid administrator credentials.');
