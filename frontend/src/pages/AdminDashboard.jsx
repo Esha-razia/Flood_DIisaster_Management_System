@@ -61,6 +61,7 @@ const AdminDashboard = () => {
   const [retrainFile, setRetrainFile] = useState(null);
   const [retraining, setRetraining] = useState(false);
   const [retrainResult, setRetrainResult] = useState(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
@@ -654,32 +655,49 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Quick Category Navigation Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-6 scrollbar-none custom-scroll">
-            {navigationSections.map((sec) => {
-              const isActive = activeSection === sec.id;
-              return (
-                <button
-                  key={sec.id}
-                  onClick={() => setActiveSection(sec.id)}
-                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 flex items-center gap-2 border cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-500 border-amber-400 text-ink shadow-lg shadow-amber-500/20 font-bold'
-                      : 'bg-white/[0.04] border-white/10 text-muted hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <span>{sec.icon}</span>
-                  <span>{sec.label}</span>
-                  {sec.badge !== null && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                      isActive ? 'bg-black text-amber-300' : 'bg-white/15 text-white'
-                    }`}>
-                      {sec.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          {/* Navigation Dropdown Menu */}
+          <div className="relative mb-6">
+            <button
+              onClick={() => setNavOpen(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-3 bg-white/[0.05] border border-white/15 rounded-2xl text-sm font-semibold text-parchment hover:bg-white/10 transition-all cursor-pointer shadow-lg"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">{navigationSections.find(s => s.id === activeSection)?.icon}</span>
+                <span>{navigationSections.find(s => s.id === activeSection)?.label}</span>
+              </div>
+              <span className="text-muted text-xs">{navOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {navOpen && (
+              <div className="absolute top-full left-0 right-0 mt-2 z-40 bg-[#0c131f] border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-2">
+                  {navigationSections.map((sec) => {
+                    const isActive = activeSection === sec.id;
+                    return (
+                      <button
+                        key={sec.id}
+                        onClick={() => { setActiveSection(sec.id); setNavOpen(false); }}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer text-left ${
+                          isActive
+                            ? 'bg-amber-500 text-ink font-bold shadow-md shadow-amber-500/20'
+                            : 'text-muted hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <span className="text-base shrink-0">{sec.icon}</span>
+                        <span className="truncate">{sec.label}</span>
+                        {sec.badge !== null && (
+                          <span className={`ml-auto text-[10px] px-1.5 rounded-full font-mono shrink-0 ${
+                            isActive ? 'bg-black text-amber-300' : 'bg-white/15 text-white'
+                          }`}>
+                            {sec.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ========================================================================= */}
@@ -1740,17 +1758,20 @@ const AdminDashboard = () => {
                 {/* Confidence Trend */}
                 <div className="dashboard-card p-6">
                   <h3 className="font-display text-xl text-parchment mb-1">📊 Prediction Confidence Trend</h3>
-                  <p className="text-xs text-muted mb-4">Average prediction certainty over time</p>
+                  <p className="text-xs text-muted mb-4">Average prediction certainty over time (%)</p>
                   <div className="h-64 w-full">
                     {confidenceTrend.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-xs text-muted">No historical confidence logs available yet.</div>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={confidenceTrend}>
+                        <LineChart data={confidenceTrend.map(d => ({ ...d, avg_confidence: d.avg_confidence > 1 ? d.avg_confidence : Math.round(d.avg_confidence * 100) }))}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                           <XAxis dataKey="date" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
-                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
-                          <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} />
+                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }}
+                            formatter={(value) => [`${value}%`, "Avg Confidence"]}
+                          />
                           <Line type="monotone" dataKey="avg_confidence" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} />
                         </LineChart>
                       </ResponsiveContainer>
