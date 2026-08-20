@@ -1741,35 +1741,17 @@ const AdminDashboard = () => {
                   <div className="h-64 w-full">
                     {accuracyHistory.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-xs text-muted">Retrain model to populate accuracy trend.</div>
-                    ) : (() => {
-                      // Normalize: backend stores accuracy as 0.0-1.0 float
-                      const accData = accuracyHistory.map(d => ({
-                        ...d,
-                        accuracy_pct: d.accuracy <= 1 ? parseFloat((d.accuracy * 100).toFixed(1)) : parseFloat(d.accuracy.toFixed(1)),
-                        label: d.timestamp ? d.timestamp.slice(0, 10) : ''
-                      }));
-                      const accMin = Math.max(0, Math.min(...accData.map(d => d.accuracy_pct)) - 5);
-                      return (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={accData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="label" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
-                            <YAxis
-                              domain={[accMin, 100]}
-                              stroke="#64748b"
-                              tick={{ fill: "#64748b", fontSize: 10 }}
-                              tickFormatter={(v) => `${v}%`}
-                            />
-                            <Tooltip
-                              contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }}
-                              formatter={(value) => [`${value}%`, "Model Accuracy"]}
-                              labelFormatter={(label) => `Date: ${label}`}
-                            />
-                            <Line type="monotone" dataKey="accuracy_pct" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      );
-                    })()}
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={accuracyHistory.map(d => ({ ...d, accuracy_pct: d.accuracy <= 1 ? parseFloat((d.accuracy * 100).toFixed(1)) : parseFloat(d.accuracy.toFixed(1)), label: d.timestamp ? d.timestamp.slice(0,10) : '' }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="label" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                          <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} formatter={(value) => [`${value}%`, "Model Accuracy"]} />
+                          <Line type="monotone" dataKey="accuracy_pct" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </div>
 
@@ -1780,34 +1762,17 @@ const AdminDashboard = () => {
                   <div className="h-64 w-full">
                     {confidenceTrend.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-xs text-muted">No historical confidence logs available yet.</div>
-                    ) : (() => {
-                      // Normalize: backend stores confidence as 0.0-1.0 float
-                      const confData = confidenceTrend.map(d => ({
-                        ...d,
-                        conf_pct: d.avg_confidence <= 1 ? parseFloat((d.avg_confidence * 100).toFixed(1)) : parseFloat(d.avg_confidence.toFixed(1))
-                      }));
-                      const confMin = Math.max(0, Math.min(...confData.map(d => d.conf_pct)) - 5);
-                      return (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={confData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="date" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
-                            <YAxis
-                              domain={[confMin, 100]}
-                              stroke="#64748b"
-                              tick={{ fill: "#64748b", fontSize: 10 }}
-                              tickFormatter={(v) => `${v}%`}
-                            />
-                            <Tooltip
-                              contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }}
-                              formatter={(value, name, props) => [`${value}% (${props.payload.count} predictions)`, "Avg Confidence"]}
-                              labelFormatter={(label) => `Date: ${label}`}
-                            />
-                            <Line type="monotone" dataKey="conf_pct" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      );
-                    })()}
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={confidenceTrend.map(d => ({ ...d, conf_pct: d.avg_confidence <= 1 ? parseFloat((d.avg_confidence * 100).toFixed(1)) : parseFloat(d.avg_confidence.toFixed(1)) }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="date" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                          <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} formatter={(value) => [`${value}%`, "Avg Confidence"]} />
+                          <Line type="monotone" dataKey="conf_pct" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b" }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </div>
               </div>
