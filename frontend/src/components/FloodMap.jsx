@@ -215,15 +215,36 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       maxBoundsViscosity: 1.0,
       scrollWheelZoom: true,
     });
-    // A dark, muted basemap (CARTO's free "Dark Matter" tiles) instead of
-    // the default bright/cartoonish OSM tiles — those clashed hard with
-    // everything else in this dark, serif-typeface interface. No API key
-    // needed, same OSM data underneath, just restyled.
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    // High-performance, reliable, watermark-free basemaps (100% free, no API key required)
+    const darkBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+      maxZoom: 16,
+    });
+    const darkRef = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", {
+      attribution: '',
+      maxZoom: 16,
+    });
+    const darkLayer = L.layerGroup([darkBase, darkRef]);
+
+    const osmLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    });
+
+    const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
       maxZoom: 18,
-      subdomains: "abcd",
-    }).addTo(map);
+    });
+
+    // Default to Dark Canvas to fit our website dark theme seamlessly
+    darkLayer.addTo(map);
+
+    const baseMaps = {
+      "🌙 Dark Map": darkLayer,
+      "🗺️ Streets (OSM)": osmLayer,
+      "🛰️ Satellite": satelliteLayer,
+    };
+    L.control.layers(baseMaps, null, { position: "topright" }).addTo(map);
 
     markersLayerRef.current = L.layerGroup().addTo(map);
     L.control.scale({ position: "bottomleft", imperial: false }).addTo(map);
@@ -973,6 +994,30 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         .fdm-sidebar-item.is-selected { background: rgba(63,189,182,0.12); border-color: rgba(63,189,182,0.4); }
         .fdm-sidebar-item.is-kb-focused { outline: 2px solid rgba(63,189,182,0.6); outline-offset: -2px; }
         .leaflet-control-scale-line { background: rgba(20,29,46,0.85) !important; color: #F3EDE1 !important; border-color: rgba(255,255,255,.3) !important; }
+        .leaflet-control-layers {
+          background: rgba(20,29,46,0.92) !important;
+          color: #F3EDE1 !important;
+          border: 1px solid rgba(255,255,255,0.15) !important;
+          border-radius: 10px !important;
+          box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;
+          font-family: 'Public Sans', sans-serif !important;
+          font-size: 12px !important;
+          padding: 8px 12px !important;
+        }
+        .leaflet-control-layers-toggle {
+          filter: invert(0.85);
+        }
+        .leaflet-control-layers label {
+          color: #F3EDE1 !important;
+          margin-bottom: 4px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .leaflet-control-layers-separator {
+          border-top: 1px solid rgba(255,255,255,0.1) !important;
+        }
         @media print {
           .fdm-no-print { display: none !important; }
           .fdm-print-only-map { height: 90vh !important; }
