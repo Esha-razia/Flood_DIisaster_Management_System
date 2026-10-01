@@ -1868,6 +1868,13 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
                 (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"])
             )
             cursor.execute("UPDATE rescue_operations SET checklist = ? WHERE id = ?", (json.dumps(op["checklist"]), op["id"]))
+            try:
+                cursor.execute(
+                    "INSERT INTO alerts (message, risk_level, location) VALUES (?, ?, ?)",
+                    (f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}", op["risk_level"], op["location"])
+                )
+            except Exception:
+                pass
             conn.commit()
         except Exception as db_error:
             # If we couldn't confirm the real database id, don't silently
@@ -1891,21 +1898,23 @@ def create_rescue_operation():
     try:
         op = _create_rescue_op_internal(
             location=location, description=data.get("description", ""),
-            risk_level=data.get("risk_level", "Medium"), assigned_team=data.get("assigned_team", "Unassigned"),
+            risk_level=data.get("risk_level", "High"), assigned_team=data.get("assigned_team", "Unassigned"),
         )
     except Exception:
         return jsonify({"message": "Could not save the operation to the database — please try again."}), 503
     # FR05-03: notify relevant rescue teams when a new operation is created.
-    # No real push/SMS gateway is wired up yet, so this is logged server-side;
-    # swap this for a real notification service (e.g. Twilio/email) when ready.
     return jsonify(op), 201
 
 @app.route("/rescue-operations/<int:op_id>/status", methods=["PUT"])
 def update_rescue_operation_status(op_id):
     data = request.json or {}
     new_status = data.get("status")
-    if new_status not in ("Assigned", "In Progress", "Completed"):
+    if new_status and new_status not in ("Assigned", "In Progress", "Completed"):
         return jsonify({"message": "Invalid status"}), 400
+
+    risk_level = data.get("risk_level")
+    if risk_level and risk_level not in ("High", "Medium", "Low"):
+        return jsonify({"message": "Invalid risk level"}), 400
 
     updated_at = str(datetime.now())
     completed_at = updated_at if new_status == "Completed" else None
@@ -1918,7 +1927,10 @@ def update_rescue_operation_status(op_id):
     result = None
     for op in MEMORY_RESCUE_OPS:
         if op["id"] == op_id:
-            op["status"] = new_status
+            if new_status:
+                op["status"] = new_status
+            if risk_level:
+                op["risk_level"] = risk_level
             op["updated_at"] = updated_at
             if assigned_team is not None:
                 op["assigned_team"] = assigned_team or "Unassigned"
@@ -1936,11 +1948,13 @@ def update_rescue_operation_status(op_id):
         try:
             needs_backup_db = (1 if needs_backup else 0) if needs_backup is not None else None
             cursor.execute(
-                "UPDATE rescue_operations SET status = ?, updated_at = ?, "
+                "UPDATE rescue_operations SET "
+                "status = COALESCE(?, status), updated_at = ?, "
+                "risk_level = COALESCE(?, risk_level), "
                 "assigned_team = COALESCE(?, assigned_team), completed_at = COALESCE(?, completed_at), "
                 "people_rescued = COALESCE(?, people_rescued), resources_used = COALESCE(?, resources_used), "
                 "completion_notes = COALESCE(?, completion_notes), needs_backup = COALESCE(?, needs_backup) WHERE id = ?",
-                (new_status, updated_at, assigned_team, completed_at, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
+                (new_status, updated_at, risk_level, assigned_team, completed_at, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
             )
             conn.commit()
             if result is None:

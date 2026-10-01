@@ -95,6 +95,11 @@ export default function RescueDashboard() {
   const [handoverInput, setHandoverInput] = useState("");
   const [handoverPriority, setHandoverPriority] = useState("Normal");
   const [historySearch, setHistorySearch] = useState("");
+  const [riskFilter, setRiskFilter] = useState("All"); // FR05-07: "All" | "High" | "Medium" | "Low"
+  const [historyRiskFilter, setHistoryRiskFilter] = useState("All");
+  const [newOpNotification, setNewOpNotification] = useState(null); // FR05-03: real-time notification
+  const prevOpIdsRef = useRef(new Set());
+  const initialFetchDone = useRef(false);
 
   // Rescue Teams — named groups of workers so an operation can be assigned
   // to a full 3-4 person team instead of only ever one person.
@@ -156,30 +161,59 @@ export default function RescueDashboard() {
 
   // Priority/triage sort — backup requests and High risk operations surface
   // to the top so a worker glancing at the list sees what's most urgent
-  // first, instead of just whatever order they were created in.
+  // first, instead of just whatever order they were created in (FR05-07).
   const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
-  const sortedOperations = useMemo(() => {
-    return [...operations].sort((a, b) => {
+
+  const filteredOperations = useMemo(() => {
+    let list = [...operations];
+    if (riskFilter !== "All") {
+      list = list.filter((op) => op.risk_level === riskFilter);
+    }
+    return list.sort((a, b) => {
       if (!!b.needs_backup !== !!a.needs_backup) return (b.needs_backup ? 1 : 0) - (a.needs_backup ? 1 : 0);
       const scoreA = PRIORITY_SCORE[a.risk_level] || 0;
       const scoreB = PRIORITY_SCORE[b.risk_level] || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
       return new Date(b.updated_at) - new Date(a.updated_at);
     });
-  }, [operations]);
+  }, [operations, riskFilter]);
+
+  const sortedOperations = filteredOperations;
+
+  // Real-time active operations categories (FR05-04)
+  const activeOperations = useMemo(() => {
+    return filteredOperations.filter((op) => op.status !== "Completed");
+  }, [filteredOperations]);
+
+  const assignedOperations = useMemo(() => {
+    return activeOperations.filter((op) => op.status === "Assigned");
+  }, [activeOperations]);
+
+  const inProgressOperations = useMemo(() => {
+    return activeOperations.filter((op) => op.status === "In Progress");
+  }, [activeOperations]);
 
   const onDutyWorkers = useMemo(() => rescueWorkers.filter((w) => w.on_duty !== false), [rescueWorkers]);
 
-  const historicalResults = useMemo(() => {
-    const completed = operations.filter((op) => op.status === "Completed");
+  // Past rescue operations registry & audit log (FR05-06)
+  const pastOperations = useMemo(() => {
+    let list = operations.filter((op) => op.status === "Completed");
+    if (historyRiskFilter !== "All") {
+      list = list.filter((op) => op.risk_level === historyRiskFilter);
+    }
     const query = historySearch.trim().toLowerCase();
-    if (!query) return completed;
-    return completed.filter((op) =>
-      (op.location || "").toLowerCase().includes(query) ||
-      (op.assigned_team || "").toLowerCase().includes(query) ||
-      (op.completion_notes || "").toLowerCase().includes(query)
-    );
-  }, [operations, historySearch]);
+    if (query) {
+      list = list.filter((op) =>
+        (op.location || "").toLowerCase().includes(query) ||
+        (op.assigned_team || "").toLowerCase().includes(query) ||
+        (op.completion_notes || "").toLowerCase().includes(query) ||
+        (op.resources_used || "").toLowerCase().includes(query)
+      );
+    }
+    return list.sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at));
+  }, [operations, historySearch, historyRiskFilter]);
+
+  const historicalResults = pastOperations;
 
   const fetchRescueWorkers = async () => {
     try {
@@ -524,10 +558,12 @@ export default function RescueDashboard() {
     // show up promptly (new reports, new high-risk alerts), at a slower
     // interval than before.
     const interval = setInterval(() => {
+      fetchOperations();
       fetchAlerts();
       fetchCommunityReports();
       fetchShelters();
       fetchHospitals();
+      fetchStats();
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -537,11 +573,93 @@ export default function RescueDashboard() {
     try {
       const res = await fetchWithRetry(() => axios.get(`${API_BASE}/rescue-operations`));
       if (mySeq !== opsFetchSeq.current) return; // a newer request already resolved — drop this stale one
-      setOperations(res.data || []);
-      (res.data || []).forEach((op) => fetchNearbyForOp(op));
+      const data = res.data || [];
+
+      // FR05-03: Notify relevant rescue teams when a new operation is created
+      if (initialFetchDone.current && prevOpIdsRef.current.size > 0) {
+        const brandNewOps = data.filter((op) => !prevOpIdsRef.current.has(op.id) && op.status !== "Completed");
+        if (brandNewOps.length > 0) {
+          const newest = brandNewOps[0];
+          setNewOpNotification(newest);
+        }
+      }
+      prevOpIdsRef.current = new Set(data.map((o) => o.id));
+      initialFetchDone.current = true;
+
+      setOperations(data);
+      data.forEach((op) => fetchNearbyForOp(op));
     } catch (err) {
       console.error("Error fetching rescue operations:", err);
     }
+  };
+
+  // FR05-07: Officials reprioritize rescue operations based on risk level
+  const handleReprioritizeRisk = async (opId, newRiskLevel) => {
+    try {
+      const op = operations.find((o) => o.id === opId);
+      if (!op) return;
+      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, {
+        status: op.status,
+        risk_level: newRiskLevel,
+      });
+      setActionFeedback(`Operation at ${op.location} reprioritized to ${newRiskLevel} Risk.`);
+      fetchOperations();
+      fetchStats();
+    } catch (err) {
+      console.error("Failed to reprioritize operation risk:", err);
+      setActionFeedback(t("couldNotUpdateOp"));
+    }
+  };
+
+  // FR05-06: Export past operations log to CSV for reporting
+  const exportPastOperationsCSV = () => {
+    const completed = operations.filter((op) => op.status === "Completed");
+    if (completed.length === 0) {
+      alert("No past operations to export yet.");
+      return;
+    }
+    const headers = [
+      "Operation ID",
+      "Location",
+      "Risk Level",
+      "Assigned Team / Worker",
+      "Status",
+      "Created At",
+      "Completed At",
+      "Duration (Minutes)",
+      "People Rescued",
+      "Resources Used",
+      "Completion Notes",
+    ];
+
+    const rows = completed.map((op) => {
+      const dur = op.completed_at && op.created_at
+        ? Math.max(0, Math.round((new Date(op.completed_at) - new Date(op.created_at)) / 60000))
+        : "";
+      return [
+        op.id,
+        `"${(op.location || "").replace(/"/g, '""')}"`,
+        op.risk_level || "Medium",
+        `"${(op.assigned_team || "").replace(/"/g, '""')}"`,
+        op.status,
+        op.created_at ? new Date(op.created_at).toISOString() : "",
+        op.completed_at ? new Date(op.completed_at).toISOString() : "",
+        dur,
+        op.people_rescued || 0,
+        `"${(op.resources_used || "").replace(/"/g, '""')}"`,
+        `"${(op.completion_notes || "").replace(/"/g, '""')}"`,
+      ].join(",");
+    });
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rescue_operations_past_log_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setActionFeedback("Past rescue operations log downloaded successfully.");
   };
 
   const handleCreateOperation = async (e) => {
@@ -553,6 +671,7 @@ export default function RescueDashboard() {
       setShowOpForm(false);
       setActionFeedback("Rescue operation created and team notified.");
       fetchOperations();
+      fetchStats();
     } catch (err) {
       console.error("Failed to create rescue operation:", err);
       setActionFeedback("Could not create rescue operation.");
@@ -840,9 +959,35 @@ export default function RescueDashboard() {
       <div className="flex flex-col gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-semibold text-white">{op.location}</h4>
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${opStatusStyles(op.status)}`}>{t(OP_STATUS_KEY_MAP[op.status] || op.status)}</span>
-            <span className="text-xs text-muted">{t(RISK_KEY_MAP[op.risk_level] || op.risk_level)} {t("riskLabel").toLowerCase()}</span>
+            <h4 className="font-semibold text-white text-base">{op.location}</h4>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${opStatusStyles(op.status)}`}>
+              {t(OP_STATUS_KEY_MAP[op.status] || op.status)}
+            </span>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${
+              op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/50" :
+              op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/50" :
+              "bg-green-500/20 text-green-300 border-green-500/50"
+            }`}>
+              {op.risk_level === "High" ? "🔴 High Risk" : op.risk_level === "Medium" ? "🟡 Medium Risk" : "🟢 Low Risk"}
+            </span>
+
+            {/* FR05-07: Officials reprioritize operation based on risk level */}
+            {op.status !== "Completed" && (
+              <div className="flex items-center gap-1 ml-auto">
+                <span className="text-[10px] text-muted">Priority:</span>
+                <select
+                  value={op.risk_level || "Medium"}
+                  onChange={(e) => handleReprioritizeRisk(op.id, e.target.value)}
+                  className="text-[11px] bg-white/5 border border-white/15 rounded px-2 py-0.5 text-muted hover:text-white hover:border-teal-400 focus:outline-none"
+                  title="Reprioritize operation risk level (FR05-07)"
+                >
+                  <option value="High" className="bg-ink text-red-300">🔴 High Priority</option>
+                  <option value="Medium" className="bg-ink text-yellow-300">🟡 Medium Priority</option>
+                  <option value="Low" className="bg-ink text-green-300">🟢 Low Priority</option>
+                </select>
+              </div>
+            )}
+
             {op.needs_backup && (
               <button onClick={() => handleClearBackup(op)} title={t("clickToClearBackup")}
                 className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/50 text-red-300 font-semibold hover:bg-red-500/30 transition-colors flex items-center gap-1">
@@ -944,13 +1089,24 @@ export default function RescueDashboard() {
           )}
         </div>
         {op.status !== "Completed" && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
+            <span className="text-xs text-muted font-medium">Update Status (FR05-02):</span>
             {op.status === "Assigned" && (
               <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
-                className="bg-teal-600/80 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("start")}</button>
+                className="bg-teal-600/90 hover:bg-teal-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm">
+                ▶️ {t("start")} (In Progress)
+              </button>
+            )}
+            {op.status === "In Progress" && (
+              <button onClick={() => handleUpdateOpStatus(op.id, "Assigned")}
+                className="bg-amber-600/70 hover:bg-amber-500 text-white font-medium text-xs px-2.5 py-1.5 rounded-lg transition-colors">
+                ⏸️ Hold / Assigned
+              </button>
             )}
             <button onClick={() => handleUpdateOpStatus(op.id, "Completed")}
-              className="bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg transition-colors">{t("markComplete")}</button>
+              className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm">
+              ✅ {t("markComplete")}
+            </button>
             <button onClick={() => handlePrintOperation(op)} className="text-xs text-muted hover:text-teal-300 transition-colors ml-auto">
               🖨️ {t("printReportBtn")}
             </button>
@@ -1005,14 +1161,54 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* Tab Navigation — separates "my own work" from full team
-              oversight and the map, instead of one long scrolling page. */}
+          {/* FR05-03: Real-Time Team Notification for New Rescue Operations */}
+          {newOpNotification && (
+            <div className="mb-6 bg-gradient-to-r from-red-500/20 via-amber-500/20 to-teal-500/20 border border-teal-500/50 rounded-2xl p-4 flex items-center justify-between gap-4 animate-pulse shadow-lg shadow-teal-500/10">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl animate-bounce">🔔</span>
+                <div>
+                  <h4 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                    NEW RESCUE DISPATCH ALERT: {newOpNotification.location}
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/30 text-red-200 border border-red-500/50">
+                      {newOpNotification.risk_level || "Medium"} Risk
+                    </span>
+                  </h4>
+                  <p className="text-xs text-muted mt-0.5">
+                    Assigned to: <strong className="text-teal-300">{newOpNotification.assigned_team || "Unassigned"}</strong> · Live notification dispatched to relevant units.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    setActiveTab("active_board");
+                    setNewOpNotification(null);
+                  }}
+                  className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
+                >
+                  View Live Board
+                </button>
+                <button
+                  onClick={() => setNewOpNotification(null)}
+                  className="text-muted hover:text-white text-sm px-2 py-1"
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tab Navigation — separates "my own work", real-time active board,
+              creation/overview, historical reporting, map, and resources */}
           <div className="flex flex-wrap gap-2 mb-8 border-b border-white/10 pb-1">
             {[
-              { id: "myOps", label: t("tabMyOperations") },
-              { id: "team", label: t("tabTeamOverview"), badge: highRiskAlerts.length + communityReports.filter((r) => r.status === "Submitted").length },
-              { id: "map", label: t("tabMapNavigation") },
-              { id: "team_resources", label: t("tabTeamResources") },
+              { id: "myOps", label: "📌 " + t("tabMyOperations"), badge: myOperations.filter(o => o.status !== "Completed").length },
+              { id: "active_board", label: "⚡ Active Ops Board", badge: activeOperations.length },
+              { id: "team", label: "🚤 " + t("tabTeamOverview"), badge: highRiskAlerts.length + communityReports.filter((r) => r.status === "Submitted").length },
+              { id: "history", label: "📜 Past Ops Log & Reports", badge: pastOperations.length },
+              { id: "map", label: "🗺️ " + t("tabMapNavigation") },
+              { id: "team_resources", label: "👥 " + t("tabTeamResources") },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1077,6 +1273,141 @@ export default function RescueDashboard() {
           </div>
           </>)}
           {/* ============ END TAB: MY OPERATIONS ============ */}
+
+          {/* ============ TAB: ACTIVE OPERATIONS BOARD (FR05-04 & FR05-07) ============ */}
+          {activeTab === "active_board" && (<>
+          {/* Header & Live Status */}
+          <div className="dashboard-card p-6 mb-8 border-teal-500/30 bg-gradient-to-br from-teal-950/20 via-ink-soft to-ink">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-ping"></span>
+                  <span className="eyebrow text-teal-400">Live Multi-Team Coordination (FR05-04)</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl text-parchment">⚡ Real-Time Active Operations Board</h2>
+                <p className="text-sm text-muted mt-1">Live multi-team status of all ongoing operations across Pakistani cities. Auto-syncs every 15s.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs px-3 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                  Live Auto-Sync Active
+                </span>
+                <button onClick={handleManualRefresh} disabled={refreshing} className="btn-secondary text-xs py-1.5 px-3">
+                  {refreshing ? "Syncing..." : "🔄 Force Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-parchment">{activeOperations.length}</div>
+                <div className="eyebrow text-muted">Total Active Ops</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-red-400">{activeOperations.filter(o => o.risk_level === "High").length}</div>
+                <div className="eyebrow text-muted">High Priority / Urgent</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-teal-400">{inProgressOperations.length}</div>
+                <div className="eyebrow text-muted">In Progress On-Ground</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-amber-400">{assignedOperations.length}</div>
+                <div className="eyebrow text-muted">Assigned / Standby</div>
+              </div>
+            </div>
+
+            {/* FR05-07: Prioritization Filter Bar */}
+            <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted font-medium">Prioritize by Risk Level (FR05-07):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: "All", label: `All (${activeOperations.length})` },
+                    { id: "High", label: `🔴 High Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "High").length})` },
+                    { id: "Medium", label: `🟡 Medium Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "Medium").length})` },
+                    { id: "Low", label: `🟢 Low Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "Low").length})` },
+                  ].map((btn) => (
+                    <button
+                      key={btn.id}
+                      onClick={() => setRiskFilter(btn.id)}
+                      className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                        riskFilter === btn.id
+                          ? "bg-teal-500/25 border-teal-500 text-teal-300"
+                          : "bg-white/5 border-white/10 text-muted hover:border-white/25"
+                      }`}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setActiveTab("team");
+                  setShowOpForm(true);
+                }}
+                className="btn-primary text-xs py-1.5 px-3"
+              >
+                + Create New Operation
+              </button>
+            </div>
+          </div>
+
+          {/* Active Operations Kanban Dual Columns */}
+          <div className="grid md:grid-cols-2 gap-6 mb-8">
+            {/* Column 1: Assigned / Dispatched */}
+            <div className="dashboard-card p-6 border-amber-500/30">
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                  <h3 className="font-display text-xl text-white">📋 Assigned / Dispatched</h3>
+                </div>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
+                  {assignedOperations.length} ops
+                </span>
+              </div>
+              <p className="text-xs text-muted mb-4">Operations assigned to rescue teams awaiting deployment or currently en-route.</p>
+
+              {assignedOperations.length === 0 ? (
+                <div className="text-center py-8 text-muted bg-white/[0.02] rounded-xl border border-white/5">
+                  <p className="text-sm">No operations currently on standby.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {assignedOperations.map((op) => renderOperationCard(op))}
+                </div>
+              )}
+            </div>
+
+            {/* Column 2: In Progress / On-Ground */}
+            <div className="dashboard-card p-6 border-teal-500/30">
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
+                  <h3 className="font-display text-xl text-white">⚡ In Progress / Active Rescue</h3>
+                </div>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-semibold">
+                  {inProgressOperations.length} active
+                </span>
+              </div>
+              <p className="text-xs text-muted mb-4">Active on-scene flood rescue teams carrying out evacuations and medical aid.</p>
+
+              {inProgressOperations.length === 0 ? (
+                <div className="text-center py-8 text-muted bg-white/[0.02] rounded-xl border border-white/5">
+                  <p className="text-sm">No operations currently in active progress.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {inProgressOperations.map((op) => renderOperationCard(op))}
+                </div>
+              )}
+            </div>
+          </div>
+          </>)}
+          {/* ============ END TAB: ACTIVE OPERATIONS BOARD ============ */}
 
           {/* ============ TAB: TEAM OVERVIEW ============ */}
           {activeTab === "team" && (<>
@@ -1399,7 +1730,31 @@ export default function RescueDashboard() {
               </form>
             )}
 
-            {operations.length === 0 ? (
+            {/* FR05-07: Prioritization Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pt-3 border-t border-white/10">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted font-medium">Filter by Risk Priority (FR05-07):</span>
+                {["All", "High", "Medium", "Low"].map((rk) => (
+                  <button
+                    key={rk}
+                    type="button"
+                    onClick={() => setRiskFilter(rk)}
+                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                      riskFilter === rk
+                        ? "bg-teal-500/25 border-teal-500 text-teal-300"
+                        : "bg-white/5 border-white/10 text-muted hover:border-white/20"
+                    }`}
+                  >
+                    {rk === "High" ? "🔴 High" : rk === "Medium" ? "🟡 Medium" : rk === "Low" ? "🟢 Low" : "All"} ({rk === "All" ? operations.length : operations.filter(o => o.risk_level === rk).length})
+                  </button>
+                ))}
+              </div>
+              <span className="text-xs text-muted">
+                Showing {sortedOperations.length} operations sorted by priority
+              </span>
+            </div>
+
+            {sortedOperations.length === 0 ? (
               <p className="text-muted text-center py-6">{t('noOperationsFound')}</p>
             ) : (
               <div className="space-y-3">
@@ -1934,36 +2289,144 @@ export default function RescueDashboard() {
             )}
           </div>
 
-          {/* Historical Operations Search */}
+          </>)}
+          {/* ============ END TAB: TEAM & RESOURCES ============ */}
+
+          {/* ============ TAB: PAST OPERATIONS LOG & REPORTS (FR05-06) ============ */}
+          {activeTab === "history" && (<>
           <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("recordKeeping")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">📜 {t("historicalSearchTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("historicalSearchDesc")}</p>
-            <input
-              value={historySearch}
-              onChange={(e) => setHistorySearch(e.target.value)}
-              placeholder={t("historicalSearchPh")}
-              className="field-input mb-4"
-            />
-            {historicalResults.length === 0 ? (
-              <p className="text-sm text-muted">{t("noHistoricalResults")}</p>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {historicalResults.map((op) => (
-                  <div key={op.id} className="bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-white font-medium">{op.location}</span>
-                      <span className="text-xs text-muted">{new Date(op.completed_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</span>
-                    </div>
-                    <p className="text-xs text-muted mt-1">{t("teamLabel")}: {op.assigned_team || t("unassigned")} {op.people_rescued > 0 && `· ${t("peopleRescuedLabel")}: ${op.people_rescued}`}</p>
-                    {op.completion_notes && <p className="text-xs text-muted mt-1">📝 {op.completion_notes}</p>}
-                  </div>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <p className="eyebrow text-teal-400 mb-1">Official Registry & Audit Log (FR05-06)</p>
+                <h2 className="font-display text-2xl sm:text-3xl text-parchment">📜 Past Rescue Operations Log & Reports</h2>
+                <p className="text-sm text-muted mt-1">Complete historical log of all closed and completed rescue missions for reporting purposes.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={exportPastOperationsCSV}
+                  className="bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-emerald-600/20"
+                >
+                  📥 Export Past Operations Log (CSV)
+                </button>
+              </div>
+            </div>
+
+            {/* Historical Statistics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-parchment">{operations.filter(o => o.status === "Completed").length}</div>
+                <div className="eyebrow text-muted">Completed Missions</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-emerald-400">
+                  {operations.filter(o => o.status === "Completed").reduce((s, o) => s + (o.people_rescued || 0), 0)}
+                </div>
+                <div className="eyebrow text-muted">Total Citizens Rescued</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-teal-400">{stats?.avg_completion_minutes ? `~${stats.avg_completion_minutes} min` : "—"}</div>
+                <div className="eyebrow text-muted">Avg Turnaround Time</div>
+              </div>
+              <div className="stat-tile text-center">
+                <div className="font-display text-2xl text-marigold-400">
+                  {operations.filter(o => o.status === "Completed" && o.risk_level === "High").length}
+                </div>
+                <div className="eyebrow text-muted">High-Risk Operations</div>
+              </div>
+            </div>
+
+            {/* Search and Risk Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pt-4 border-t border-white/10 mb-6">
+              <input
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Search past operations by city, team, notes, resources..."
+                className="field-input sm:max-w-md text-sm py-2"
+              />
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-xs text-muted">Risk Priority:</span>
+                {["All", "High", "Medium", "Low"].map((rk) => (
+                  <button
+                    key={rk}
+                    type="button"
+                    onClick={() => setHistoryRiskFilter(rk)}
+                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                      historyRiskFilter === rk
+                        ? "bg-teal-500/25 border-teal-500 text-teal-300"
+                        : "bg-white/5 border-white/10 text-muted hover:border-white/20"
+                    }`}
+                  >
+                    {rk}
+                  </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Historical Table View */}
+            {pastOperations.length === 0 ? (
+              <div className="text-center py-12 text-muted bg-white/[0.02] rounded-xl border border-white/5">
+                <p className="text-base font-medium">No past rescue operations found matching your filter.</p>
+                <p className="text-xs mt-1">Concluded operations will automatically appear here with full logs and reports.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-muted text-xs">
+                      <th className="pb-3 font-semibold">Mission ID</th>
+                      <th className="pb-3 font-semibold">Location</th>
+                      <th className="pb-3 font-semibold">Risk Priority</th>
+                      <th className="pb-3 font-semibold">Assigned Team</th>
+                      <th className="pb-3 font-semibold">Rescued</th>
+                      <th className="pb-3 font-semibold">Resources Used</th>
+                      <th className="pb-3 font-semibold">Completed Date</th>
+                      <th className="pb-3 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {pastOperations.map((op) => (
+                      <tr key={op.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3 text-muted text-xs font-mono">#{op.id}</td>
+                        <td className="py-3">
+                          <span className="font-semibold text-white">{op.location}</span>
+                          {op.description && <p className="text-xs text-muted truncate max-w-xs">{op.description}</p>}
+                        </td>
+                        <td className="py-3">
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${
+                            op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/40" :
+                            op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
+                            "bg-green-500/20 text-green-300 border-green-500/40"
+                          }`}>
+                            {op.risk_level || "Medium"}
+                          </span>
+                        </td>
+                        <td className="py-3 text-muted text-xs">{op.assigned_team || "Unassigned"}</td>
+                        <td className="py-3">
+                          <span className="font-semibold text-emerald-400">{op.people_rescued || 0}</span>
+                        </td>
+                        <td className="py-3 text-xs text-muted">
+                          {op.resources_used || "—"}
+                        </td>
+                        <td className="py-3 text-xs text-muted">
+                          {op.completed_at ? new Date(op.completed_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined) : "—"}
+                        </td>
+                        <td className="py-3 text-right">
+                          <button
+                            onClick={() => handlePrintOperation(op)}
+                            className="text-xs px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-teal-300 border border-white/10 transition-colors"
+                          >
+                            🖨️ Print Report
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
           </>)}
-          {/* ============ END TAB: TEAM & RESOURCES ============ */}
+          {/* ============ END TAB: PAST OPERATIONS LOG ============ */}
 
           {/* Completion Report Modal (replaces window.prompt for a proper, on-brand UI) */}
           {completionModal && (
