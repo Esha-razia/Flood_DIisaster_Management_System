@@ -146,14 +146,9 @@ export default function Navbar() {
           </Link>
 
           {isAuthenticated ? (
-            <>
-              <Link to={dashboardPath} className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-muted hover:text-parchment hover:bg-white/5">
-                {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
-              </Link>
-              <button onClick={handleLogout} className="px-4 py-2 text-sm font-medium text-muted hover:text-parchment transition-colors rounded-lg hover:bg-white/5">
-                {t('logout')}
-              </button>
-            </>
+            <Link to={dashboardPath} className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-muted hover:text-parchment hover:bg-white/5">
+              {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
+            </Link>
           ) : (
             <>
               <Link to="/login" className="px-4 py-2 text-sm font-medium text-muted hover:text-parchment transition-colors rounded-lg hover:bg-white/5">
@@ -222,6 +217,28 @@ export default function Navbar() {
             >
               {userName.charAt(0).toUpperCase()}
             </Link>
+            <button
+              onClick={handleLogout}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-muted/70 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer group"
+              title={t('logout')}
+              aria-label="Logout"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="group-hover:translate-x-0.5 transition-transform"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -266,8 +283,13 @@ export default function Navbar() {
               )}
               <button
                 onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
-                className="text-left text-muted hover:text-parchment text-sm font-medium py-1"
+                className="flex items-center gap-2 text-left text-red-400 hover:text-red-300 text-sm font-medium py-1.5 border-t border-white/10 pt-2 transition-colors"
               >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
                 {t('logout')}
               </button>
             </>
