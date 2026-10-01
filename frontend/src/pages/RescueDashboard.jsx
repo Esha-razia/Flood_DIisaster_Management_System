@@ -25,7 +25,7 @@ export default function RescueDashboard() {
   const { t, lang } = useLanguage();
   const currentUserName = localStorage.getItem("userName") || "Rescue Official";
 
-  // Navigation: Active Operations vs Past Operations Log (FR05-06)
+  // Navigation: Active Operations vs Past Operations Log
   const [activeTab, setActiveTab] = useState("active"); // "active" | "history"
 
   // Data states
@@ -34,13 +34,13 @@ export default function RescueDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionFeedback, setActionFeedback] = useState("");
 
-  // FR05-03: Real-time team notification for new operations
+  // Real-time team notification for new operations
   const [newOpAlert, setNewOpAlert] = useState(null);
   const prevOpIdsRef = useRef(new Set());
   const initialFetchDone = useRef(false);
   const opsFetchSeq = useRef(0);
 
-  // FR05-01: Create & assign operation state
+  // Create & assign operation state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({
     location: "",
@@ -49,10 +49,10 @@ export default function RescueDashboard() {
     assigned_team: "Rescue Team Alpha",
   });
 
-  // FR05-02: Status & notes update state
+  // Status & notes update state
   const [noteInputs, setNoteInputs] = useState({});
 
-  // FR05-05: Mark operation as completed state
+  // Mark operation as completed state
   const [completionModal, setCompletionModal] = useState(null); // { opId, location }
   const [completionForm, setCompletionForm] = useState({
     people_rescued: "",
@@ -60,15 +60,15 @@ export default function RescueDashboard() {
     completion_notes: "",
   });
 
-  // FR05-07: Prioritization filter state
+  // Prioritization filter state
   const [riskFilter, setRiskFilter] = useState("All"); // "All" | "High" | "Medium" | "Low"
   const [statusFilter, setStatusFilter] = useState("All"); // "All" | "Assigned" | "In Progress"
 
-  // FR05-06: Past operations search & filter state
+  // Past operations search & filter state
   const [historySearch, setHistorySearch] = useState("");
   const [historyRiskFilter, setHistoryRiskFilter] = useState("All");
 
-  // FR05-04: Polling for real-time operations status (every 12 seconds)
+  // Polling for real-time operations status (every 12 seconds)
   useEffect(() => {
     fetchOperations();
     const interval = setInterval(() => {
@@ -91,7 +91,7 @@ export default function RescueDashboard() {
       if (mySeq !== opsFetchSeq.current) return;
       const data = res.data || [];
 
-      // FR05-03: Detect newly created operations to notify relevant rescue teams
+      // Detect newly created operations to notify relevant rescue teams
       if (initialFetchDone.current && prevOpIdsRef.current.size > 0) {
         const brandNewOps = data.filter((op) => !prevOpIdsRef.current.has(op.id) && op.status !== "Completed");
         if (brandNewOps.length > 0) {
@@ -115,7 +115,7 @@ export default function RescueDashboard() {
     setRefreshing(false);
   };
 
-  // FR05-01: The system shall allow rescue officials to create and assign rescue operations
+  // Create and assign rescue operations
   const handleCreateOperation = async (e) => {
     e.preventDefault();
     if (!createForm.location.trim()) return;
@@ -136,7 +136,7 @@ export default function RescueDashboard() {
     }
   };
 
-  // FR05-02: The system shall allow rescue workers to update the status of an ongoing rescue operation
+  // Update status of an ongoing rescue operation
   const handleUpdateStatus = async (opId, newStatus) => {
     if (newStatus === "Completed") {
       const targetOp = operations.find((o) => o.id === opId);
@@ -154,7 +154,7 @@ export default function RescueDashboard() {
     }
   };
 
-  // FR05-02: Add progress/SITREP note to an ongoing operation
+  // Add progress/SITREP note to an ongoing operation
   const handleAddNote = async (opId) => {
     const note = (noteInputs[opId] || "").trim();
     if (!note) return;
@@ -168,7 +168,7 @@ export default function RescueDashboard() {
     }
   };
 
-  // FR05-05: The system shall allow officials to mark a rescue operation as completed
+  // Mark a rescue operation as completed
   const handleCompleteOperation = async (e) => {
     e.preventDefault();
     if (!completionModal) return;
@@ -188,7 +188,7 @@ export default function RescueDashboard() {
     }
   };
 
-  // FR05-07: The system shall allow officials to prioritize rescue operations based on risk level
+  // Prioritize rescue operations based on risk level
   const handleReprioritizeRisk = async (opId, newRiskLevel) => {
     try {
       const targetOp = operations.find((o) => o.id === opId);
@@ -205,7 +205,7 @@ export default function RescueDashboard() {
     }
   };
 
-  // FR05-06: Export past operations log to CSV for official reporting
+  // Export past operations log to CSV for official reporting
   const exportPastOperationsCSV = () => {
     const completedOps = operations.filter((op) => op.status === "Completed");
     if (completedOps.length === 0) {
@@ -303,10 +303,10 @@ export default function RescueDashboard() {
     win.print();
   };
 
-  // FR05-07: Prioritization logic (High > Medium > Low)
+  // Prioritization logic (High > Medium > Low)
   const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
 
-  // FR05-04: Real-time active operations list (sorted by risk priority)
+  // Real-time active operations list (sorted by risk priority)
   const activeOperations = useMemo(() => {
     let list = operations.filter((op) => op.status !== "Completed");
     if (riskFilter !== "All") {
@@ -323,7 +323,7 @@ export default function RescueDashboard() {
     });
   }, [operations, riskFilter, statusFilter]);
 
-  // FR05-06: Past operations log list
+  // Past operations log list
   const pastOperations = useMemo(() => {
     let list = operations.filter((op) => op.status === "Completed");
     if (historyRiskFilter !== "All") {
@@ -361,7 +361,7 @@ export default function RescueDashboard() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
-                <span className="eyebrow text-teal-400 font-semibold tracking-wider">Emergency Rescue System (FR-05)</span>
+                <span className="eyebrow text-teal-400 font-semibold tracking-wider">Emergency Rescue Coordination</span>
               </div>
               <h1 className="font-display text-3xl sm:text-4xl text-parchment">Rescue Operations Center</h1>
               <p className="text-muted text-sm mt-1">Real-time rescue operation coordination, status tracking, risk prioritization, and mission reporting.</p>
@@ -376,7 +376,6 @@ export default function RescueDashboard() {
               >
                 {refreshing ? "Syncing..." : "🔄 Refresh"}
               </button>
-              {/* FR05-01: Create Operation Button */}
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="btn-primary text-xs sm:text-sm py-2 px-4 shadow-lg shadow-teal-500/20 flex items-center gap-1.5"
@@ -394,7 +393,7 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* FR05-03: Real-Time Team Notification Banner */}
+          {/* Real-Time Team Notification Banner */}
           {newOpAlert && (
             <div className="mb-6 bg-gradient-to-r from-red-500/20 via-amber-500/20 to-teal-500/20 border border-teal-500/60 rounded-2xl p-4 flex items-center justify-between gap-4 animate-pulse shadow-xl shadow-teal-500/10">
               <div className="flex items-center gap-3">
@@ -407,7 +406,7 @@ export default function RescueDashboard() {
                     </span>
                   </h4>
                   <p className="text-xs text-muted mt-0.5">
-                    Assigned to: <strong className="text-teal-300">{newOpAlert.assigned_team || "Rescue Team Alpha"}</strong> · Real-time team dispatch notice (FR05-03).
+                    Assigned to: <strong className="text-teal-300">{newOpAlert.assigned_team || "Rescue Team Alpha"}</strong> · Real-time team dispatch notice.
                   </p>
                 </div>
               </div>
@@ -431,27 +430,27 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* Metrics summary banner (FR05-04, FR05-06, FR05-07) */}
+          {/* Metrics summary banner */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <div className="dashboard-card p-4 text-center">
               <div className="font-display text-2xl text-parchment">{totalActive}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">Total Active Ops (FR05-04)</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Total Active Operations</div>
             </div>
             <div className="dashboard-card p-4 text-center border-red-500/30">
               <div className="font-display text-2xl text-red-400">{highRiskActive}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">High Risk Priority (FR05-07)</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">High Risk Priority</div>
             </div>
             <div className="dashboard-card p-4 text-center border-teal-500/30">
               <div className="font-display text-2xl text-teal-400">{inProgressCount}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">In Progress (FR05-02)</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">In Progress Operations</div>
             </div>
             <div className="dashboard-card p-4 text-center border-emerald-500/30">
               <div className="font-display text-2xl text-emerald-400">{completedCount}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">Completed Log (FR05-06)</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Completed Operations</div>
             </div>
             <div className="dashboard-card p-4 text-center border-marigold-500/30 col-span-2 md:col-span-1">
               <div className="font-display text-2xl text-marigold-400">{totalRescued}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">Citizens Rescued (FR05-05)</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Citizens Rescued</div>
             </div>
           </div>
 
@@ -465,7 +464,7 @@ export default function RescueDashboard() {
                   : "text-muted hover:text-parchment hover:bg-white/5"
               }`}
             >
-              <span>⚡ Active Rescue Operations (FR05-04)</span>
+              <span>⚡ Active Rescue Operations</span>
               {totalActive > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
                   {totalActive}
@@ -481,7 +480,7 @@ export default function RescueDashboard() {
                   : "text-muted hover:text-parchment hover:bg-white/5"
               }`}
             >
-              <span>📜 Past Operations Log & Reports (FR05-06)</span>
+              <span>📜 Past Operations Log & Reports</span>
               {completedCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
                   {completedCount}
@@ -491,15 +490,15 @@ export default function RescueDashboard() {
           </div>
 
           {/* ============================================================== */}
-          {/* TAB 1: ACTIVE OPERATIONS (FR05-01, FR05-02, FR05-04, FR05-07) */}
+          {/* TAB 1: ACTIVE OPERATIONS                                       */}
           {/* ============================================================== */}
           {activeTab === "active" && (
             <div>
-              {/* FR05-07: Risk-Based Prioritization & Filter Toolbar */}
+              {/* Risk-Based Prioritization & Filter Toolbar */}
               <div className="dashboard-card p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted font-medium">Risk Priority (FR05-07):</span>
+                    <span className="text-xs text-muted font-medium">Risk Priority:</span>
                     {["All", "High", "Medium", "Low"].map((level) => (
                       <button
                         key={level}
@@ -550,7 +549,7 @@ export default function RescueDashboard() {
                   <p className="text-base text-parchment mb-2">No active rescue operations matching current filters.</p>
                   <p className="text-xs max-w-md mx-auto mb-4">Click below to create a new operation and assign a rescue team to the affected area.</p>
                   <button onClick={() => setShowCreateModal(true)} className="btn-primary text-xs py-2 px-4">
-                    + Create & Assign Operation (FR05-01)
+                    + Create & Assign Operation
                   </button>
                 </div>
               ) : (
@@ -589,9 +588,9 @@ export default function RescueDashboard() {
                               {op.risk_level === "High" ? "🔴 High Risk Priority" : op.risk_level === "Medium" ? "🟡 Medium Risk" : "🟢 Low Risk"}
                             </span>
 
-                            {/* FR05-07: Prioritize dropdown on card */}
+                            {/* Prioritize dropdown on card */}
                             <div className="flex items-center gap-1 ml-auto">
-                              <span className="text-[10px] text-muted">Prioritize (FR05-07):</span>
+                              <span className="text-[10px] text-muted">Priority:</span>
                               <select
                                 value={op.risk_level || "Medium"}
                                 onChange={(e) => handleReprioritizeRisk(op.id, e.target.value)}
@@ -605,13 +604,13 @@ export default function RescueDashboard() {
                             </div>
                           </div>
 
-                          {/* Description & Team Assignment (FR05-01) */}
+                          {/* Description & Team Assignment */}
                           {op.description && <p className="text-sm text-parchment/90 mb-2">{op.description}</p>}
                           <p className="text-xs text-muted">
                             Assigned Team: <strong className="text-teal-300">{op.assigned_team || "Unassigned"}</strong> · Dispatched: {new Date(op.created_at).toLocaleString()}
                           </p>
 
-                          {/* Progress Update Log / SITREP (FR05-02) */}
+                          {/* Progress Update Log / SITREP */}
                           {op.update_log && (Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).length > 0 && (
                             <div className="mt-3 bg-white/[0.03] rounded-lg p-2.5 text-xs text-muted space-y-1 max-h-24 overflow-y-auto">
                               <span className="font-semibold text-white text-[11px] block mb-1">Progress SITREP Log:</span>
@@ -623,13 +622,13 @@ export default function RescueDashboard() {
                             </div>
                           )}
 
-                          {/* Add Note Input (FR05-02) */}
+                          {/* Add Note Input */}
                           <div className="flex items-center gap-2 mt-3">
                             <input
                               value={noteInputs[op.id] || ""}
                               onChange={(e) => setNoteInputs((prev) => ({ ...prev, [op.id]: e.target.value }))}
                               onKeyDown={(e) => { if (e.key === "Enter") handleAddNote(op.id); }}
-                              placeholder="Add progress update / SITREP note (FR05-02)..."
+                              placeholder="Add progress update / SITREP note..."
                               className="field-input text-xs py-1.5 flex-1"
                             />
                             <button
@@ -641,14 +640,14 @@ export default function RescueDashboard() {
                           </div>
                         </div>
 
-                        {/* Status Action Buttons (FR05-02 & FR05-05) */}
+                        {/* Status Action Buttons */}
                         <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
                           {op.status === "Assigned" ? (
                             <button
                               onClick={() => handleUpdateStatus(op.id, "In Progress")}
                               className="bg-teal-600/90 hover:bg-teal-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 w-full justify-center"
                             >
-                              ▶️ Start Operation (FR05-02)
+                              ▶️ Start Operation
                             </button>
                           ) : (
                             <button
@@ -659,12 +658,12 @@ export default function RescueDashboard() {
                             </button>
                           )}
 
-                          {/* FR05-05: Mark Completed */}
+                          {/* Mark Completed */}
                           <button
                             onClick={() => handleUpdateStatus(op.id, "Completed")}
                             className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 w-full justify-center"
                           >
-                            ✅ Mark Completed (FR05-05)
+                            ✅ Mark Completed
                           </button>
 
                           <button
@@ -683,13 +682,13 @@ export default function RescueDashboard() {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 2: PAST OPERATIONS LOG & REPORTS (FR05-06)                 */}
+          {/* TAB 2: PAST OPERATIONS LOG & REPORTS                           */}
           {/* ============================================================== */}
           {activeTab === "history" && (
             <div className="dashboard-card p-6">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                 <div>
-                  <p className="eyebrow text-teal-400 mb-1">Official Registry & Audit Log (FR05-06)</p>
+                  <p className="eyebrow text-teal-400 mb-1">Official Registry & Audit Log</p>
                   <h2 className="font-display text-2xl text-parchment">Past Rescue Operations Log</h2>
                   <p className="text-xs text-muted mt-0.5">Comprehensive audit log of all completed rescue missions for government reporting.</p>
                 </div>
@@ -793,14 +792,14 @@ export default function RescueDashboard() {
           )}
 
           {/* ============================================================== */}
-          {/* MODAL: FR05-01 CREATE & ASSIGN RESCUE OPERATION                */}
+          {/* MODAL: CREATE & ASSIGN RESCUE OPERATION                        */}
           {/* ============================================================== */}
           {showCreateModal && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
               <form onSubmit={handleCreateOperation} className="dashboard-card p-6 max-w-lg w-full border border-teal-500/40">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <span className="eyebrow text-teal-400 text-xs font-semibold">New Mission (FR05-01)</span>
+                    <span className="eyebrow text-teal-400 text-xs font-semibold">New Rescue Mission</span>
                     <h2 className="font-display text-2xl text-parchment">Create & Assign Operation</h2>
                   </div>
                   <button type="button" onClick={() => setShowCreateModal(false)} className="text-muted hover:text-white text-lg">✕</button>
@@ -820,7 +819,7 @@ export default function RescueDashboard() {
                   </div>
 
                   <div>
-                    <label className="field-label text-xs">Risk Level of Affected Area (FR05-07) *</label>
+                    <label className="field-label text-xs">Risk Level of Affected Area *</label>
                     <select
                       value={createForm.risk_level}
                       onChange={(e) => setCreateForm((prev) => ({ ...prev, risk_level: e.target.value }))}
@@ -833,7 +832,7 @@ export default function RescueDashboard() {
                   </div>
 
                   <div>
-                    <label className="field-label text-xs">Assign Rescue Team / Worker (FR05-01) *</label>
+                    <label className="field-label text-xs">Assign Rescue Team / Worker *</label>
                     <input
                       type="text"
                       required
@@ -858,7 +857,7 @@ export default function RescueDashboard() {
 
                 <div className="flex gap-3 mt-6">
                   <button type="submit" className="btn-primary flex-1 py-2 text-sm font-semibold">
-                    Create & Notify Team (FR05-01)
+                    Create & Notify Team
                   </button>
                   <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary py-2 text-sm">
                     Cancel
@@ -869,14 +868,14 @@ export default function RescueDashboard() {
           )}
 
           {/* ============================================================== */}
-          {/* MODAL: FR05-05 MARK OPERATION AS COMPLETED                     */}
+          {/* MODAL: MARK OPERATION AS COMPLETED                             */}
           {/* ============================================================== */}
           {completionModal && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
               <form onSubmit={handleCompleteOperation} className="dashboard-card p-6 max-w-lg w-full border border-emerald-500/40">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <span className="eyebrow text-emerald-400 text-xs font-semibold">Official Sign-Off (FR05-05)</span>
+                    <span className="eyebrow text-emerald-400 text-xs font-semibold">Official Mission Sign-Off</span>
                     <h2 className="font-display text-2xl text-parchment">Mark Operation Completed</h2>
                     <p className="text-xs text-muted mt-0.5">Location: <strong className="text-white">{completionModal.location}</strong></p>
                   </div>
@@ -922,7 +921,7 @@ export default function RescueDashboard() {
 
                 <div className="flex gap-3 mt-6">
                   <button type="submit" className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-semibold flex-1 py-2 text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20">
-                    Sign Off & Log as Completed (FR05-05)
+                    Sign Off & Mark Completed
                   </button>
                   <button type="button" onClick={() => setCompletionModal(null)} className="btn-secondary py-2 text-sm">
                     Cancel
