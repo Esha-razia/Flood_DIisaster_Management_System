@@ -2,17 +2,11 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
-import FloodMap from "../components/FloodMap";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 
-// Render's free tier puts the backend to sleep after inactivity — the first
-// request after that can take up to ~50s to respond, well past axios's
-// default timeout. Without this, that first request just fails and the
-// dashboard shows empty sections until the person manually refreshes a few
-// times. Retrying quietly in the background covers that wake-up window
-// automatically instead.
-const fetchWithRetry = async (requestFn, { retries = 5, delayMs = 4000 } = {}) => {
+// Retry helper for free-tier cold starts
+const fetchWithRetry = async (requestFn, { retries = 4, delayMs = 3000 } = {}) => {
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -27,602 +21,202 @@ const fetchWithRetry = async (requestFn, { retries = 5, delayMs = 4000 } = {}) =
   throw lastError;
 };
 
-const OP_STATUS_KEY_MAP = { "Assigned": "statusAssigned", "In Progress": "statusInProgress", "Completed": "statusCompleted" };
-const RISK_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
-
-// Same 53-city coverage used elsewhere in the app (Citizen Dashboard, Map) —
-// needed here so a rescue worker can get directions to an operation site.
-const OP_CITY_COORDINATES = {
-  "Karachi": [24.8607, 67.0011], "Lahore": [31.5204, 74.3587], "Faisalabad": [31.4504, 73.135],
-  "Rawalpindi": [33.5651, 73.0169], "Multan": [30.1575, 71.5249], "Hyderabad": [25.396, 68.3578],
-  "Gujranwala": [32.1877, 74.1945], "Peshawar": [34.0151, 71.5249], "Quetta": [30.1798, 66.975],
-  "Islamabad": [33.6844, 73.0479], "Sialkot": [32.4945, 74.5229], "Sargodha": [32.0836, 72.6711],
-  "Bahawalpur": [29.3956, 71.6836], "Sukkur": [27.7052, 68.8574], "Larkana": [27.559, 68.2123],
-  "Sheikhupura": [31.7167, 73.985], "Jhang": [31.2704, 72.3181], "Rahim Yar Khan": [28.4202, 70.2952],
-  "Gujrat": [32.5731, 74.0789], "Mardan": [34.1989, 72.0404], "Kasur": [31.118, 74.4467],
-  "Okara": [30.8081, 73.4453], "Sahiwal": [30.6682, 73.1114], "Nawabshah": [26.2442, 68.41],
-  "Mingora": [34.7717, 72.3604], "Dera Ghazi Khan": [30.0561, 70.6345], "Mirpur Khas": [25.5268, 69.0107],
-  "Chiniot": [31.72, 72.9781], "Kamoke": [32.0989, 74.2263], "Mandi Bahauddin": [32.5859, 73.4917],
-  "Jacobabad": [28.2769, 68.4381], "Jhelum": [32.9425, 73.7257], "Kohat": [33.59, 71.44],
-  "Shikarpur": [27.9556, 68.6382], "Khanewal": [30.3015, 71.931], "Muzaffargarh": [30.0725, 71.1932],
-  "Abbottabad": [34.1463, 73.2116], "Muridke": [31.8025, 74.2645], "Bahawalnagar": [29.9989, 73.2578],
-  "Khairpur": [27.5295, 68.7592], "Turbat": [26.0031, 63.0483], "Dadu": [26.7308, 67.7761],
-  "Chaman": [30.921, 66.4597], "Charsadda": [34.15, 71.74], "Nowshera": [34.015, 71.975],
-  "Swabi": [34.12, 72.47], "Bannu": [32.988, 70.603], "Dera Ismail Khan": [31.831, 70.901],
-  "Muzaffarabad": [34.37, 73.47], "Mirpur": [33.1478, 73.7508], "Gilgit": [35.9208, 74.3144],
-  "Skardu": [35.2971, 75.6333], "Gwadar": [25.1264, 62.3225],
-};
-
-function resolveCityCoordsForOp(location) {
-  if (!location) return null;
-  const loc = location.trim().toLowerCase();
-  const match = Object.keys(OP_CITY_COORDINATES).find(
-    (city) => city.toLowerCase() === loc || city.toLowerCase().includes(loc) || loc.includes(city.toLowerCase())
-  );
-  return match ? { lat: OP_CITY_COORDINATES[match][0], lon: OP_CITY_COORDINATES[match][1] } : null;
-}
-
 export default function RescueDashboard() {
   const { t, lang } = useLanguage();
-  const currentUserName = localStorage.getItem("userName") || "";
-  const currentUserId = localStorage.getItem("userId");
-  const [activeTab, setActiveTab] = useState("myOps");
-  const [onDuty, setOnDuty] = useState(true);
-  const [noteInputs, setNoteInputs] = useState({}); // opId -> draft note text
-  const [routeInfo, setRouteInfo] = useState(null); // { opId, distanceKm, durationMin } | null
-  const [alerts, setAlerts] = useState([]);
-  const [predictions, setPredictions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const currentUserName = localStorage.getItem("userName") || "Rescue Official";
 
-  // Guards against a slow, older poll (e.g. the backend was mid-cold-start)
-  // resolving AFTER a newer poll and overwriting good data with stale/older
-  // data — each fetch bumps its own counter before the request, and only
-  // applies the response if it's still the most recent one fired.
-  const opsFetchSeq = useRef(0);
-  const alertsFetchSeq = useRef(0);
-  const predictionsFetchSeq = useRef(0);
-  const [selectedAlert, setSelectedAlert] = useState(null);
-  const [emergencyStatus, setEmergencyStatus] = useState("normal");
+  // Navigation: Active Operations vs Past Operations Log (FR05-06)
+  const [activeTab, setActiveTab] = useState("active"); // "active" | "history"
+
+  // Data states
+  const [operations, setOperations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [actionFeedback, setActionFeedback] = useState("");
 
-  const [operations, setOperations] = useState([]);
-  const [opForm, setOpForm] = useState({ location: "", description: "", risk_level: "High", assigned_team: "" });
-  const [rescueWorkers, setRescueWorkers] = useState([]);
-  const [volunteers, setVolunteers] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [equipment, setEquipment] = useState([]);
-  const [handoverNotes, setHandoverNotes] = useState([]);
-  const [handoverInput, setHandoverInput] = useState("");
-  const [handoverPriority, setHandoverPriority] = useState("Normal");
-  const [historySearch, setHistorySearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState("All"); // FR05-07: "All" | "High" | "Medium" | "Low"
-  const [historyRiskFilter, setHistoryRiskFilter] = useState("All");
-  const [newOpNotification, setNewOpNotification] = useState(null); // FR05-03: real-time notification
+  // FR05-03: Real-time team notification for new operations
+  const [newOpAlert, setNewOpAlert] = useState(null);
   const prevOpIdsRef = useRef(new Set());
   const initialFetchDone = useRef(false);
+  const opsFetchSeq = useRef(0);
 
-  // Rescue Teams — named groups of workers so an operation can be assigned
-  // to a full 3-4 person team instead of only ever one person.
-  const [teams, setTeams] = useState([]);
-  const [showTeamForm, setShowTeamForm] = useState(false);
-  const [teamForm, setTeamForm] = useState({ name: "", member_ids: [] });
-  const [assignMode, setAssignMode] = useState("team"); // "team" | "individual"
+  // FR05-01: Create & assign operation state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    location: "",
+    description: "",
+    risk_level: "High",
+    assigned_team: "Rescue Team Alpha",
+  });
 
-  // Equipment additions + per-item operation assignment
-  const [newEquipment, setNewEquipment] = useState({ name: "", quantity: "1", city: "" });
-  const [showEquipForm, setShowEquipForm] = useState(false);
+  // FR05-02: Status & notes update state
+  const [noteInputs, setNoteInputs] = useState({});
 
-  // "My Operations" — operations where assigned_team matches this worker's
-  // own name. assigned_team is a free-text field (it can hold a volunteer
-  // name too, appended with "+"), so this does a loose contains-check
-  // rather than requiring an exact match.
-  const myOperations = useMemo(() => {
-    if (!currentUserName) return [];
-    return operations.filter((op) =>
-      (op.assigned_team || "").toLowerCase().includes(currentUserName.toLowerCase())
-    );
-  }, [operations, currentUserName]);
+  // FR05-05: Mark operation as completed state
+  const [completionModal, setCompletionModal] = useState(null); // { opId, location }
+  const [completionForm, setCompletionForm] = useState({
+    people_rescued: "",
+    resources_used: "",
+    completion_notes: "",
+  });
 
-  const myStats = useMemo(() => {
-    const completed = myOperations.filter((op) => op.status === "Completed");
-    const totalRescued = completed.reduce((sum, op) => sum + (op.people_rescued || 0), 0);
-    const durations = completed
-      .filter((op) => op.completed_at)
-      .map((op) => Math.max(0, (new Date(op.completed_at) - new Date(op.created_at)) / 60000));
-    const avgMinutes = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
-    return {
-      total: myOperations.length,
-      completed: completed.length,
-      active: myOperations.length - completed.length,
-      peopleRescued: totalRescued,
-      avgMinutes,
-    };
-  }, [myOperations]);
+  // FR05-07: Prioritization filter state
+  const [riskFilter, setRiskFilter] = useState("All"); // "All" | "High" | "Medium" | "Low"
+  const [statusFilter, setStatusFilter] = useState("All"); // "All" | "Assigned" | "In Progress"
 
-  // Team performance leaderboard — which team has closed out the most
-  // operations, and how fast on average, computed straight from the
-  // operations already loaded (no extra backend call needed).
-  const teamLeaderboard = useMemo(() => {
-    const byTeam = {};
-    operations.filter((op) => op.status === "Completed").forEach((op) => {
-      const teamName = (op.assigned_team || "Unassigned").split(":")[0].trim() || "Unassigned";
-      if (!byTeam[teamName]) byTeam[teamName] = { name: teamName, completed: 0, totalMinutes: 0, timedCount: 0 };
-      byTeam[teamName].completed += 1;
-      if (op.completed_at) {
-        const minutes = Math.max(0, (new Date(op.completed_at) - new Date(op.created_at)) / 60000);
-        byTeam[teamName].totalMinutes += minutes;
-        byTeam[teamName].timedCount += 1;
-      }
-    });
-    return Object.values(byTeam)
-      .map((t) => ({ ...t, avgMinutes: t.timedCount > 0 ? Math.round(t.totalMinutes / t.timedCount) : null }))
-      .sort((a, b) => b.completed - a.completed);
-  }, [operations]);
+  // FR05-06: Past operations search & filter state
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyRiskFilter, setHistoryRiskFilter] = useState("All");
 
-  // Priority/triage sort — backup requests and High risk operations surface
-  // to the top so a worker glancing at the list sees what's most urgent
-  // first, instead of just whatever order they were created in (FR05-07).
-  const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
-
-  const filteredOperations = useMemo(() => {
-    let list = [...operations];
-    if (riskFilter !== "All") {
-      list = list.filter((op) => op.risk_level === riskFilter);
-    }
-    return list.sort((a, b) => {
-      if (!!b.needs_backup !== !!a.needs_backup) return (b.needs_backup ? 1 : 0) - (a.needs_backup ? 1 : 0);
-      const scoreA = PRIORITY_SCORE[a.risk_level] || 0;
-      const scoreB = PRIORITY_SCORE[b.risk_level] || 0;
-      if (scoreB !== scoreA) return scoreB - scoreA;
-      return new Date(b.updated_at) - new Date(a.updated_at);
-    });
-  }, [operations, riskFilter]);
-
-  const sortedOperations = filteredOperations;
-
-  // Real-time active operations categories (FR05-04)
-  const activeOperations = useMemo(() => {
-    return filteredOperations.filter((op) => op.status !== "Completed");
-  }, [filteredOperations]);
-
-  const assignedOperations = useMemo(() => {
-    return activeOperations.filter((op) => op.status === "Assigned");
-  }, [activeOperations]);
-
-  const inProgressOperations = useMemo(() => {
-    return activeOperations.filter((op) => op.status === "In Progress");
-  }, [activeOperations]);
-
-  const onDutyWorkers = useMemo(() => rescueWorkers.filter((w) => w.on_duty !== false), [rescueWorkers]);
-
-  // Past rescue operations registry & audit log (FR05-06)
-  const pastOperations = useMemo(() => {
-    let list = operations.filter((op) => op.status === "Completed");
-    if (historyRiskFilter !== "All") {
-      list = list.filter((op) => op.risk_level === historyRiskFilter);
-    }
-    const query = historySearch.trim().toLowerCase();
-    if (query) {
-      list = list.filter((op) =>
-        (op.location || "").toLowerCase().includes(query) ||
-        (op.assigned_team || "").toLowerCase().includes(query) ||
-        (op.completion_notes || "").toLowerCase().includes(query) ||
-        (op.resources_used || "").toLowerCase().includes(query)
-      );
-    }
-    return list.sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at));
-  }, [operations, historySearch, historyRiskFilter]);
-
-  const historicalResults = pastOperations;
-
-  const fetchRescueWorkers = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/users`));
-      const workers = (res.data || []).filter((u) => u.role === "rescue_worker" && u.status === "Active");
-      setRescueWorkers(workers);
-      const me = workers.find((w) => w.id === Number(currentUserId) || w.email === localStorage.getItem("userEmail"));
-      if (me && typeof me.on_duty === "boolean") setOnDuty(me.on_duty);
-    } catch (err) {
-      console.error("Failed to load rescue workers:", err);
-    }
-  };
-
-  const fetchVolunteers = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/volunteers`));
-      setVolunteers(res.data || []);
-    } catch (err) {
-      console.error("Failed to load volunteers:", err);
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/rescue-operations/stats`));
-      setStats(res.data);
-    } catch (err) {
-      console.error("Failed to load rescue stats:", err);
-    }
-  };
-
-  const fetchEquipment = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/equipment`));
-      setEquipment(res.data || []);
-    } catch (err) {
-      console.error("Failed to load equipment:", err);
-    }
-  };
-
-  const fetchHandoverNotes = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shift-handover`));
-      setHandoverNotes(res.data || []);
-    } catch (err) {
-      console.error("Failed to load handover notes:", err);
-    }
-  };
-
-  const [shelters, setShelters] = useState([]);
-
-  const fetchShelters = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/shelters`));
-      setShelters(res.data || []);
-    } catch (err) {
-      console.error("Failed to load shelters:", err);
-    }
-  };
-
-  const handleUpdateOccupancy = async (shelterId, count) => {
-    const val = parseInt(count, 10);
-    const newOccupancy = isNaN(val) ? 0 : Math.max(0, val);
-    try {
-      await axios.put(`${API_BASE}/shelters/${shelterId}/occupancy`, { occupancy: newOccupancy });
-      fetchShelters();
-      setActionFeedback("Shelter live occupancy updated successfully!");
-    } catch (err) {
-      console.error("Failed to update shelter occupancy:", err);
-      alert(err?.response?.data?.message || err?.message || "Failed to update shelter occupancy.");
-    }
-  };
-
-  const [hospitals, setHospitals] = useState([]);
-
-  const fetchHospitals = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/hospitals`));
-      setHospitals(res.data || []);
-    } catch (err) {
-      console.error("Failed to load hospitals:", err);
-    }
-  };
-
-  const handleUpdateHospitalOccupancy = async (hospitalId, count) => {
-    const val = parseInt(count, 10);
-    const newOccupancy = isNaN(val) ? 0 : Math.max(0, val);
-    try {
-      await axios.put(`${API_BASE}/hospitals/${hospitalId}/occupancy`, { occupancy: newOccupancy });
-      fetchHospitals();
-      setActionFeedback("Hospital live occupancy updated successfully!");
-    } catch (err) {
-      console.error("Failed to update hospital occupancy:", err);
-      alert(err?.response?.data?.message || err?.message || "Failed to update hospital occupancy.");
-    }
-  };
-
-  const handleAddEquipment = async (e) => {
-    e.preventDefault();
-    const name = newEquipment.name.trim();
-    if (!name) return;
-    try {
-      await axios.post(`${API_BASE}/equipment`, { name, quantity: parseInt(newEquipment.quantity, 10) || 1, city: newEquipment.city.trim() });
-      setNewEquipment({ name: "", quantity: "1", city: "" });
-      setShowEquipForm(false);
-      fetchEquipment();
-    } catch (err) {
-      console.error("Failed to add equipment:", err);
-    }
-  };
-
-  // Deploy N units of an item to a specific operation OR directly to a
-  // specific worker (only that many count as "in use" — the rest stays
-  // available for elsewhere).
-  const [deployPicks, setDeployPicks] = useState({}); // { [equipmentId]: { targetType, targetId, qty } }
-
-  const handleDeployEquipment = async (item) => {
-    const pick = deployPicks[item.id];
-    if (!pick || !pick.targetId || !pick.qty) return;
-    try {
-      await axios.post(`${API_BASE}/equipment/${item.id}/assign`, {
-        target_type: pick.targetType || "operation", target_id: Number(pick.targetId), qty: Number(pick.qty),
-      });
-      setDeployPicks((p) => ({ ...p, [item.id]: { ...p[item.id], targetId: "", qty: "" } }));
-      fetchEquipment();
-    } catch (err) {
-      setActionFeedback(err?.response?.data?.message || t("couldNotUpdateOp"));
-      console.error("Failed to deploy equipment:", err);
-    }
-  };
-
-  const handleFreeEquipment = async (item, targetType, targetId) => {
-    try {
-      await axios.delete(`${API_BASE}/equipment/${item.id}/assign/${targetType}/${targetId}`);
-      fetchEquipment();
-    } catch (err) {
-      console.error("Failed to free equipment:", err);
-    }
-  };
-
-  const handlePostHandoverNote = async () => {
-    const note = handoverInput.trim();
-    if (!note) return;
-    try {
-      await axios.post(`${API_BASE}/shift-handover`, { note, author: currentUserName || "Unknown", priority: handoverPriority });
-      setHandoverInput("");
-      setHandoverPriority("Normal");
-      fetchHandoverNotes();
-    } catch (err) {
-      console.error("Failed to post handover note:", err);
-    }
-  };
-
-  const handleToggleResolveNote = async (n) => {
-    try {
-      await axios.put(`${API_BASE}/shift-handover/${n.id}`, { resolved: !n.resolved });
-      fetchHandoverNotes();
-    } catch (err) {
-      console.error("Failed to update handover note:", err);
-    }
-  };
-
-  const fetchTeams = async () => {
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/teams`));
-      setTeams(res.data || []);
-    } catch (err) {
-      console.error("Failed to load rescue teams:", err);
-    }
-  };
-
-  const handleToggleTeamMember = (workerId) => {
-    setTeamForm((prev) => {
-      const has = prev.member_ids.includes(workerId);
-      return { ...prev, member_ids: has ? prev.member_ids.filter((id) => id !== workerId) : [...prev.member_ids, workerId] };
-    });
-  };
-
-  const handleCreateTeam = async (e) => {
-    e.preventDefault();
-    if (!teamForm.name.trim() || teamForm.member_ids.length < 2) return;
-    try {
-      await axios.post(`${API_BASE}/teams`, teamForm);
-      setTeamForm({ name: "", member_ids: [] });
-      setShowTeamForm(false);
-      fetchTeams();
-    } catch (err) {
-      console.error("Failed to create rescue team:", err);
-    }
-  };
-
-  const handleDeleteTeam = async (teamId) => {
-    try {
-      await axios.delete(`${API_BASE}/teams/${teamId}`);
-      fetchTeams();
-    } catch (err) {
-      console.error("Failed to delete rescue team:", err);
-    }
-  };
-
-  const teamMemberNames = (team) =>
-    team.member_ids
-      .map((id) => rescueWorkers.find((w) => w.id === id)?.name)
-      .filter(Boolean);
-
-  const [nearbyFacilities, setNearbyFacilities] = useState({}); // opId -> {shelter, hospital}
-
-  const fetchNearbyForOp = async (op) => {
-    try {
-      const res = await axios.get(`${API_BASE}/nearest-facilities`, { params: { location: op.location } });
-      setNearbyFacilities((prev) => ({ ...prev, [op.id]: res.data }));
-    } catch (err) {
-      console.error("Failed to load nearby facilities:", err);
-    }
-  };
-
-  const handleAssignVolunteer = async (opId, volunteerName) => {
-    try {
-      // Operations don't have a dedicated volunteer field on the backend yet,
-      // so this is tracked by folding it into the assigned_team text — keeps
-      // the existing data model simple while still being genuinely useful.
-      const op = operations.find((o) => o.id === opId);
-      const newTeam = op?.assigned_team && op.assigned_team !== "Unassigned"
-        ? `${op.assigned_team} + ${volunteerName}`
-        : volunteerName;
-      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status: op.status, assigned_team: newTeam });
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to assign volunteer:", err);
-    }
-  };
-
-  const handleToggleDuty = async () => {
-    const newValue = !onDuty;
-    setOnDuty(newValue); // optimistic
-    try {
-      if (currentUserId) {
-        await axios.put(`${API_BASE}/users/${currentUserId}/duty-status`, { on_duty: newValue });
-      }
-    } catch (err) {
-      console.error("Failed to update duty status:", err);
-      setOnDuty(!newValue); // revert on failure
-    }
-  };
-
-  const handleAddNote = async (opId) => {
-    const note = (noteInputs[opId] || "").trim();
-    if (!note) return;
-    try {
-      await axios.post(`${API_BASE}/rescue-operations/${opId}/note`, { note });
-      setNoteInputs((prev) => ({ ...prev, [opId]: "" }));
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to add note:", err);
-    }
-  };
-
-  const handleRequestBackup = async (op) => {
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${op.id}/status`, { status: op.status, needs_backup: true });
-      setActionFeedback(t("backupRequestedMsg"));
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to request backup:", err);
-    }
-  };
-
-  const handleClearBackup = async (op) => {
-    if (!window.confirm(t("confirmClearBackup"))) return;
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${op.id}/status`, { status: op.status, needs_backup: false });
-      setActionFeedback(t("backupClearedMsg"));
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to clear backup request:", err);
-    }
-  };
-
-  const handleGetRoute = (op) => {
-    const dest = resolveCityCoordsForOp(op.location);
-    if (!dest) {
-      setActionFeedback(t("locationNotResolvable"));
-      return;
-    }
-    if (!navigator.geolocation) {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`, "_blank");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        window.open(`https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${dest.lat},${dest.lon}`, "_blank");
-      },
-      () => {
-        // Location permission denied — still open a route, just without a fixed origin (Google Maps will ask/use its own location)
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`, "_blank");
-      }
-    );
-  };
-
-  const formatDuration = (start, end) => {
-    const minutes = Math.max(0, Math.round((end - start) / 60000));
-    if (minutes < 60) return `${minutes} min`;
-    const hours = Math.floor(minutes / 60);
-    const rem = minutes % 60;
-    return `${hours}h ${rem}m`;
-  };
-  const [showOpForm, setShowOpForm] = useState(false);
-
-  const [refreshing, setRefreshing] = useState(false);
-  const handleManualRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([
-      fetchAlerts(), fetchPredictions(), fetchOperations(), fetchRescueWorkers(),
-      fetchVolunteers(), fetchStats(), fetchEquipment(), fetchHandoverNotes(),
-      fetchTeams(), fetchCommunityReports(), fetchShelters(), fetchHospitals(),
-    ]);
-    setRefreshing(false);
-  };
-
+  // FR05-04: Polling for real-time operations status (every 12 seconds)
   useEffect(() => {
-    fetchAlerts();
-    fetchPredictions();
     fetchOperations();
-    fetchRescueWorkers();
-    fetchVolunteers();
-    fetchStats();
-    fetchEquipment();
-    fetchHandoverNotes();
-    fetchTeams();
-    fetchCommunityReports();
-    fetchShelters();
-    fetchHospitals();
-    // A full 30s poll of everything was removed earlier because it kept
-    // flashing empty/stale data — but that was caused by three real bugs
-    // (a request race condition, a service worker mis-caching API calls,
-    // and a SQLite crash under concurrent requests), all now fixed. Without
-    // ANY polling, though, a citizen's new community report would only ever
-    // reach a rescue worker if they happened to hit "Refresh" — not
-    // acceptable for something time-sensitive. This re-adds a light,
-    // narrowly-scoped poll for just the two things that genuinely need to
-    // show up promptly (new reports, new high-risk alerts), at a slower
-    // interval than before.
     const interval = setInterval(() => {
       fetchOperations();
-      fetchAlerts();
-      fetchCommunityReports();
-      fetchShelters();
-      fetchHospitals();
-      fetchStats();
-    }, 15000);
+    }, 12000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!actionFeedback) return;
+    const timer = setTimeout(() => setActionFeedback(""), 4000);
+    return () => clearTimeout(timer);
+  }, [actionFeedback]);
+
+  // Fetch all rescue operations from backend
   const fetchOperations = async () => {
     const mySeq = ++opsFetchSeq.current;
     try {
       const res = await fetchWithRetry(() => axios.get(`${API_BASE}/rescue-operations`));
-      if (mySeq !== opsFetchSeq.current) return; // a newer request already resolved — drop this stale one
+      if (mySeq !== opsFetchSeq.current) return;
       const data = res.data || [];
 
-      // FR05-03: Notify relevant rescue teams when a new operation is created
+      // FR05-03: Detect newly created operations to notify relevant rescue teams
       if (initialFetchDone.current && prevOpIdsRef.current.size > 0) {
         const brandNewOps = data.filter((op) => !prevOpIdsRef.current.has(op.id) && op.status !== "Completed");
         if (brandNewOps.length > 0) {
-          const newest = brandNewOps[0];
-          setNewOpNotification(newest);
+          setNewOpAlert(brandNewOps[0]);
         }
       }
       prevOpIdsRef.current = new Set(data.map((o) => o.id));
       initialFetchDone.current = true;
 
       setOperations(data);
-      data.forEach((op) => fetchNearbyForOp(op));
     } catch (err) {
       console.error("Error fetching rescue operations:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // FR05-07: Officials reprioritize rescue operations based on risk level
+  const handleManualRefresh = async () => {
+    setRefreshing(true);
+    await fetchOperations();
+    setRefreshing(false);
+  };
+
+  // FR05-01: The system shall allow rescue officials to create and assign rescue operations
+  const handleCreateOperation = async (e) => {
+    e.preventDefault();
+    if (!createForm.location.trim()) return;
+    try {
+      const res = await axios.post(`${API_BASE}/rescue-operations`, createForm);
+      setCreateForm({
+        location: "",
+        description: "",
+        risk_level: "High",
+        assigned_team: "Rescue Team Alpha",
+      });
+      setShowCreateModal(false);
+      setActionFeedback(`Rescue operation at ${res.data.location} created and assigned to ${res.data.assigned_team}.`);
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to create rescue operation:", err);
+      setActionFeedback("Could not create rescue operation. Please try again.");
+    }
+  };
+
+  // FR05-02: The system shall allow rescue workers to update the status of an ongoing rescue operation
+  const handleUpdateStatus = async (opId, newStatus) => {
+    if (newStatus === "Completed") {
+      const targetOp = operations.find((o) => o.id === opId);
+      setCompletionForm({ people_rescued: "", resources_used: "", completion_notes: "" });
+      setCompletionModal({ opId, location: targetOp?.location || "Operation" });
+      return;
+    }
+    try {
+      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status: newStatus });
+      setActionFeedback(`Operation status updated to "${newStatus}".`);
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to update status:", err);
+      setActionFeedback("Failed to update operation status.");
+    }
+  };
+
+  // FR05-02: Add progress/SITREP note to an ongoing operation
+  const handleAddNote = async (opId) => {
+    const note = (noteInputs[opId] || "").trim();
+    if (!note) return;
+    try {
+      await axios.post(`${API_BASE}/rescue-operations/${opId}/note`, { note });
+      setNoteInputs((prev) => ({ ...prev, [opId]: "" }));
+      setActionFeedback("Progress update logged successfully.");
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to add note:", err);
+    }
+  };
+
+  // FR05-05: The system shall allow officials to mark a rescue operation as completed
+  const handleCompleteOperation = async (e) => {
+    e.preventDefault();
+    if (!completionModal) return;
+    try {
+      await axios.put(`${API_BASE}/rescue-operations/${completionModal.opId}/status`, {
+        status: "Completed",
+        people_rescued: completionForm.people_rescued ? parseInt(completionForm.people_rescued, 10) || 0 : 0,
+        resources_used: completionForm.resources_used,
+        completion_notes: completionForm.completion_notes,
+      });
+      setActionFeedback(`Operation at ${completionModal.location} successfully marked as Completed.`);
+      setCompletionModal(null);
+      fetchOperations();
+    } catch (err) {
+      console.error("Failed to mark operation as completed:", err);
+      setActionFeedback("Failed to complete rescue operation.");
+    }
+  };
+
+  // FR05-07: The system shall allow officials to prioritize rescue operations based on risk level
   const handleReprioritizeRisk = async (opId, newRiskLevel) => {
     try {
-      const op = operations.find((o) => o.id === opId);
-      if (!op) return;
+      const targetOp = operations.find((o) => o.id === opId);
+      if (!targetOp) return;
       await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, {
-        status: op.status,
+        status: targetOp.status,
         risk_level: newRiskLevel,
       });
-      setActionFeedback(`Operation at ${op.location} reprioritized to ${newRiskLevel} Risk.`);
+      setActionFeedback(`Operation priority updated to ${newRiskLevel} Risk.`);
       fetchOperations();
-      fetchStats();
     } catch (err) {
-      console.error("Failed to reprioritize operation risk:", err);
-      setActionFeedback(t("couldNotUpdateOp"));
+      console.error("Failed to reprioritize operation:", err);
+      setActionFeedback("Failed to update priority.");
     }
   };
 
-  // FR05-06: Export past operations log to CSV for reporting
+  // FR05-06: Export past operations log to CSV for official reporting
   const exportPastOperationsCSV = () => {
-    const completed = operations.filter((op) => op.status === "Completed");
-    if (completed.length === 0) {
-      alert("No past operations to export yet.");
+    const completedOps = operations.filter((op) => op.status === "Completed");
+    if (completedOps.length === 0) {
+      alert("No completed rescue operations found to export.");
       return;
     }
     const headers = [
       "Operation ID",
       "Location",
       "Risk Level",
-      "Assigned Team / Worker",
+      "Assigned Team",
       "Status",
       "Created At",
       "Completed At",
@@ -632,7 +226,7 @@ export default function RescueDashboard() {
       "Completion Notes",
     ];
 
-    const rows = completed.map((op) => {
+    const rows = completedOps.map((op) => {
       const dur = op.completed_at && op.created_at
         ? Math.max(0, Math.round((new Date(op.completed_at) - new Date(op.created_at)) / 60000))
         : "";
@@ -656,64 +250,52 @@ export default function RescueDashboard() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `rescue_operations_past_log_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `past_rescue_operations_report_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    setActionFeedback("Past rescue operations log downloaded successfully.");
+    setActionFeedback("Official Past Operations Log exported to CSV successfully.");
   };
 
-  const handleCreateOperation = async (e) => {
-    e.preventDefault();
-    if (!opForm.location.trim()) return;
-    try {
-      await axios.post(`${API_BASE}/rescue-operations`, opForm);
-      setOpForm({ location: "", description: "", risk_level: "High", assigned_team: "" });
-      setShowOpForm(false);
-      setActionFeedback("Rescue operation created and team notified.");
-      fetchOperations();
-      fetchStats();
-    } catch (err) {
-      console.error("Failed to create rescue operation:", err);
-      setActionFeedback("Could not create rescue operation.");
-    }
-  };
-
-  const [completionModal, setCompletionModal] = useState(null); // { opId } | null
-  const [completionForm, setCompletionForm] = useState({ people_rescued: "", resources_used: "", completion_notes: "" });
-
-  const handleToggleChecklistItem = async (opId, itemIndex, done) => {
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${opId}/checklist`, { item_index: itemIndex, done });
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to update checklist:", err);
-    }
-  };
-
+  // Print individual operation official report
   const handlePrintOperation = (op) => {
-    const checklist = op.checklist || [];
     const updateLog = Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]");
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(`
-      <html><head><title>${op.location} — Operation Report</title>
+      <html><head><title>${op.location} — Official Rescue Operation Report</title>
       <style>
-        body { font-family: Georgia, serif; padding: 40px; color: #111; max-width: 700px; margin: 0 auto; }
-        h1 { border-bottom: 2px solid #333; padding-bottom: 8px; }
-        .meta { color: #555; font-size: 14px; margin-bottom: 20px; }
-        .section { margin-top: 20px; }
-        .section h3 { margin-bottom: 6px; }
-        ul { margin: 4px 0; padding-left: 20px; }
-        .done { color: #0a7d3c; }
-        .pending { color: #999; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #111; max-width: 720px; margin: 0 auto; line-height: 1.5; }
+        h1 { border-bottom: 2px solid #2563eb; padding-bottom: 8px; color: #1e3a8a; }
+        .meta { color: #4b5563; font-size: 14px; margin-bottom: 20px; background: #f3f4f6; padding: 12px; border-radius: 8px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
+        .badge-high { background: #fee2e2; color: #991b1b; }
+        .badge-med { background: #fef3c7; color: #92400e; }
+        .badge-low { background: #d1fae5; color: #065f46; }
+        .section { margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+        h3 { color: #1f2937; margin-bottom: 6px; }
+        ul { margin: 6px 0; padding-left: 20px; }
       </style></head><body>
-        <h1>Rescue Operation Report — ${op.location}</h1>
-        <p class="meta">Status: ${op.status} · Risk: ${op.risk_level} · Team: ${op.assigned_team || "Unassigned"}</p>
-        <p class="meta">Created: ${new Date(op.created_at).toLocaleString()}${op.completed_at ? " · Completed: " + new Date(op.completed_at).toLocaleString() : ""}</p>
-        ${op.description ? `<div class="section"><h3>Description</h3><p>${op.description}</p></div>` : ""}
-        ${checklist.length ? `<div class="section"><h3>Checklist</h3><ul>${checklist.map((c) => `<li class="${c.done ? "done" : "pending"}">${c.done ? "☑" : "☐"} ${c.label}</li>`).join("")}</ul></div>` : ""}
-        ${updateLog.length ? `<div class="section"><h3>Update Log</h3><ul>${updateLog.map((u) => `<li>${new Date(u.timestamp).toLocaleString()} — ${u.note}</li>`).join("")}</ul></div>` : ""}
-        ${op.status === "Completed" ? `<div class="section"><h3>Completion Summary</h3><p>People rescued: ${op.people_rescued || 0}</p>${op.resources_used ? `<p>Resources used: ${op.resources_used}</p>` : ""}${op.completion_notes ? `<p>Notes: ${op.completion_notes}</p>` : ""}</div>` : ""}
+        <h1>Flood Rescue Operation Report</h1>
+        <div class="meta">
+          <p><strong>Operation ID:</strong> #${op.id} &nbsp;|&nbsp; <strong>Location:</strong> ${op.location}</p>
+          <p><strong>Risk Level:</strong> <span class="badge ${op.risk_level === 'High' ? 'badge-high' : op.risk_level === 'Medium' ? 'badge-med' : 'badge-low'}">${op.risk_level} Priority</span> &nbsp;|&nbsp; <strong>Assigned Team:</strong> ${op.assigned_team || "Unassigned"}</p>
+          <p><strong>Status:</strong> ${op.status} &nbsp;|&nbsp; <strong>Created:</strong> ${new Date(op.created_at).toLocaleString()}${op.completed_at ? " &nbsp;|&nbsp; <strong>Completed:</strong> " + new Date(op.completed_at).toLocaleString() : ""}</p>
+        </div>
+        ${op.description ? `<div class="section"><h3>Operation Mission Description</h3><p>${op.description}</p></div>` : ""}
+        ${op.status === "Completed" ? `
+          <div class="section">
+            <h3>Completion Summary</h3>
+            <p><strong>Civilians Rescued:</strong> ${op.people_rescued || 0} individuals</p>
+            ${op.resources_used ? `<p><strong>Resources Deployed:</strong> ${op.resources_used}</p>` : ""}
+            ${op.completion_notes ? `<p><strong>Final SITREP / Notes:</strong> ${op.completion_notes}</p>` : ""}
+          </div>
+        ` : ""}
+        ${updateLog.length ? `
+          <div class="section">
+            <h3>Progress & SITREP Log</h3>
+            <ul>${updateLog.map((u) => `<li><strong>${new Date(u.timestamp).toLocaleTimeString()}:</strong> ${u.note}</li>`).join("")}</ul>
+          </div>
+        ` : ""}
       </body></html>
     `);
     win.document.close();
@@ -721,477 +303,127 @@ export default function RescueDashboard() {
     win.print();
   };
 
-  const handleDeleteOperation = async (opId) => {
-    if (!window.confirm(t("confirmDeleteOperation"))) return;
-    try {
-      await axios.delete(`${API_BASE}/rescue-operations/${opId}`);
-      setActionFeedback(t("operationDeletedMsg"));
-      fetchOperations();
-      fetchStats();
-    } catch (err) {
-      console.error("Failed to delete rescue operation:", err);
-      setActionFeedback(t("couldNotUpdateOp"));
+  // FR05-07: Prioritization logic (High > Medium > Low)
+  const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
+
+  // FR05-04: Real-time active operations list (sorted by risk priority)
+  const activeOperations = useMemo(() => {
+    let list = operations.filter((op) => op.status !== "Completed");
+    if (riskFilter !== "All") {
+      list = list.filter((op) => op.risk_level === riskFilter);
     }
-  };
-
-  const handleUpdateOpStatus = async (opId, status) => {
-    if (status === "Completed") {
-      setCompletionForm({ people_rescued: "", resources_used: "", completion_notes: "" });
-      setCompletionModal({ opId });
-      return;
+    if (statusFilter !== "All") {
+      list = list.filter((op) => op.status === statusFilter);
     }
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${opId}/status`, { status });
-      setActionFeedback(`${t("operationMarkedAs")} ${t(OP_STATUS_KEY_MAP[status] || status)}.`);
-      fetchOperations();
-      fetchStats();
-    } catch (err) {
-      console.error("Failed to update operation status:", err);
-      setActionFeedback(t("couldNotUpdateOp"));
-    }
-  };
-
-  const handleSubmitCompletion = async (e) => {
-    e.preventDefault();
-    if (!completionModal) return;
-    try {
-      await axios.put(`${API_BASE}/rescue-operations/${completionModal.opId}/status`, {
-        status: "Completed",
-        people_rescued: completionForm.people_rescued ? parseInt(completionForm.people_rescued, 10) || 0 : 0,
-        resources_used: completionForm.resources_used,
-        completion_notes: completionForm.completion_notes,
-      });
-      setActionFeedback(`${t("operationMarkedAs")} ${t("statusCompleted")}.`);
-      setCompletionModal(null);
-      fetchOperations();
-      fetchStats();
-    } catch (err) {
-      console.error("Failed to complete operation:", err);
-      setActionFeedback(t("couldNotUpdateOp"));
-    }
-  };
-
-  const opStatusStyles = (status) => {
-    if (status === "Completed") return "bg-emerald-500/20 border-emerald-500/50 text-emerald-300";
-    if (status === "In Progress") return "bg-teal-500/20 border-teal-500/50 text-teal-300";
-    return "bg-amber-500/20 border-amber-500/50 text-amber-300"; // Assigned
-  };
-
-  const opRiskStyles = (risk) => {
-    if (risk === "High") return "border-l-4 border-l-red-500";
-    if (risk === "Medium") return "border-l-4 border-l-yellow-500";
-    return "border-l-4 border-l-green-500";
-  };
-
-  const fetchAlerts = async () => {
-    const mySeq = ++alertsFetchSeq.current;
-    try {
-      console.log("Fetching alerts from Rescue Dashboard...");
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/alerts`));
-      if (mySeq !== alertsFetchSeq.current) return; // a newer request already resolved — drop this stale one
-      console.log("Alerts response:", res.data);
-      setAlerts(res.data || []);
-      
-      // Update emergency status based on high-risk alerts
-      const highRiskAlerts = (res.data || []).filter(alert => alert.risk === "High");
-      if (highRiskAlerts.length > 0) {
-        setEmergencyStatus("critical");
-      } else {
-        const mediumRiskAlerts = (res.data || []).filter(alert => alert.risk === "Medium");
-        setEmergencyStatus(mediumRiskAlerts.length > 0 ? "elevated" : "normal");
-      }
-    } catch (err) {
-      // Don't wipe the alerts list on a transient failure (e.g. the free-tier
-      // backend cold-starting after being idle) — keep showing the last known
-      // good data instead of flashing everything to zero every ~30s.
-      console.error("Error fetching alerts:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Community-submitted reports — a citizen filing "water rising near me" is
-  // useless if no rescue worker ever sees it. Surfacing it here, with a
-  // one-click dispatch, is what actually connects the report to a response.
-  const [communityReports, setCommunityReports] = useState([]);
-  const fetchCommunityReports = async () => {
-    const severityRank = { High: 0, Medium: 1, Low: 2 };
-    try {
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/community-reports`));
-      const unresolved = (res.data || []).filter((r) => r.status !== "Resolved");
-      // High severity first — a report someone marked urgent shouldn't sit
-      // below older Low/Medium ones just because it arrived later.
-      unresolved.sort((a, b) => (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3));
-      setCommunityReports(unresolved);
-    } catch (err) {
-      console.error("Failed to load community reports:", err);
-    }
-  };
-
-  const handleUpdateReportStatus = async (reportId, status) => {
-    try {
-      await axios.put(`${API_BASE}/community-reports/${reportId}/status`, { status });
-      setActionFeedback(status === "Action Taken" ? t("reportDispatchedMsg") : `${t("operationMarkedAs")} ${status}.`);
-      fetchCommunityReports();
-      if (status === "Action Taken") { fetchOperations(); fetchStats(); }
-    } catch (err) {
-      console.error("Failed to update report status:", err);
-    }
-  };
-
-  // A report's "Dispatch team" action needed a way to actually pick which
-  // team responds — previously it always dispatched as "Unassigned".
-  const [reportTeamPicks, setReportTeamPicks] = useState({}); // { [reportId]: assigned_team string }
-  const handleDispatchReport = async (reportId) => {
-    try {
-      await axios.put(`${API_BASE}/community-reports/${reportId}/status`, {
-        status: "Action Taken",
-        assigned_team: reportTeamPicks[reportId] || "Unassigned",
-      });
-      setActionFeedback(t("reportDispatchedMsg"));
-      fetchCommunityReports();
-      fetchOperations();
-      fetchStats();
-    } catch (err) {
-      console.error("Failed to dispatch report:", err);
-    }
-  };
-
-  const handleDeleteReport = async (reportId) => {
-    if (!window.confirm(t("confirmDeleteReport"))) return;
-    try {
-      await axios.delete(`${API_BASE}/community-reports/${reportId}`);
-      setActionFeedback(t("reportDeletedMsg"));
-      fetchCommunityReports();
-    } catch (err) {
-      console.error("Failed to delete community report:", err);
-    }
-  };
-
-  const fetchPredictions = async () => {
-    try {
-      console.log("Fetching predictions from Rescue Dashboard...");
-      const mySeq = ++predictionsFetchSeq.current;
-      const res = await fetchWithRetry(() => axios.get(`${API_BASE}/predictions`));
-      if (mySeq !== predictionsFetchSeq.current) return; // a newer request already resolved — drop this stale one
-      console.log("Predictions response:", res.data);
-      setPredictions(res.data || []);
-    } catch (err) {
-      // Same fix as alerts — keep the last good predictions instead of
-      // blanking the High/Medium risk area lists on a transient hiccup.
-      console.error("Error fetching predictions:", err);
-    }
-  };
-
-  useEffect(() => {
-    if (!actionFeedback) return;
-    const timer = setTimeout(() => setActionFeedback(""), 4000);
-    return () => clearTimeout(timer);
-  }, [actionFeedback]);
-
-  const getRiskColor = (risk) => {
-    switch (risk?.toLowerCase()) {
-      case "low": return "text-green-400";
-      case "medium": return "text-yellow-400";
-      case "high": return "text-red-400";
-      default: return "text-gray-400";
-    }
-  };
-
-  const getRiskBgColor = (risk) => {
-    switch (risk?.toLowerCase()) {
-      case "low": return "bg-green-500/20 border-green-500/50";
-      case "medium": return "bg-yellow-500/20 border-yellow-500/50";
-      case "high": return "bg-red-500/20 border-red-500/50";
-      default: return "bg-gray-500/20 border-gray-500/50";
-    }
-  };
-
-  const getEmergencyStatusColor = () => {
-    switch (emergencyStatus) {
-      case "critical": return "bg-red-500/20 border-red-500/50 text-red-400";
-      case "elevated": return "bg-yellow-500/20 border-yellow-500/50 text-yellow-400";
-      default: return "bg-green-500/20 border-green-500/50 text-green-400";
-    }
-  };
-
-  const getEmergencyStatusText = () => {
-    switch (emergencyStatus) {
-      case "critical": return t("criticalMultiple");
-      case "elevated": return t("elevatedDetected");
-      default: return t("normalNoThreats");
-    }
-  };
-
-  const highRiskPredictions = predictions.filter(pred => pred.risk === "High").slice(0, 10);
-  const mediumRiskPredictions = predictions.filter(pred => pred.risk === "Medium").slice(0, 10);
-  const highRiskAlerts = alerts.filter(alert => alert.risk === "High").slice(0, 10);
-  const mediumRiskAlerts = alerts.filter(alert => alert.risk === "Medium").slice(0, 10);
-
-  const exportRescueReport = () => {
-    const rows = [
-      ['Type', 'Location', 'Risk', 'Confidence', 'Timestamp']
-    ];
-
-    highRiskPredictions.forEach(pred => {
-      rows.push(['Prediction', pred.location || 'Unknown', pred.risk, `${(pred.confidence*100).toFixed(1)}%`, new Date(pred.created_at).toLocaleString()]);
+    return list.sort((a, b) => {
+      const scoreA = PRIORITY_SCORE[a.risk_level] || 0;
+      const scoreB = PRIORITY_SCORE[b.risk_level] || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return new Date(b.updated_at) - new Date(a.updated_at);
     });
+  }, [operations, riskFilter, statusFilter]);
 
-    highRiskAlerts.forEach(alert => {
-      rows.push(['Alert', alert.location || 'Unknown', alert.risk, '-', new Date(alert.created_at).toLocaleString()]);
-    });
+  // FR05-06: Past operations log list
+  const pastOperations = useMemo(() => {
+    let list = operations.filter((op) => op.status === "Completed");
+    if (historyRiskFilter !== "All") {
+      list = list.filter((op) => op.risk_level === historyRiskFilter);
+    }
+    const query = historySearch.trim().toLowerCase();
+    if (query) {
+      list = list.filter((op) =>
+        (op.location || "").toLowerCase().includes(query) ||
+        (op.assigned_team || "").toLowerCase().includes(query) ||
+        (op.completion_notes || "").toLowerCase().includes(query) ||
+        (op.resources_used || "").toLowerCase().includes(query)
+      );
+    }
+    return list.sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at));
+  }, [operations, historySearch, historyRiskFilter]);
 
-    const csvContent = rows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rescue_report_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-
-    setActionFeedback('Rescue report downloaded successfully.');
-  };
-
-
-  const renderOperationCard = (op) => (
-    <div key={op.id} className={`bg-ink-soft/60 rounded-lg p-4 ${opRiskStyles(op.risk_level)}`}>
-      <div className="flex flex-col gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-semibold text-white text-base">{op.location}</h4>
-            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${opStatusStyles(op.status)}`}>
-              {t(OP_STATUS_KEY_MAP[op.status] || op.status)}
-            </span>
-            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${
-              op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/50" :
-              op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/50" :
-              "bg-green-500/20 text-green-300 border-green-500/50"
-            }`}>
-              {op.risk_level === "High" ? "🔴 High Risk" : op.risk_level === "Medium" ? "🟡 Medium Risk" : "🟢 Low Risk"}
-            </span>
-
-            {/* FR05-07: Officials reprioritize operation based on risk level */}
-            {op.status !== "Completed" && (
-              <div className="flex items-center gap-1 ml-auto">
-                <span className="text-[10px] text-muted">Priority:</span>
-                <select
-                  value={op.risk_level || "Medium"}
-                  onChange={(e) => handleReprioritizeRisk(op.id, e.target.value)}
-                  className="text-[11px] bg-white/5 border border-white/15 rounded px-2 py-0.5 text-muted hover:text-white hover:border-teal-400 focus:outline-none"
-                  title="Reprioritize operation risk level (FR05-07)"
-                >
-                  <option value="High" className="bg-ink text-red-300">🔴 High Priority</option>
-                  <option value="Medium" className="bg-ink text-yellow-300">🟡 Medium Priority</option>
-                  <option value="Low" className="bg-ink text-green-300">🟢 Low Priority</option>
-                </select>
-              </div>
-            )}
-
-            {op.needs_backup && (
-              <button onClick={() => handleClearBackup(op)} title={t("clickToClearBackup")}
-                className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/50 text-red-300 font-semibold hover:bg-red-500/30 transition-colors flex items-center gap-1">
-                🆘 {t("backupNeeded")} <span className="opacity-70">✕</span>
-              </button>
-            )}
-          </div>
-          {op.description && <p className="text-sm text-muted mb-1">{op.description}</p>}
-          <p className="text-xs text-slate-500">{t("teamLabel")}: {op.assigned_team || t("unassigned")} · {t("updatedLabel")} {new Date(op.updated_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-
-          {op.status === "Completed" && op.completed_at && (
-            <div className="mt-2 space-y-1">
-              <p className="text-xs text-emerald-400">
-                {t("completedIn")} {formatDuration(new Date(op.created_at), new Date(op.completed_at))}
-              </p>
-              {(op.people_rescued > 0 || op.resources_used || op.completion_notes) && (
-                <div className="text-xs text-muted bg-white/[0.03] rounded-lg p-2 mt-1 space-y-0.5">
-                  {op.people_rescued > 0 && <p>👥 {t("peopleRescuedLabel")}: <span className="text-white">{op.people_rescued}</span></p>}
-                  {op.resources_used && <p>🧰 {t("resourcesUsedLabel")}: {op.resources_used}</p>}
-                  {op.completion_notes && <p>📝 {op.completion_notes}</p>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Progress checklist — breaks "In Progress" into concrete steps
-              instead of one big jump straight to "Completed". */}
-          {op.status !== "Completed" && op.checklist && op.checklist.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-2">
-              {op.checklist.map((item, i) => (
-                <button key={i} onClick={() => handleToggleChecklistItem(op.id, i, !item.done)}
-                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors flex items-center gap-1.5 ${
-                    item.done ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300" : "bg-white/5 border-white/15 text-muted hover:border-white/30"
-                  }`}>
-                  <span>{item.done ? "☑" : "☐"}</span> {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* In-progress update log */}
-          {op.update_log && (Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).length > 0 && (
-            <div className="mt-2 bg-white/[0.03] rounded-lg p-2 space-y-1 text-xs text-muted max-h-24 overflow-y-auto">
-              {(Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).map((entry, i) => (
-                <p key={i}><span className="opacity-60">{new Date(entry.timestamp).toLocaleTimeString(lang === "ur" ? "ur-PK" : undefined)}</span> — {entry.note}</p>
-              ))}
-            </div>
-          )}
-
-          {nearbyFacilities[op.id] && (nearbyFacilities[op.id].shelter || nearbyFacilities[op.id].hospital) && (
-            <div className="flex flex-wrap gap-3 mt-2 text-xs">
-              {nearbyFacilities[op.id].shelter && (
-                <span className="text-teal-300">🏠 {t("nearestShelter")}: {lang === "ur" && nearbyFacilities[op.id].shelter.name_ur ? nearbyFacilities[op.id].shelter.name_ur : nearbyFacilities[op.id].shelter.name}</span>
-              )}
-              {nearbyFacilities[op.id].hospital && (
-                <span className="text-marigold-300">🏥 {t("nearestHospital")}: {lang === "ur" && nearbyFacilities[op.id].hospital.name_ur ? nearbyFacilities[op.id].hospital.name_ur : nearbyFacilities[op.id].hospital.name}</span>
-              )}
-            </div>
-          )}
-
-          {op.status !== "Completed" && (
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              {volunteers.length > 0 && (
-                <select
-                  defaultValue=""
-                  onChange={(e) => { if (e.target.value) { handleAssignVolunteer(op.id, e.target.value); e.target.value = ""; } }}
-                  className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-muted"
-                >
-                  <option value="">{t("assignVolunteerLabel")}</option>
-                  {volunteers.map((v) => <option key={v.id} value={v.name}>{v.name} ({v.city})</option>)}
-                </select>
-              )}
-              <button onClick={() => handleGetRoute(op)}
-                className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-teal-300">
-                🧭 {t("getRoute")}
-              </button>
-              {!op.needs_backup && (
-                <button onClick={() => handleRequestBackup(op)}
-                  className="text-xs bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg px-2 py-1.5 text-red-300">
-                  🆘 {t("requestBackup")}
-                </button>
-              )}
-            </div>
-          )}
-
-          {op.status !== "Completed" && (
-            <div className="flex items-center gap-2 mt-2">
-              <input
-                value={noteInputs[op.id] || ""}
-                onChange={(e) => setNoteInputs((prev) => ({ ...prev, [op.id]: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddNote(op.id); }}
-                placeholder={t("addUpdateNotePh")}
-                className="field-input text-xs py-2 flex-1"
-              />
-              <button onClick={() => handleAddNote(op.id)} className="btn-secondary text-xs py-2 px-3 shrink-0">
-                {t("post")}
-              </button>
-            </div>
-          )}
-        </div>
-        {op.status !== "Completed" && (
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
-            <span className="text-xs text-muted font-medium">Update Status (FR05-02):</span>
-            {op.status === "Assigned" && (
-              <button onClick={() => handleUpdateOpStatus(op.id, "In Progress")}
-                className="bg-teal-600/90 hover:bg-teal-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm">
-                ▶️ {t("start")} (In Progress)
-              </button>
-            )}
-            {op.status === "In Progress" && (
-              <button onClick={() => handleUpdateOpStatus(op.id, "Assigned")}
-                className="bg-amber-600/70 hover:bg-amber-500 text-white font-medium text-xs px-2.5 py-1.5 rounded-lg transition-colors">
-                ⏸️ Hold / Assigned
-              </button>
-            )}
-            <button onClick={() => handleUpdateOpStatus(op.id, "Completed")}
-              className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm">
-              ✅ {t("markComplete")}
-            </button>
-            <button onClick={() => handlePrintOperation(op)} className="text-xs text-muted hover:text-teal-300 transition-colors ml-auto">
-              🖨️ {t("printReportBtn")}
-            </button>
-            <button onClick={() => handleDeleteOperation(op.id)} className="text-xs text-muted hover:text-red-300 transition-colors">
-              {t("deleteOperationBtn")}
-            </button>
-          </div>
-        )}
-        {op.status === "Completed" && (
-          <div className="flex justify-end gap-4">
-            <button onClick={() => handlePrintOperation(op)} className="text-xs text-muted hover:text-teal-300 transition-colors">
-              🖨️ {t("printReportBtn")}
-            </button>
-            <button onClick={() => handleDeleteOperation(op.id)} className="text-xs text-muted hover:text-red-300 transition-colors">
-              {t("deleteOperationBtn")}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // Quick metrics
+  const totalActive = operations.filter((o) => o.status !== "Completed").length;
+  const highRiskActive = operations.filter((o) => o.status !== "Completed" && o.risk_level === "High").length;
+  const inProgressCount = operations.filter((o) => o.status === "In Progress").length;
+  const completedCount = operations.filter((o) => o.status === "Completed").length;
+  const totalRescued = operations
+    .filter((o) => o.status === "Completed")
+    .reduce((sum, op) => sum + (op.people_rescued || 0), 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-ink via-ink-soft to-ink text-parchment font-sans">
       <Navbar />
       <div className="pt-24 pb-16">
         <div className="max-w-7xl mx-auto px-6">
+
           {/* Header */}
-          <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="eyebrow text-teal-400 mb-3">{t("rescueCoordination")}</p>
-              <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">{t("operationsCenter")}</h1>
-              <p className="text-muted max-w-lg">{t("operationsCenterDesc")}</p>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
+                <span className="eyebrow text-teal-400 font-semibold tracking-wider">Emergency Rescue System (FR-05)</span>
+              </div>
+              <h1 className="font-display text-3xl sm:text-4xl text-parchment">Rescue Operations Center</h1>
+              <p className="text-muted text-sm mt-1">Real-time rescue operation coordination, status tracking, risk prioritization, and mission reporting.</p>
             </div>
-            <button
-              onClick={handleToggleDuty}
-              className={`shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold border transition-colors ${
-                onDuty
-                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                  : "bg-white/5 border-white/15 text-muted"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${onDuty ? "bg-emerald-400" : "bg-slate-500"}`}></span>
-              {onDuty ? t("onDuty") : t("offDuty")}
-            </button>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleManualRefresh}
+                disabled={refreshing}
+                className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+                title="Force refresh data"
+              >
+                {refreshing ? "Syncing..." : "🔄 Refresh"}
+              </button>
+              {/* FR05-01: Create Operation Button */}
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary text-xs sm:text-sm py-2 px-4 shadow-lg shadow-teal-500/20 flex items-center gap-1.5"
+              >
+                + Create & Assign Operation
+              </button>
+            </div>
           </div>
 
-          {loading && (
-            <div className="mb-8 flex items-center gap-3 bg-teal-500/10 border border-teal-500/30 rounded-xl px-4 py-3 text-sm text-teal-200">
-              <span className="w-3.5 h-3.5 rounded-full border-2 border-teal-300 border-t-transparent animate-spin shrink-0"></span>
-              {t("connectingToServerMsg")}
+          {/* Feedback banner */}
+          {actionFeedback && (
+            <div className="mb-6 bg-teal-500/15 border border-teal-500/40 rounded-xl px-4 py-2.5 text-sm text-teal-300 flex items-center justify-between animate-fadeIn">
+              <span>✓ {actionFeedback}</span>
+              <button onClick={() => setActionFeedback("")} className="text-teal-400 hover:text-white text-xs">✕</button>
             </div>
           )}
 
-          {/* FR05-03: Real-Time Team Notification for New Rescue Operations */}
-          {newOpNotification && (
-            <div className="mb-6 bg-gradient-to-r from-red-500/20 via-amber-500/20 to-teal-500/20 border border-teal-500/50 rounded-2xl p-4 flex items-center justify-between gap-4 animate-pulse shadow-lg shadow-teal-500/10">
+          {/* FR05-03: Real-Time Team Notification Banner */}
+          {newOpAlert && (
+            <div className="mb-6 bg-gradient-to-r from-red-500/20 via-amber-500/20 to-teal-500/20 border border-teal-500/60 rounded-2xl p-4 flex items-center justify-between gap-4 animate-pulse shadow-xl shadow-teal-500/10">
               <div className="flex items-center gap-3">
                 <span className="text-2xl animate-bounce">🔔</span>
                 <div>
                   <h4 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
-                    NEW RESCUE DISPATCH ALERT: {newOpNotification.location}
+                    NEW RESCUE OPERATION ALERT: {newOpAlert.location}
                     <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/30 text-red-200 border border-red-500/50">
-                      {newOpNotification.risk_level || "Medium"} Risk
+                      {newOpAlert.risk_level} Risk
                     </span>
                   </h4>
                   <p className="text-xs text-muted mt-0.5">
-                    Assigned to: <strong className="text-teal-300">{newOpNotification.assigned_team || "Unassigned"}</strong> · Live notification dispatched to relevant units.
+                    Assigned to: <strong className="text-teal-300">{newOpAlert.assigned_team || "Rescue Team Alpha"}</strong> · Real-time team dispatch notice (FR05-03).
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => {
-                    setActiveTab("active_board");
-                    setNewOpNotification(null);
+                    setActiveTab("active");
+                    setNewOpAlert(null);
                   }}
                   className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
                 >
-                  View Live Board
+                  View Operation
                 </button>
                 <button
-                  onClick={() => setNewOpNotification(null)}
+                  onClick={() => setNewOpAlert(null)}
                   className="text-muted hover:text-white text-sm px-2 py-1"
-                  title="Dismiss"
                 >
                   ✕
                 </button>
@@ -1199,1307 +431,507 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* Tab Navigation — separates "my own work", real-time active board,
-              creation/overview, historical reporting, map, and resources */}
-          <div className="flex flex-wrap gap-2 mb-8 border-b border-white/10 pb-1">
-            {[
-              { id: "myOps", label: "📌 " + t("tabMyOperations"), badge: myOperations.filter(o => o.status !== "Completed").length },
-              { id: "active_board", label: "⚡ Active Ops Board", badge: activeOperations.length },
-              { id: "team", label: "🚤 " + t("tabTeamOverview"), badge: highRiskAlerts.length + communityReports.filter((r) => r.status === "Submitted").length },
-              { id: "history", label: "📜 Past Ops Log & Reports", badge: pastOperations.length },
-              { id: "map", label: "🗺️ " + t("tabMapNavigation") },
-              { id: "team_resources", label: "👥 " + t("tabTeamResources") },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-white/10 text-teal-300 border-b-2 border-teal-400"
-                    : "text-muted hover:text-parchment hover:bg-white/5"
-                }`}
-              >
-                {tab.label}
-                {tab.badge > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold align-top">
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* ============ TAB: MY OPERATIONS ============ */}
-          {activeTab === "myOps" && (<>
-          {/* My Performance Stats */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("myPerformance")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">📊 {t("myStatsTitle")}</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{myStats.total}</div>
-                <div className="eyebrow text-muted">{t("totalOperationsLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-teal-400">{myStats.active}</div>
-                <div className="eyebrow text-muted">{t("activeLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-emerald-400">{myStats.completed}</div>
-                <div className="eyebrow text-muted">{t("completedLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-marigold-400">{myStats.peopleRescued}</div>
-                <div className="eyebrow text-muted">{t("peopleRescuedLabel")}</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{myStats.avgMinutes ?? "—"}</div>
-                <div className="eyebrow text-muted">{t("avgMinutesLabel")}</div>
-              </div>
+          {/* Metrics summary banner (FR05-04, FR05-06, FR05-07) */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div className="dashboard-card p-4 text-center">
+              <div className="font-display text-2xl text-parchment">{totalActive}</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Total Active Ops (FR05-04)</div>
+            </div>
+            <div className="dashboard-card p-4 text-center border-red-500/30">
+              <div className="font-display text-2xl text-red-400">{highRiskActive}</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">High Risk Priority (FR05-07)</div>
+            </div>
+            <div className="dashboard-card p-4 text-center border-teal-500/30">
+              <div className="font-display text-2xl text-teal-400">{inProgressCount}</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">In Progress (FR05-02)</div>
+            </div>
+            <div className="dashboard-card p-4 text-center border-emerald-500/30">
+              <div className="font-display text-2xl text-emerald-400">{completedCount}</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Completed Log (FR05-06)</div>
+            </div>
+            <div className="dashboard-card p-4 text-center border-marigold-500/30 col-span-2 md:col-span-1">
+              <div className="font-display text-2xl text-marigold-400">{totalRescued}</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Citizens Rescued (FR05-05)</div>
             </div>
           </div>
 
-          {/* My Operations List */}
-          <div className="dashboard-card p-6 mb-8">
-            <h2 className="font-display text-2xl text-parchment mb-1">📌 {t("myAssignedOperations")}</h2>
-            <p className="text-sm text-muted mb-6">{t("myAssignedOperationsDesc")}</p>
-            {myOperations.length === 0 ? (
-              <p className="text-muted text-center py-6">{t("noOperationsAssignedToMe")}</p>
-            ) : (
-              <div className="space-y-3">
-                {myOperations.map((op) => renderOperationCard(op))}
-              </div>
-            )}
-          </div>
-          </>)}
-          {/* ============ END TAB: MY OPERATIONS ============ */}
-
-          {/* ============ TAB: ACTIVE OPERATIONS BOARD (FR05-04 & FR05-07) ============ */}
-          {activeTab === "active_board" && (<>
-          {/* Header & Live Status */}
-          <div className="dashboard-card p-6 mb-8 border-teal-500/30 bg-gradient-to-br from-teal-950/20 via-ink-soft to-ink">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-ping"></span>
-                  <span className="eyebrow text-teal-400">Live Multi-Team Coordination (FR05-04)</span>
-                </div>
-                <h2 className="font-display text-2xl sm:text-3xl text-parchment">⚡ Real-Time Active Operations Board</h2>
-                <p className="text-sm text-muted mt-1">Live multi-team status of all ongoing operations across Pakistani cities. Auto-syncs every 15s.</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs px-3 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 font-semibold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-                  Live Auto-Sync Active
+          {/* Navigation: Active Operations vs Past Operations Log */}
+          <div className="flex gap-2 mb-6 border-b border-white/10 pb-1">
+            <button
+              onClick={() => setActiveTab("active")}
+              className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-2 ${
+                activeTab === "active"
+                  ? "bg-white/10 text-teal-300 border-b-2 border-teal-400"
+                  : "text-muted hover:text-parchment hover:bg-white/5"
+              }`}
+            >
+              <span>⚡ Active Rescue Operations (FR05-04)</span>
+              {totalActive > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
+                  {totalActive}
                 </span>
-                <button onClick={handleManualRefresh} disabled={refreshing} className="btn-secondary text-xs py-1.5 px-3">
-                  {refreshing ? "Syncing..." : "🔄 Force Refresh"}
-                </button>
-              </div>
-            </div>
+              )}
+            </button>
 
-            {/* Quick Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{activeOperations.length}</div>
-                <div className="eyebrow text-muted">Total Active Ops</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-red-400">{activeOperations.filter(o => o.risk_level === "High").length}</div>
-                <div className="eyebrow text-muted">High Priority / Urgent</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-teal-400">{inProgressOperations.length}</div>
-                <div className="eyebrow text-muted">In Progress On-Ground</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-amber-400">{assignedOperations.length}</div>
-                <div className="eyebrow text-muted">Assigned / Standby</div>
-              </div>
-            </div>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-2 ${
+                activeTab === "history"
+                  ? "bg-white/10 text-teal-300 border-b-2 border-teal-400"
+                  : "text-muted hover:text-parchment hover:bg-white/5"
+              }`}
+            >
+              <span>📜 Past Operations Log & Reports (FR05-06)</span>
+              {completedCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
+                  {completedCount}
+                </span>
+              )}
+            </button>
+          </div>
 
-            {/* FR05-07: Prioritization Filter Bar */}
-            <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted font-medium">Prioritize by Risk Level (FR05-07):</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { id: "All", label: `All (${activeOperations.length})` },
-                    { id: "High", label: `🔴 High Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "High").length})` },
-                    { id: "Medium", label: `🟡 Medium Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "Medium").length})` },
-                    { id: "Low", label: `🟢 Low Risk (${operations.filter(o => o.status !== "Completed" && o.risk_level === "Low").length})` },
-                  ].map((btn) => (
-                    <button
-                      key={btn.id}
-                      onClick={() => setRiskFilter(btn.id)}
-                      className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
-                        riskFilter === btn.id
-                          ? "bg-teal-500/25 border-teal-500 text-teal-300"
-                          : "bg-white/5 border-white/10 text-muted hover:border-white/25"
+          {/* ============================================================== */}
+          {/* TAB 1: ACTIVE OPERATIONS (FR05-01, FR05-02, FR05-04, FR05-07) */}
+          {/* ============================================================== */}
+          {activeTab === "active" && (
+            <div>
+              {/* FR05-07: Risk-Based Prioritization & Filter Toolbar */}
+              <div className="dashboard-card p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted font-medium">Risk Priority (FR05-07):</span>
+                    {["All", "High", "Medium", "Low"].map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => setRiskFilter(level)}
+                        className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                          riskFilter === level
+                            ? "bg-teal-500/25 border-teal-500 text-teal-300"
+                            : "bg-white/5 border-white/10 text-muted hover:border-white/20"
+                        }`}
+                      >
+                        {level === "High" ? "🔴 High" : level === "Medium" ? "🟡 Medium" : level === "Low" ? "🟢 Low" : "All Risks"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 pl-3 border-l border-white/10">
+                    <span className="text-xs text-muted font-medium">Status:</span>
+                    {["All", "Assigned", "In Progress"].map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => setStatusFilter(st)}
+                        className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition-colors ${
+                          statusFilter === st
+                            ? "bg-white/15 border-white/40 text-white"
+                            : "bg-white/5 border-white/10 text-muted hover:border-white/20"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                  <span>Sorted by Risk Severity (High Priority First)</span>
+                </div>
+              </div>
+
+              {/* Active Operations List */}
+              {loading ? (
+                <div className="text-center py-16 text-muted">
+                  <span className="w-5 h-5 rounded-full border-2 border-teal-300 border-t-transparent animate-spin inline-block mr-2"></span>
+                  Loading active rescue operations...
+                </div>
+              ) : activeOperations.length === 0 ? (
+                <div className="dashboard-card p-12 text-center text-muted">
+                  <p className="text-base text-parchment mb-2">No active rescue operations matching current filters.</p>
+                  <p className="text-xs max-w-md mx-auto mb-4">Click below to create a new operation and assign a rescue team to the affected area.</p>
+                  <button onClick={() => setShowCreateModal(true)} className="btn-primary text-xs py-2 px-4">
+                    + Create & Assign Operation (FR05-01)
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {activeOperations.map((op) => (
+                    <div
+                      key={op.id}
+                      className={`dashboard-card p-5 border-l-4 ${
+                        op.risk_level === "High" ? "border-l-red-500" :
+                        op.risk_level === "Medium" ? "border-l-yellow-500" :
+                        "border-l-green-500"
                       }`}
                     >
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        <div className="flex-1">
+                          {/* Card Header: Location, Status, Risk */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className="text-xs text-muted font-mono">#{op.id}</span>
+                            <h3 className="font-semibold text-white text-lg">{op.location}</h3>
 
-              <button
-                onClick={() => {
-                  setActiveTab("team");
-                  setShowOpForm(true);
-                }}
-                className="btn-primary text-xs py-1.5 px-3"
-              >
-                + Create New Operation
-              </button>
-            </div>
-          </div>
-
-          {/* Active Operations Kanban Dual Columns */}
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
-            {/* Column 1: Assigned / Dispatched */}
-            <div className="dashboard-card p-6 border-amber-500/30">
-              <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                  <h3 className="font-display text-xl text-white">📋 Assigned / Dispatched</h3>
-                </div>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
-                  {assignedOperations.length} ops
-                </span>
-              </div>
-              <p className="text-xs text-muted mb-4">Operations assigned to rescue teams awaiting deployment or currently en-route.</p>
-
-              {assignedOperations.length === 0 ? (
-                <div className="text-center py-8 text-muted bg-white/[0.02] rounded-xl border border-white/5">
-                  <p className="text-sm">No operations currently on standby.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {assignedOperations.map((op) => renderOperationCard(op))}
-                </div>
-              )}
-            </div>
-
-            {/* Column 2: In Progress / On-Ground */}
-            <div className="dashboard-card p-6 border-teal-500/30">
-              <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
-                  <h3 className="font-display text-xl text-white">⚡ In Progress / Active Rescue</h3>
-                </div>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-semibold">
-                  {inProgressOperations.length} active
-                </span>
-              </div>
-              <p className="text-xs text-muted mb-4">Active on-scene flood rescue teams carrying out evacuations and medical aid.</p>
-
-              {inProgressOperations.length === 0 ? (
-                <div className="text-center py-8 text-muted bg-white/[0.02] rounded-xl border border-white/5">
-                  <p className="text-sm">No operations currently in active progress.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {inProgressOperations.map((op) => renderOperationCard(op))}
-                </div>
-              )}
-            </div>
-          </div>
-          </>)}
-          {/* ============ END TAB: ACTIVE OPERATIONS BOARD ============ */}
-
-          {/* ============ TAB: TEAM OVERVIEW ============ */}
-          {activeTab === "team" && (<>
-          {/* Rescue Stats / Operations Overview — surfaced first so a worker
-              sees the overall response picture before the raw alert count. */}
-          {stats && (
-            <div className="dashboard-card p-6 mb-8">
-              <p className="eyebrow text-marigold-400 mb-2">{t("rescueStatsLabel")}</p>
-              <h2 className="font-display text-2xl text-parchment mb-4">📈 {t("operationsOverviewLabel")}</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-parchment">{stats.total_operations}</div>
-                  <div className="eyebrow text-muted">{t("totalOperationsLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-emerald-400">{stats.completed_operations}</div>
-                  <div className="eyebrow text-muted">{t("completedLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-teal-400">{stats.total_people_rescued}</div>
-                  <div className="eyebrow text-muted">{t("peopleRescuedLabel")}</div>
-                </div>
-                <div className="stat-tile text-center">
-                  <div className="font-display text-2xl text-marigold-400">{stats.avg_completion_minutes ?? "—"}</div>
-                  <div className="eyebrow text-muted">{t("avgMinutesLabel")}</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Emergency Status Panel */}
-          <div className={`dashboard-card p-6 ${getEmergencyStatusColor()}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display text-2xl mb-2">🚨 {t("emergencyStatus")}</h2>
-                <p className="text-lg">{getEmergencyStatusText()}</p>
-              </div>
-              <div className="text-right">
-                {/* This used to always show the High-risk count, even when
-                    the heading above said "Medium Risk Areas Detected" —
-                    showing "0" next to a Medium-risk warning looked broken.
-                    Now it shows whichever count the current status is
-                    actually about. */}
-                <div className="font-display text-3xl">
-                  {emergencyStatus === "critical" ? highRiskAlerts.length : emergencyStatus === "elevated" ? mediumRiskAlerts.length : 0}
-                </div>
-                <div className="eyebrow opacity-80">
-                  {emergencyStatus === "critical" ? t("highRiskAreas") : emergencyStatus === "elevated" ? t("mediumRiskAreas") : t("highRiskAreas")}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Backup Needed summary — a single glance instead of scrolling
-              through every operation card to notice which ones flagged it. */}
-          {operations.filter((o) => o.needs_backup && o.status !== "Completed").length > 0 && (
-            <div className="mt-4 bg-red-500/10 border border-red-500/40 rounded-xl px-5 py-3 flex items-center gap-3 flex-wrap">
-              <span className="text-red-300 font-semibold text-sm shrink-0">
-                🆘 {operations.filter((o) => o.needs_backup && o.status !== "Completed").length} {t("opsNeedBackupLabel")}
-              </span>
-              <span className="text-xs text-red-200/80 flex-1 min-w-[120px]">
-                {operations.filter((o) => o.needs_backup && o.status !== "Completed").map((o) => o.location).join(" · ")}
-              </span>
-            </div>
-          )}
-
-          {/* Export */}
-          <div className="mb-8 flex items-center justify-end gap-4">
-            {actionFeedback && (
-              <span className="text-sm text-emerald-400 font-medium">{actionFeedback}</span>
-            )}
-            <button onClick={handleManualRefresh} className="btn-secondary" disabled={refreshing}>
-              {refreshing ? t("refreshingBtn") : `🔄 ${t("refreshBtn")}`}
-            </button>
-            <button onClick={exportRescueReport} className="btn-secondary">
-              {t("exportCsv")}
-            </button>
-          </div>
-
-
-          {/* High Risk Alerts */}
-          {highRiskAlerts.length > 0 && (
-            <div className="mb-8">
-              <h2 className="font-display text-2xl text-red-400 mb-4">🔔 {t("criticalAlertsHeading")}</h2>
-              <div className="grid gap-4">
-                {highRiskAlerts.map((alert, index) => (
-                  <div key={index} className="dashboard-card border-red-500/50 p-6">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-display text-xl text-red-400 mb-2">{alert.message}</h3>
-                        <p className="text-muted mb-2">{alert.location}</p>
-                        <p className="text-sm text-muted">
-                          {new Date(alert.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}
-                        </p>
-                      </div>
-                      <div className="flex gap-2 ml-4">
-                        <button 
-                          onClick={() => setSelectedAlert(alert)}
-                          className="btn-secondary text-sm py-2"
-                        >
-                          Details
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Affected Areas */}
-          <div className="grid md:grid-cols-2 gap-8 mb-8">
-            {/* High Risk Areas */}
-            <div className="dashboard-card p-6">
-              <h2 className="font-display text-xl text-red-400 mb-4">🔴 {t("highRiskAreas")}</h2>
-              {highRiskPredictions.length > 0 ? (
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                  {highRiskPredictions.map((pred, index) => (
-                    <div key={index} className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h4 className="font-semibold text-red-400">{pred.location}</h4>
-                          <p className="text-sm text-muted">
-                            Confidence: {(pred.confidence * 100).toFixed(1)}%
-                          </p>
-                        </div>
-                        <span className="bg-red-500/30 text-red-300 px-3 py-1 rounded-full text-sm font-semibold">
-                          HIGH
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted">{t('noHighRiskAreas')}</p>
-              )}
-            </div>
-
-            {/* Medium Risk Areas */}
-            <div className="dashboard-card p-6">
-              <h2 className="text-xl font-bold text-yellow-400 mb-4">🟡 {t("mediumRiskAreas")}</h2>
-              {mediumRiskPredictions.length > 0 ? (
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                  {mediumRiskPredictions.map((pred, index) => (
-                    <div key={index} className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h4 className="font-semibold text-yellow-400">{pred.location}</h4>
-                          <p className="text-sm text-muted">
-                            Confidence: {(pred.confidence * 100).toFixed(1)}%
-                          </p>
-                        </div>
-                        <span className="bg-yellow-500/30 text-yellow-300 px-3 py-1 rounded-full text-sm font-semibold">
-                          MEDIUM
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted">{t('noMediumRiskAreas')}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Community Reports — what a citizen submits on the Community page,
-              made visible here so a rescue worker can actually act on it. */}
-          {communityReports.length > 0 && (
-            <div className="mb-8">
-              <h2 className="font-display text-2xl text-marigold-400 mb-4">📢 {t("communityReportsHeading")}</h2>
-              <div className="grid gap-4">
-                {communityReports.map((r) => (
-                  <div key={r.id} className="dashboard-card border-marigold-500/40 p-6">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h3 className="font-display text-lg text-white">{r.location}</h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-muted font-semibold">{r.trackingId}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                        r.status === "Action Taken" ? "bg-teal-500/15 border-teal-500/40 text-teal-300" :
-                        r.status === "Under Review" ? "bg-marigold-500/15 border-marigold-500/40 text-marigold-300" :
-                        "bg-red-500/15 border-red-500/40 text-red-300"
-                      }`}>{r.status}</span>
-                    </div>
-                    <p className="text-muted mb-1">{r.description}</p>
-                    <p className="text-xs text-muted">{t("reportedByLabel")}: {r.authorName} · {r.contact} · {new Date(r.createdAt).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-                    {r.linked_rescue_op_id && (
-                      <p className="text-xs text-teal-300 mt-1">{t("linkedOperationLabel")} #{r.linked_rescue_op_id}</p>
-                    )}
-
-                    {/* Primary response action — pick a team, then dispatch.
-                        Kept separate from the housekeeping actions below so
-                        the one thing that actually matters (getting a team
-                        out the door) isn't buried in a row of equal-weight
-                        buttons. */}
-                    {r.status !== "Action Taken" && (
-                      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 mt-4">
-                        <select value={reportTeamPicks[r.id] || ""}
-                          onChange={(e) => setReportTeamPicks((p) => ({ ...p, [r.id]: e.target.value }))}
-                          className="field-input py-2 text-sm min-w-0 w-full truncate">
-                          <option value="">{t("unassigned")}</option>
-                          {teams.map((team) => (
-                            <option key={team.id} value={`${team.name}: ${teamMemberNames(team).join(", ")}`}>
-                              {team.name} ({teamMemberNames(team).length} {t("membersLabel")})
-                            </option>
-                          ))}
-                        </select>
-                        <button onClick={() => handleDispatchReport(r.id)}
-                          className="bg-teal-600/80 hover:bg-teal-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors w-full sm:w-auto">
-                          {t("dispatchTeamBtn")}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Housekeeping actions — smaller and visually secondary
-                        to the dispatch action above. Under Review is offered
-                        any time a report isn't already Under Review or
-                        Resolved, not just right after submission — a
-                        dispatched (Action Taken) report can still be pulled
-                        back for another look. */}
-                    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
-                      {r.status !== "Under Review" && r.status !== "Resolved" && (
-                        <button onClick={() => handleUpdateReportStatus(r.id, "Under Review")} className="text-xs text-muted hover:text-teal-300 transition-colors">
-                          {t("markUnderReview")}
-                        </button>
-                      )}
-                      <button onClick={() => handleUpdateReportStatus(r.id, "Resolved")} className="text-xs text-muted hover:text-emerald-300 transition-colors">
-                        {t("markResolved")}
-                      </button>
-                      <button onClick={() => handleDeleteReport(r.id)} className="text-xs text-muted hover:text-red-300 transition-colors ml-auto">
-                        {t("deleteOperationBtn")}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Rescue Operations (FR-05) */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-display text-2xl text-parchment">🚤 {t("rescueOperations")}</h2>
-                <p className="text-sm text-muted">{t("rescueOpsSubtitle")}</p>
-              </div>
-              <button
-                onClick={() => setShowOpForm((v) => !v)}
-                className="btn-secondary text-sm py-2.5"
-              >
-                {showOpForm ? t("cancel") : t("newOperation")}
-              </button>
-            </div>
-
-            {showOpForm && (
-              <form onSubmit={handleCreateOperation} className="grid gap-4 md:grid-cols-2 bg-ink-soft/60 rounded-xl p-5 mb-6 border border-white/10">
-                <label className="block">
-                  <span className="text-sm text-muted">{t("location2")} *</span>
-                  <input value={opForm.location} onChange={(e) => setOpForm((p) => ({ ...p, location: e.target.value }))} required
-                    className="field-input mt-1 py-2.5" placeholder={t("egSukkur")} />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-muted">{t("riskLevel2")}</span>
-                  <select value={opForm.risk_level} onChange={(e) => setOpForm((p) => ({ ...p, risk_level: e.target.value }))}
-                    className="field-input mt-1 py-2.5">
-                    <option value="High">{t("highSeverity")}</option><option value="Medium">{t("mediumSeverity")}</option><option value="Low">{t("lowSeverity")}</option>
-                  </select>
-                </label>
-                <label className="block md:col-span-2">
-                  <span className="text-sm text-muted">{t("description")}</span>
-                  <input value={opForm.description} onChange={(e) => setOpForm((p) => ({ ...p, description: e.target.value }))}
-                    className="field-input mt-1 py-2.5" placeholder={t("whatNeedsToHappen")} />
-                </label>
-                <div className="block">
-                  <span className="text-sm text-muted">{t("assignWorker")}</span>
-                  {/* A flooded area needs a full team, not one person — default
-                      to picking a saved team; individual is still available
-                      for a lightweight/solo check like inspecting one street. */}
-                  <div className="flex gap-2 mt-1 mb-2">
-                    <button type="button" onClick={() => setAssignMode("team")}
-                      className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${assignMode === "team" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
-                      {t("assignModeTeam")}
-                    </button>
-                    <button type="button" onClick={() => setAssignMode("individual")}
-                      className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${assignMode === "individual" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
-                      {t("assignModeIndividual")}
-                    </button>
-                  </div>
-                  {assignMode === "team" ? (
-                    <>
-                      <select value={opForm.assigned_team} onChange={(e) => setOpForm((p) => ({ ...p, assigned_team: e.target.value }))}
-                        className="field-input py-2.5">
-                        <option value="">{t("unassigned")}</option>
-                        {teams.map((team) => (
-                          <option key={team.id} value={`${team.name}: ${teamMemberNames(team).join(", ")}`}>
-                            {team.name} ({teamMemberNames(team).length} {t("membersLabel")})
-                          </option>
-                        ))}
-                      </select>
-                      {teams.length === 0 && (
-                        <p className="text-xs text-muted mt-1">{t("noTeamsYetHint")}</p>
-                      )}
-                    </>
-                  ) : (
-                    <select value={opForm.assigned_team} onChange={(e) => setOpForm((p) => ({ ...p, assigned_team: e.target.value }))}
-                      className="field-input py-2.5">
-                      <option value="">{t("unassigned")}</option>
-                      {rescueWorkers.map((w) => (
-                        <option key={w.id} value={w.name}>{w.name} ({w.email})</option>
-                      ))}
-                    </select>
-                  )}
-                  {rescueWorkers.length === 0 && (
-                    <p className="text-xs text-muted mt-1">No registered rescue workers yet — they show up here once they register with the "Rescue Worker" role.</p>
-                  )}
-                </div>
-                <div className="md:col-span-2 flex justify-end">
-                  <button type="submit" className="btn-primary">
-                    {t("createNotify")}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* FR05-07: Prioritization Filter Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pt-3 border-t border-white/10">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted font-medium">Filter by Risk Priority (FR05-07):</span>
-                {["All", "High", "Medium", "Low"].map((rk) => (
-                  <button
-                    key={rk}
-                    type="button"
-                    onClick={() => setRiskFilter(rk)}
-                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
-                      riskFilter === rk
-                        ? "bg-teal-500/25 border-teal-500 text-teal-300"
-                        : "bg-white/5 border-white/10 text-muted hover:border-white/20"
-                    }`}
-                  >
-                    {rk === "High" ? "🔴 High" : rk === "Medium" ? "🟡 Medium" : rk === "Low" ? "🟢 Low" : "All"} ({rk === "All" ? operations.length : operations.filter(o => o.risk_level === rk).length})
-                  </button>
-                ))}
-              </div>
-              <span className="text-xs text-muted">
-                Showing {sortedOperations.length} operations sorted by priority
-              </span>
-            </div>
-
-            {sortedOperations.length === 0 ? (
-              <p className="text-muted text-center py-6">{t('noOperationsFound')}</p>
-            ) : (
-              <div className="space-y-3">
-                {sortedOperations.map((op) => renderOperationCard(op))}
-              </div>
-            )}
-          </div>
-
-          </>)}
-          {/* ============ END TAB: TEAM OVERVIEW ============ */}
-
-          {/* ============ TAB: MAP & NAVIGATION ============ */}
-          {activeTab === "map" && (<>
-          {/* Interactive Map (FR-04) */}
-          <div className="mb-8">
-            <p className="eyebrow text-teal-400 mb-3">{t("liveMap")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">🗺️ {t("activeOpsBlockedRoads")}</h2>
-            <FloodMap height={460} canEdit={true} />
-          </div>
-          </>)}
-          {/* ============ END TAB: MAP & NAVIGATION ============ */}
-
-          {/* ============ TAB: TEAM & RESOURCES ============ */}
-          {activeTab === "team_resources" && (<>
-          {/* On-Duty Workers */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-emerald-400 mb-2">{t("coordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">👮 {t("onDutyWorkersTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("onDutyWorkersDesc")}</p>
-            {onDutyWorkers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noOneOnDuty")}</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {onDutyWorkers.map((w) => (
-                  <span key={w.id} className="inline-flex items-center gap-1.5 text-sm bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-full px-3 py-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    {w.name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Team Performance — computed from completed operations, so a
-              coordinator can see which teams are getting the most done and
-              how fast, without digging through every operation individually. */}
-          {teamLeaderboard.length > 0 && (
-            <div className="dashboard-card p-6 mb-8">
-              <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-              <h2 className="font-display text-2xl text-parchment mb-1">⭐ {t("teamPerformanceTitle")}</h2>
-              <p className="text-sm text-muted mb-4">{t("teamPerformanceDesc")}</p>
-              <div className="space-y-2">
-                {teamLeaderboard.map((t2, i) => (
-                  <div key={t2.name} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-display text-marigold-400 w-6 text-center shrink-0">#{i + 1}</span>
-                      <span className="text-white font-semibold">{t2.name}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted shrink-0">
-                      <span>{t2.completed} {t("completedLabel").toLowerCase()}</span>
-                      {t2.avgMinutes !== null && <span className="text-teal-300">~{t2.avgMinutes} {t("avgMinutesShort")}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Rescue Teams — real multi-member teams (3-4 people) that get
-              sent out as a unit, instead of an operation only ever showing
-              one name. */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-1">
-              <div>
-                <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-                <h2 className="font-display text-2xl text-parchment">👥 {t("rescueTeamsTitle")}</h2>
-              </div>
-              <button onClick={() => setShowTeamForm((v) => !v)} className="btn-secondary text-sm py-2.5 shrink-0">
-                {showTeamForm ? t("cancel") : t("newTeamBtn")}
-              </button>
-            </div>
-            <p className="text-sm text-muted mb-4">{t("rescueTeamsDesc")}</p>
-
-            {showTeamForm && (
-              <form onSubmit={handleCreateTeam} className="bg-ink-soft/60 rounded-xl p-5 mb-6 border border-white/10 space-y-4">
-                <label className="block">
-                  <span className="text-sm text-muted">{t("teamNameLabel")}</span>
-                  <input value={teamForm.name} onChange={(e) => setTeamForm((p) => ({ ...p, name: e.target.value }))}
-                    required className="field-input mt-1 py-2.5" placeholder={t("teamNamePh")} />
-                </label>
-                <div>
-                  <span className="text-sm text-muted">{t("teamMembersLabel")}</span>
-                  {rescueWorkers.length === 0 ? (
-                    <p className="text-xs text-muted mt-1">{t("noRescueWorkersYet")}</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {rescueWorkers.map((w) => {
-                        const selected = teamForm.member_ids.includes(w.id);
-                        return (
-                          <button type="button" key={w.id} onClick={() => handleToggleTeamMember(w.id)}
-                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${
-                              selected ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"
+                            {/* Status Badge */}
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${
+                              op.status === "In Progress"
+                                ? "bg-teal-500/20 border-teal-500/50 text-teal-300"
+                                : "bg-amber-500/20 border-amber-500/50 text-amber-300"
                             }`}>
-                            {w.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {teamForm.member_ids.length > 0 && teamForm.member_ids.length < 2 && (
-                    <p className="text-xs text-marigold-400 mt-2">{t("teamNeedsTwoHint")}</p>
-                  )}
-                </div>
-                <div className="flex justify-end">
-                  <button type="submit" disabled={teamForm.member_ids.length < 2} className="btn-primary disabled:opacity-40">
-                    {t("createTeamBtn")}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {teams.length === 0 ? (
-              <p className="text-sm text-muted text-center py-4">{t("noTeamsYet")}</p>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-3 mb-2">
-                {teams.map((team) => (
-                  <div key={team.id} className="bg-white/[0.03] rounded-lg px-4 py-3 border border-white/10">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-semibold text-white">{team.name}</h3>
-                      <button onClick={() => handleDeleteTeam(team.id)} className="text-xs text-red-400 hover:text-red-300">
-                        {t("deleteTeam")}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {teamMemberNames(team).map((name, i) => (
-                        <span key={i} className="text-xs bg-teal-500/10 border border-teal-500/30 text-teal-300 rounded-full px-2.5 py-1">
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Team Roster / Contact Directory */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">📋 {t("teamRosterTitle")}</h2>
-            {rescueWorkers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-2">{t("name")}</th>
-                      <th className="pb-2">{t("email")}</th>
-                      <th className="pb-2">{t("statusLabel")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {rescueWorkers.map((w) => (
-                      <tr key={w.id}>
-                        <td className="py-2 text-white">{w.name}</td>
-                        <td className="py-2 text-muted">{w.email}</td>
-                        <td className="py-2">
-                          <span className={w.on_duty !== false ? "text-emerald-300" : "text-muted"}>
-                            {w.on_duty !== false ? t("onDuty") : t("offDuty")}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Volunteers — people who registered via the Community page's
-              "Get Involved" form. Previously that registration went nowhere
-              a rescue worker could see; this makes it an actual roster they
-              can browse and dispatch to a nearby operation. */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">👷 {t("volunteersTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("volunteersDesc")}</p>
-            {volunteers.length === 0 ? (
-              <p className="text-sm text-muted">{t("noRescueVolunteersYet")}</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
-                <div className="grid md:grid-cols-2 gap-3">
-                {volunteers.map((v) => {
-                  const activeOps = operations.filter((o) => o.status !== "Completed");
-                  return (
-                    <div key={v.id} className="bg-white/[0.03] rounded-lg px-4 py-3">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <h3 className="font-semibold text-white">{v.name}</h3>
-                        <span className="text-xs text-muted">{v.city}</span>
-                      </div>
-                      <p className="text-xs text-muted mb-1">{v.phone}</p>
-                      {v.skills && <p className="text-xs text-teal-300 mb-2">{v.skills}</p>}
-                      {activeOps.length > 0 && (
-                        <select defaultValue=""
-                          onChange={(e) => { if (e.target.value) { handleAssignVolunteer(Number(e.target.value), v.name); e.target.value = ""; } }}
-                          className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-muted w-full">
-                          <option value="">{t("assignToOperationDropdown")}</option>
-                          {activeOps.map((op) => (
-                            <option key={op.id} value={op.id}>{op.location} — {op.assigned_team || t("unassigned")}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  );
-                })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Equipment / Resource Tracker */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-1">
-              <div>
-                <p className="eyebrow text-marigold-400 mb-2">{t("resourceCoordination")}</p>
-                <h2 className="font-display text-2xl text-parchment">🛠️ {t("equipmentTrackerTitle")}</h2>
-              </div>
-              <button onClick={() => setShowEquipForm((v) => !v)} className="btn-secondary text-sm py-2.5 shrink-0">
-                {showEquipForm ? t("cancel") : t("addEquipmentBtn")}
-              </button>
-            </div>
-            <p className="text-sm text-muted mb-4">{t("equipmentTrackerDesc")}</p>
-
-            {showEquipForm && (
-              <form onSubmit={handleAddEquipment} className="grid gap-3 md:grid-cols-[1fr_1fr_100px_auto] bg-ink-soft/60 rounded-xl p-4 mb-4 border border-white/10">
-                <input value={newEquipment.name} onChange={(e) => setNewEquipment((p) => ({ ...p, name: e.target.value }))}
-                  required className="field-input py-2.5" placeholder={t("equipmentNamePh")} />
-                <input value={newEquipment.city} onChange={(e) => setNewEquipment((p) => ({ ...p, city: e.target.value }))}
-                  className="field-input py-2.5" placeholder={t("equipmentCityPh")} />
-                <input type="number" min="1" value={newEquipment.quantity}
-                  onChange={(e) => setNewEquipment((p) => ({ ...p, quantity: e.target.value }))}
-                  className="field-input py-2.5" placeholder={t("quantityLabel")} />
-                <button type="submit" className="btn-primary">{t("addEquipmentBtn")}</button>
-              </form>
-            )}
-
-            <div className="space-y-3 max-h-64 overflow-y-auto pr-1 custom-scroll">
-              {equipment.map((item) => {
-                // Operations in the same city as this equipment are sorted
-                // first and marked 📍 — so a boat sitting in Lahore isn't
-                // buried under a long list when a Lahore operation needs it.
-                const itemCity = (item.city || "").trim().toLowerCase();
-                const activeOps = operations
-                  .filter((o) => o.status !== "Completed")
-                  .slice()
-                  .sort((a, b) => {
-                    const aNear = itemCity && (a.location || "").toLowerCase().includes(itemCity) ? 1 : 0;
-                    const bNear = itemCity && (b.location || "").toLowerCase().includes(itemCity) ? 1 : 0;
-                    return bNear - aNear;
-                  });
-                const availableQty = item.available_qty ?? item.quantity;
-                const pick = deployPicks[item.id] || { targetType: "operation", targetId: "", qty: "" };
-                const targetList = pick.targetType === "worker" ? rescueWorkers : activeOps;
-                return (
-                  <div key={item.id} className="bg-white/[0.03] rounded-lg px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-white">{item.name}{item.city ? <span className="text-xs text-muted ml-2">📍 {item.city}</span> : null}</span>
-                      <span className={`text-xs px-3 py-1 rounded-full border font-semibold shrink-0 ${
-                        availableQty > 0
-                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                          : "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
-                      }`}>
-                        {availableQty}/{item.quantity} {t("availableOfTotal")}
-                      </span>
-                    </div>
-
-                    {/* Where the deployed units currently are (operation or worker) */}
-                    {item.assignments && item.assignments.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {item.assignments.map((a, i) => {
-                          const aType = a.target_type || "operation";
-                          const aId = a.target_id ?? a.op_id;
-                          const aLabel = a.label ?? a.location;
-                          return (
-                            <span key={`${aType}-${aId}-${i}`} className="text-xs bg-marigold-500/10 border border-marigold-500/30 text-marigold-300 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1.5">
-                              {aType === "worker" ? "👤" : "📍"} {a.qty} → {aLabel}
-                              <button onClick={() => handleFreeEquipment(item, aType, aId)} className="hover:text-white" title={t("freeUpBtn")}>✕</button>
+                              {op.status}
                             </span>
-                          );
-                        })}
-                      </div>
-                    )}
 
-                    {/* Deploy more units — to an operation, or directly to a
-                        specific worker. Grid (not flex) so the row can never
-                        grow past the card's edge no matter how long a name
-                        is — the select column shrinks and truncates with an
-                        ellipsis instead of pushing the Deploy button out. */}
-                    {availableQty > 0 && (
-                      <>
-                        <div className="flex gap-2 mt-2">
-                          <button type="button"
-                            onClick={() => setDeployPicks((p) => ({ ...p, [item.id]: { targetType: "operation", targetId: "", qty: pick.qty } }))}
-                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${(pick.targetType || "operation") === "operation" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
-                            {t("deployToOperation")}
-                          </button>
-                          <button type="button"
-                            onClick={() => setDeployPicks((p) => ({ ...p, [item.id]: { targetType: "worker", targetId: "", qty: pick.qty } }))}
-                            className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${pick.targetType === "worker" ? "bg-teal-500/20 border-teal-500/50 text-teal-300" : "bg-white/5 border-white/15 text-muted"}`}>
-                            {t("deployToWorker")}
-                          </button>
-                        </div>
-                        {targetList.length > 0 ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_64px_auto] gap-2 mt-2">
-                            <select value={pick.targetId}
-                              onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, targetId: e.target.value } }))}
-                              className="field-input py-1.5 text-xs min-w-0 w-full truncate">
-                              <option value="">{pick.targetType === "worker" ? t("selectWorkerPh") : t("selectOperationPh")}</option>
-                              {pick.targetType === "worker"
-                                ? rescueWorkers.map((w) => (<option key={w.id} value={w.id}>{w.name}</option>))
-                                : activeOps.map((op) => {
-                                    const isNear = itemCity && (op.location || "").toLowerCase().includes(itemCity);
-                                    return <option key={op.id} value={op.id}>{isNear ? "📍 " : ""}{op.location} — {op.assigned_team || t("unassigned")}</option>;
-                                  })
-                              }
-                            </select>
-                            <input type="number" min="1" max={availableQty} value={pick.qty} placeholder={t("qtyShort")}
-                              onChange={(e) => setDeployPicks((p) => ({ ...p, [item.id]: { ...pick, qty: e.target.value } }))}
-                              className="field-input py-1.5 text-xs w-full min-w-0" />
-                            <button onClick={() => handleDeployEquipment(item)} className="btn-secondary text-xs py-1.5 px-3 w-full sm:w-auto">
-                              {t("deployBtn")}
+                            {/* Risk Priority Badge */}
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${
+                              op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/50" :
+                              op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/50" :
+                              "bg-green-500/20 text-green-300 border-green-500/50"
+                            }`}>
+                              {op.risk_level === "High" ? "🔴 High Risk Priority" : op.risk_level === "Medium" ? "🟡 Medium Risk" : "🟢 Low Risk"}
+                            </span>
+
+                            {/* FR05-07: Prioritize dropdown on card */}
+                            <div className="flex items-center gap-1 ml-auto">
+                              <span className="text-[10px] text-muted">Prioritize (FR05-07):</span>
+                              <select
+                                value={op.risk_level || "Medium"}
+                                onChange={(e) => handleReprioritizeRisk(op.id, e.target.value)}
+                                className="text-[11px] bg-white/5 border border-white/20 rounded px-2 py-0.5 text-muted hover:text-white focus:outline-none"
+                                title="Reprioritize operation risk level"
+                              >
+                                <option value="High" className="bg-ink text-red-300">🔴 High Risk</option>
+                                <option value="Medium" className="bg-ink text-yellow-300">🟡 Medium Risk</option>
+                                <option value="Low" className="bg-ink text-green-300">🟢 Low Risk</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Description & Team Assignment (FR05-01) */}
+                          {op.description && <p className="text-sm text-parchment/90 mb-2">{op.description}</p>}
+                          <p className="text-xs text-muted">
+                            Assigned Team: <strong className="text-teal-300">{op.assigned_team || "Unassigned"}</strong> · Dispatched: {new Date(op.created_at).toLocaleString()}
+                          </p>
+
+                          {/* Progress Update Log / SITREP (FR05-02) */}
+                          {op.update_log && (Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).length > 0 && (
+                            <div className="mt-3 bg-white/[0.03] rounded-lg p-2.5 text-xs text-muted space-y-1 max-h-24 overflow-y-auto">
+                              <span className="font-semibold text-white text-[11px] block mb-1">Progress SITREP Log:</span>
+                              {(Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]")).map((entry, idx) => (
+                                <p key={idx}>
+                                  <span className="opacity-60">{new Date(entry.timestamp).toLocaleTimeString()}:</span> {entry.note}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Add Note Input (FR05-02) */}
+                          <div className="flex items-center gap-2 mt-3">
+                            <input
+                              value={noteInputs[op.id] || ""}
+                              onChange={(e) => setNoteInputs((prev) => ({ ...prev, [op.id]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleAddNote(op.id); }}
+                              placeholder="Add progress update / SITREP note (FR05-02)..."
+                              className="field-input text-xs py-1.5 flex-1"
+                            />
+                            <button
+                              onClick={() => handleAddNote(op.id)}
+                              className="btn-secondary text-xs py-1.5 px-3 shrink-0"
+                            >
+                              Post Update
                             </button>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted mt-2">{pick.targetType === "worker" ? t("noWorkersHint") : t("noActiveOpsHint")}</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                        </div>
 
-          {/* Shift Handover Notes */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-red-400 mb-2">{t("continuity")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-1">📝 {t("shiftHandoverTitle")}</h2>
-            <p className="text-sm text-muted mb-4">{t("shiftHandoverDesc")}</p>
-            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-4">
-              <input
-                value={handoverInput}
-                onChange={(e) => setHandoverInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handlePostHandoverNote(); }}
-                placeholder={t("handoverNotePh")}
-                className="field-input flex-1"
-              />
-              <select value={handoverPriority} onChange={(e) => setHandoverPriority(e.target.value)}
-                className="field-input md:w-40 shrink-0">
-                <option value="Normal">{t("priorityNormal")}</option>
-                <option value="Watch">{t("priorityWatch")}</option>
-                <option value="Urgent">{t("priorityUrgent")}</option>
-              </select>
-              <button onClick={handlePostHandoverNote} className="btn-primary shrink-0">{t("post")}</button>
-            </div>
-            {handoverNotes.length === 0 ? (
-              <p className="text-sm text-muted">{t("noHandoverNotesYet")}</p>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {handoverNotes.map((n) => {
-                  const priorityStyles = n.priority === "Urgent"
-                    ? "bg-red-500/15 border-red-500/40 text-red-300"
-                    : n.priority === "Watch"
-                    ? "bg-marigold-500/15 border-marigold-500/40 text-marigold-300"
-                    : "bg-white/10 border-white/20 text-muted";
-                  return (
-                    <div key={n.id} className={`rounded-lg px-4 py-2.5 text-sm ${n.resolved ? "bg-white/[0.02] opacity-60" : "bg-white/[0.03]"}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-white flex-1">{n.note}</p>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${priorityStyles}`}>
-                          {n.priority === "Urgent" ? t("priorityUrgent") : n.priority === "Watch" ? t("priorityWatch") : t("priorityNormal")}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <p className="text-xs text-muted">{n.author} · {new Date(n.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}</p>
-                        <button onClick={() => handleToggleResolveNote(n)} className="text-xs text-teal-300 hover:text-teal-200 shrink-0">
-                          {n.resolved ? t("reopenNote") : t("markNoteResolved")}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Ground Shelters & Live Occupancy Control */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="eyebrow text-teal-400 mb-1">Ground Facilities Control</p>
-                <h2 className="font-display text-2xl text-parchment">🏠 Ground Shelters Live Occupancy Manager</h2>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-300 border border-teal-500/30">
-                {shelters.length} Shelters Registered
-              </span>
-            </div>
-            <p className="text-sm text-muted mb-4">Update live headcounts for displaced citizens at emergency shelters to keep central command synced.</p>
-
-            {shelters.length === 0 ? (
-              <p className="text-sm text-muted py-2">No emergency shelters found.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
-                <div className="grid md:grid-cols-2 gap-3">
-                {shelters.map((s) => {
-                  const current = s.current_occupancy || s.occupancy || 0;
-                  const capacity = s.capacity || 100;
-                  const pct = Math.min(Math.round((current / capacity) * 100), 100);
-                  const isOverflow = pct >= 90;
-                  return (
-                    <div key={s.id} className={`bg-white/[0.04] rounded-xl p-4 border flex flex-col justify-between gap-3 ${
-                      isOverflow ? "border-red-500/50 bg-red-500/10" : "border-white/10 hover:border-teal-500/30"
-                    }`}>
-                      <div>
-                        <div className="flex justify-between items-start mb-1">
-                          <h4 className="font-semibold text-white text-base">{s.name}</h4>
-                          {isOverflow && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
+                        {/* Status Action Buttons (FR05-02 & FR05-05) */}
+                        <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
+                          {op.status === "Assigned" ? (
+                            <button
+                              onClick={() => handleUpdateStatus(op.id, "In Progress")}
+                              className="bg-teal-600/90 hover:bg-teal-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 w-full justify-center"
+                            >
+                              ▶️ Start Operation (FR05-02)
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUpdateStatus(op.id, "Assigned")}
+                              className="bg-amber-600/70 hover:bg-amber-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors w-full justify-center text-center"
+                            >
+                              ⏸️ Put on Hold
+                            </button>
                           )}
+
+                          {/* FR05-05: Mark Completed */}
+                          <button
+                            onClick={() => handleUpdateStatus(op.id, "Completed")}
+                            className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 w-full justify-center"
+                          >
+                            ✅ Mark Completed (FR05-05)
+                          </button>
+
+                          <button
+                            onClick={() => handlePrintOperation(op)}
+                            className="text-xs text-muted hover:text-teal-300 transition-colors py-1"
+                          >
+                            🖨️ Print Report
+                          </button>
                         </div>
-                        <p className="text-xs text-muted">📍 {s.address || s.city}</p>
-                        <div className="mt-2 flex justify-between text-xs font-medium">
-                          <span className="text-muted">Current Occupancy: <strong className="text-white">{current} / {capacity} people</strong></span>
-                          <span className={isOverflow ? "text-red-400 font-bold" : "text-teal-400"}>{pct}% Capacity</span>
-                        </div>
-                      </div>
-                      <div className="pt-2 border-t border-white/10 flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          id={`occupancy-input-${s.id}`}
-                          defaultValue={current}
-                          placeholder="New Count"
-                          className="field-input py-1 px-2 text-xs w-28"
-                        />
-                        <button
-                          onClick={() => {
-                            const val = document.getElementById(`occupancy-input-${s.id}`)?.value;
-                            if (val !== undefined) handleUpdateOccupancy(s.id, val);
-                          }}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/30 font-semibold"
-                        >
-                          Update Count 🔢
-                        </button>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Ground Hospitals & Live Patient Occupancy Control */}
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="eyebrow text-emerald-400 mb-1">Medical Facilities Control</p>
-                <h2 className="font-display text-2xl text-parchment">🏥 Ground Hospitals Live Occupancy Manager</h2>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                {hospitals.length} Hospitals Registered
-              </span>
+              )}
             </div>
-            <p className="text-sm text-muted mb-4">Update live patient bed occupancy for emergency & field hospitals to keep central command synced.</p>
+          )}
 
-            {hospitals.length === 0 ? (
-              <p className="text-sm text-muted py-2">No hospitals registered.</p>
-            ) : (
-              <div className="max-h-72 overflow-y-auto pr-1 custom-scroll">
-                <div className="grid md:grid-cols-2 gap-3">
-                {hospitals.map((h) => {
-                  const current = h.occupancy || 0;
-                  const capacity = h.capacity || 50;
-                  const pct = Math.min(Math.round((current / capacity) * 100), 100);
-                  const isOverflow = pct >= 90;
-                  return (
-                    <div key={h.id} className={`bg-white/[0.04] rounded-xl p-4 border flex flex-col justify-between gap-3 ${
-                      isOverflow ? "border-red-500/50 bg-red-500/10" : "border-white/10 hover:border-emerald-500/30"
-                    }`}>
-                      <div>
-                        <div className="flex justify-between items-start mb-1">
-                          <h4 className="font-semibold text-white text-base">{h.name}</h4>
-                          {isOverflow && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500 text-white animate-pulse">OVERFLOW ⚠️</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted">📍 {h.address || h.city || "Location unavailable"}</p>
-                        {h.services && (
-                          <p className="text-xs text-emerald-400/80 mt-1 line-clamp-1">🏥 {h.services}</p>
-                        )}
-                        <div className="mt-2 flex justify-between text-xs font-medium">
-                          <span className="text-muted">Bed Occupancy: <strong className="text-white">{current} / {capacity} patients</strong></span>
-                          <span className={isOverflow ? "text-red-400 font-bold" : "text-emerald-400"}>{pct}% Capacity</span>
-                        </div>
-                      </div>
-                      <div className="pt-2 border-t border-white/10 flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          id={`hospital-occupancy-input-${h.id}`}
-                          defaultValue={current}
-                          placeholder="New Patient Count"
-                          className="field-input py-1 px-2 text-xs w-28"
-                        />
-                        <button
-                          onClick={() => {
-                            const val = document.getElementById(`hospital-occupancy-input-${h.id}`)?.value;
-                            if (val !== undefined) handleUpdateHospitalOccupancy(h.id, val);
-                          }}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-semibold"
-                        >
-                          Update Count 🔢
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+          {/* ============================================================== */}
+          {/* TAB 2: PAST OPERATIONS LOG & REPORTS (FR05-06)                 */}
+          {/* ============================================================== */}
+          {activeTab === "history" && (
+            <div className="dashboard-card p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div>
+                  <p className="eyebrow text-teal-400 mb-1">Official Registry & Audit Log (FR05-06)</p>
+                  <h2 className="font-display text-2xl text-parchment">Past Rescue Operations Log</h2>
+                  <p className="text-xs text-muted mt-0.5">Comprehensive audit log of all completed rescue missions for government reporting.</p>
                 </div>
-              </div>
-            )}
-          </div>
-
-          </>)}
-          {/* ============ END TAB: TEAM & RESOURCES ============ */}
-
-          {/* ============ TAB: PAST OPERATIONS LOG & REPORTS (FR05-06) ============ */}
-          {activeTab === "history" && (<>
-          <div className="dashboard-card p-6 mb-8">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-              <div>
-                <p className="eyebrow text-teal-400 mb-1">Official Registry & Audit Log (FR05-06)</p>
-                <h2 className="font-display text-2xl sm:text-3xl text-parchment">📜 Past Rescue Operations Log & Reports</h2>
-                <p className="text-sm text-muted mt-1">Complete historical log of all closed and completed rescue missions for reporting purposes.</p>
-              </div>
-              <div className="flex items-center gap-3">
                 <button
                   onClick={exportPastOperationsCSV}
                   className="bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-emerald-600/20"
                 >
-                  📥 Export Past Operations Log (CSV)
+                  📥 Export Reporting Log (CSV)
                 </button>
               </div>
-            </div>
 
-            {/* Historical Statistics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-parchment">{operations.filter(o => o.status === "Completed").length}</div>
-                <div className="eyebrow text-muted">Completed Missions</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-emerald-400">
-                  {operations.filter(o => o.status === "Completed").reduce((s, o) => s + (o.people_rescued || 0), 0)}
+              {/* Search & Risk Filter Toolbar */}
+              <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pt-4 border-t border-white/10 mb-6">
+                <input
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Search past operations by city, team, notes, resources..."
+                  className="field-input sm:max-w-md text-sm py-2"
+                />
+                <div className="flex flex-wrap gap-1.5 items-center">
+                  <span className="text-xs text-muted">Risk Filter:</span>
+                  {["All", "High", "Medium", "Low"].map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => setHistoryRiskFilter(level)}
+                      className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
+                        historyRiskFilter === level
+                          ? "bg-teal-500/25 border-teal-500 text-teal-300"
+                          : "bg-white/5 border-white/10 text-muted hover:border-white/20"
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  ))}
                 </div>
-                <div className="eyebrow text-muted">Total Citizens Rescued</div>
               </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-teal-400">{stats?.avg_completion_minutes ? `~${stats.avg_completion_minutes} min` : "—"}</div>
-                <div className="eyebrow text-muted">Avg Turnaround Time</div>
-              </div>
-              <div className="stat-tile text-center">
-                <div className="font-display text-2xl text-marigold-400">
-                  {operations.filter(o => o.status === "Completed" && o.risk_level === "High").length}
+
+              {/* Historical Operations Table */}
+              {pastOperations.length === 0 ? (
+                <div className="text-center py-12 text-muted bg-white/[0.02] rounded-xl border border-white/5">
+                  <p className="text-base font-medium">No past rescue operations found matching your filter.</p>
+                  <p className="text-xs mt-1">Completed rescue operations will automatically appear here with full reporting records.</p>
                 </div>
-                <div className="eyebrow text-muted">High-Risk Operations</div>
-              </div>
-            </div>
-
-            {/* Search and Risk Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pt-4 border-t border-white/10 mb-6">
-              <input
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                placeholder="Search past operations by city, team, notes, resources..."
-                className="field-input sm:max-w-md text-sm py-2"
-              />
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs text-muted">Risk Priority:</span>
-                {["All", "High", "Medium", "Low"].map((rk) => (
-                  <button
-                    key={rk}
-                    type="button"
-                    onClick={() => setHistoryRiskFilter(rk)}
-                    className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
-                      historyRiskFilter === rk
-                        ? "bg-teal-500/25 border-teal-500 text-teal-300"
-                        : "bg-white/5 border-white/10 text-muted hover:border-white/20"
-                    }`}
-                  >
-                    {rk}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Historical Table View */}
-            {pastOperations.length === 0 ? (
-              <div className="text-center py-12 text-muted bg-white/[0.02] rounded-xl border border-white/5">
-                <p className="text-base font-medium">No past rescue operations found matching your filter.</p>
-                <p className="text-xs mt-1">Concluded operations will automatically appear here with full logs and reports.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-white/20 text-muted text-xs">
-                      <th className="pb-3 font-semibold">Mission ID</th>
-                      <th className="pb-3 font-semibold">Location</th>
-                      <th className="pb-3 font-semibold">Risk Priority</th>
-                      <th className="pb-3 font-semibold">Assigned Team</th>
-                      <th className="pb-3 font-semibold">Rescued</th>
-                      <th className="pb-3 font-semibold">Resources Used</th>
-                      <th className="pb-3 font-semibold">Completed Date</th>
-                      <th className="pb-3 font-semibold text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {pastOperations.map((op) => (
-                      <tr key={op.id} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="py-3 text-muted text-xs font-mono">#{op.id}</td>
-                        <td className="py-3">
-                          <span className="font-semibold text-white">{op.location}</span>
-                          {op.description && <p className="text-xs text-muted truncate max-w-xs">{op.description}</p>}
-                        </td>
-                        <td className="py-3">
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${
-                            op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/40" :
-                            op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
-                            "bg-green-500/20 text-green-300 border-green-500/40"
-                          }`}>
-                            {op.risk_level || "Medium"}
-                          </span>
-                        </td>
-                        <td className="py-3 text-muted text-xs">{op.assigned_team || "Unassigned"}</td>
-                        <td className="py-3">
-                          <span className="font-semibold text-emerald-400">{op.people_rescued || 0}</span>
-                        </td>
-                        <td className="py-3 text-xs text-muted">
-                          {op.resources_used || "—"}
-                        </td>
-                        <td className="py-3 text-xs text-muted">
-                          {op.completed_at ? new Date(op.completed_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined) : "—"}
-                        </td>
-                        <td className="py-3 text-right">
-                          <button
-                            onClick={() => handlePrintOperation(op)}
-                            className="text-xs px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-teal-300 border border-white/10 transition-colors"
-                          >
-                            🖨️ Print Report
-                          </button>
-                        </td>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-white/20 text-muted text-xs">
+                        <th className="pb-3 font-semibold">Mission ID</th>
+                        <th className="pb-3 font-semibold">Location</th>
+                        <th className="pb-3 font-semibold">Risk Priority</th>
+                        <th className="pb-3 font-semibold">Assigned Team</th>
+                        <th className="pb-3 font-semibold">Rescued</th>
+                        <th className="pb-3 font-semibold">Resources Used</th>
+                        <th className="pb-3 font-semibold">Completed Date</th>
+                        <th className="pb-3 font-semibold text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          </>)}
-          {/* ============ END TAB: PAST OPERATIONS LOG ============ */}
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {pastOperations.map((op) => (
+                        <tr key={op.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3 text-muted text-xs font-mono">#{op.id}</td>
+                          <td className="py-3">
+                            <span className="font-semibold text-white">{op.location}</span>
+                            {op.description && <p className="text-xs text-muted truncate max-w-xs">{op.description}</p>}
+                          </td>
+                          <td className="py-3">
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${
+                              op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/40" :
+                              op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
+                              "bg-green-500/20 text-green-300 border-green-500/40"
+                            }`}>
+                              {op.risk_level || "Medium"}
+                            </span>
+                          </td>
+                          <td className="py-3 text-muted text-xs">{op.assigned_team || "Unassigned"}</td>
+                          <td className="py-3">
+                            <span className="font-semibold text-emerald-400">{op.people_rescued || 0}</span>
+                          </td>
+                          <td className="py-3 text-xs text-muted max-w-xs truncate">
+                            {op.resources_used || "—"}
+                          </td>
+                          <td className="py-3 text-xs text-muted">
+                            {op.completed_at ? new Date(op.completed_at).toLocaleDateString() : "—"}
+                          </td>
+                          <td className="py-3 text-right">
+                            <button
+                              onClick={() => handlePrintOperation(op)}
+                              className="text-xs px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-teal-300 border border-white/10 transition-colors"
+                            >
+                              🖨️ Print Report
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Completion Report Modal (replaces window.prompt for a proper, on-brand UI) */}
-          {completionModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <form onSubmit={handleSubmitCompletion} className="dashboard-card p-8 max-w-lg w-full">
-                <p className="eyebrow text-emerald-400 mb-2">{t("markComplete")}</p>
-                <h2 className="font-display text-2xl text-parchment mb-1">📄 {t("completionReportTitle")}</h2>
-                <p className="text-sm text-muted mb-6">{t("completionReportDesc")}</p>
+          {/* ============================================================== */}
+          {/* MODAL: FR05-01 CREATE & ASSIGN RESCUE OPERATION                */}
+          {/* ============================================================== */}
+          {showCreateModal && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <form onSubmit={handleCreateOperation} className="dashboard-card p-6 max-w-lg w-full border border-teal-500/40">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <span className="eyebrow text-teal-400 text-xs font-semibold">New Mission (FR05-01)</span>
+                    <h2 className="font-display text-2xl text-parchment">Create & Assign Operation</h2>
+                  </div>
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="text-muted hover:text-white text-lg">✕</button>
+                </div>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="field-label">{t("peopleRescuedLabel")}</label>
+                    <label className="field-label text-xs">Affected Area / City Location *</label>
                     <input
-                      type="number" min="0" placeholder="0"
-                      value={completionForm.people_rescued}
-                      onChange={(e) => setCompletionForm((p) => ({ ...p, people_rescued: e.target.value }))}
-                      className="field-input"
+                      type="text"
+                      required
+                      placeholder="e.g. Sukkur, Nowshera, Larkana, Karachi..."
+                      value={createForm.location}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, location: e.target.value }))}
+                      className="field-input text-sm py-2"
                     />
                   </div>
+
                   <div>
-                    <label className="field-label">{t("resourcesUsedLabel")}</label>
+                    <label className="field-label text-xs">Risk Level of Affected Area (FR05-07) *</label>
+                    <select
+                      value={createForm.risk_level}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, risk_level: e.target.value }))}
+                      className="field-input text-sm py-2"
+                    >
+                      <option value="High" className="bg-ink text-red-300">🔴 High Risk (Immediate Danger / Urgent)</option>
+                      <option value="Medium" className="bg-ink text-yellow-300">🟡 Medium Risk (Elevated Threat / Watch)</option>
+                      <option value="Low" className="bg-ink text-green-300">🟢 Low Risk (Precautionary / Monitoring)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="field-label text-xs">Assign Rescue Team / Worker (FR05-01) *</label>
                     <input
-                      type="text" placeholder={t("resourcesUsedPlaceholder")}
-                      value={completionForm.resources_used}
-                      onChange={(e) => setCompletionForm((p) => ({ ...p, resources_used: e.target.value }))}
-                      className="field-input"
+                      type="text"
+                      required
+                      placeholder="e.g. Rescue Team Alpha, Team Bravo, Quick Response Unit..."
+                      value={createForm.assigned_team}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, assigned_team: e.target.value }))}
+                      className="field-input text-sm py-2"
                     />
                   </div>
+
                   <div>
-                    <label className="field-label">{t("completionNotesLabel")}</label>
+                    <label className="field-label text-xs">Incident & Operation Description</label>
                     <textarea
-                      rows={3} placeholder={t("completionNotesPlaceholder")}
-                      value={completionForm.completion_notes}
-                      onChange={(e) => setCompletionForm((p) => ({ ...p, completion_notes: e.target.value }))}
-                      className="field-input resize-none"
+                      rows={3}
+                      placeholder="Detail situation on ground: water depth, trapped citizens, required equipment..."
+                      value={createForm.description}
+                      onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
+                      className="field-input text-sm py-2 resize-none"
                     />
                   </div>
                 </div>
 
                 <div className="flex gap-3 mt-6">
-                  <button type="submit" className="btn-primary flex-1">{t("submitAndComplete")}</button>
-                  <button type="button" onClick={() => setCompletionModal(null)} className="btn-secondary">{t("close")}</button>
+                  <button type="submit" className="btn-primary flex-1 py-2 text-sm font-semibold">
+                    Create & Notify Team (FR05-01)
+                  </button>
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary py-2 text-sm">
+                    Cancel
+                  </button>
                 </div>
               </form>
             </div>
           )}
 
-          {/* Alert Details Modal */}
-          {selectedAlert && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-ink-soft rounded-2xl p-8 max-w-2xl w-full">
-                <h2 className="font-display text-2xl text-parchment mb-4">🚨 {t("alertDetails")}</h2>
-                <div className={`p-4 rounded-lg mb-4 ${getRiskBgColor(selectedAlert.risk)}`}>
-                  <h3 className={`text-xl font-bold ${getRiskColor(selectedAlert.risk)} mb-2`}>
-                    {selectedAlert.message}
-                  </h3>
-                  <p className="text-muted">{selectedAlert.location}</p>
-                  <p className="text-sm text-muted mt-2">
-                    {new Date(selectedAlert.created_at).toLocaleString(lang === "ur" ? "ur-PK" : undefined)}
-                  </p>
+          {/* ============================================================== */}
+          {/* MODAL: FR05-05 MARK OPERATION AS COMPLETED                     */}
+          {/* ============================================================== */}
+          {completionModal && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <form onSubmit={handleCompleteOperation} className="dashboard-card p-6 max-w-lg w-full border border-emerald-500/40">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <span className="eyebrow text-emerald-400 text-xs font-semibold">Official Sign-Off (FR05-05)</span>
+                    <h2 className="font-display text-2xl text-parchment">Mark Operation Completed</h2>
+                    <p className="text-xs text-muted mt-0.5">Location: <strong className="text-white">{completionModal.location}</strong></p>
+                  </div>
+                  <button type="button" onClick={() => setCompletionModal(null)} className="text-muted hover:text-white text-lg">✕</button>
                 </div>
 
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setSelectedAlert(null)}
-                    className="bg-white/10 hover:bg-white/10 text-white px-6 py-2 rounded-lg transition-colors"
-                  >
-                    {t("close")}
+                <div className="space-y-4">
+                  <div>
+                    <label className="field-label text-xs">Number of People Rescued *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      placeholder="e.g. 45"
+                      value={completionForm.people_rescued}
+                      onChange={(e) => setCompletionForm((prev) => ({ ...prev, people_rescued: e.target.value }))}
+                      className="field-input text-sm py-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="field-label text-xs">Resources Deployed / Used</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2 Inflatable Boats, 3 Ambulances, 50 Lifejackets"
+                      value={completionForm.resources_used}
+                      onChange={(e) => setCompletionForm((prev) => ({ ...prev, resources_used: e.target.value }))}
+                      className="field-input text-sm py-2"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="field-label text-xs">Final Completion Report & Notes</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Summarize operation outcomes, safe evacuation shelters transferred to, etc."
+                      value={completionForm.completion_notes}
+                      onChange={(e) => setCompletionForm((prev) => ({ ...prev, completion_notes: e.target.value }))}
+                      className="field-input text-sm py-2 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <button type="submit" className="bg-emerald-600/90 hover:bg-emerald-500 text-white font-semibold flex-1 py-2 text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20">
+                    Sign Off & Log as Completed (FR05-05)
+                  </button>
+                  <button type="button" onClick={() => setCompletionModal(null)} className="btn-secondary py-2 text-sm">
+                    Cancel
                   </button>
                 </div>
-              </div>
+              </form>
             </div>
           )}
+
         </div>
       </div>
       <Footer />
