@@ -119,7 +119,21 @@ export default function Navbar() {
     admin: '/admin-dashboard',
   }[userRole] || '/login';
 
-  
+  const getDashboardLabel = () => {
+    switch (userRole) {
+      case 'admin':
+        return t('adminPanel');
+      case 'rescue_worker':
+        return lang === 'ur' ? 'ریسکیو سینٹر' : 'Rescue Center';
+      case 'citizen':
+        return lang === 'ur' ? 'سٹیزن پورٹل' : 'Citizen Portal';
+      case 'government_official':
+        return lang === 'ur' ? 'گورنمنٹ پورٹل' : 'Gov Portal';
+      default:
+        return t('dashboard');
+    }
+  };
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-ink/95 backdrop-blur-xl border-b border-teal-500/10">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -151,7 +165,7 @@ export default function Navbar() {
               to={dashboardPath}
               className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-muted hover:text-parchment hover:bg-white/5"
             >
-              {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
+              {getDashboardLabel()}
             </Link>
           ) : (
             <>
@@ -282,7 +296,7 @@ export default function Navbar() {
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="text-muted hover:text-parchment text-sm font-medium py-1"
               >
-                {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
+                {getDashboardLabel()}
               </Link>
               {userName && (
                 <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="text-muted hover:text-parchment text-sm font-medium py-1">
