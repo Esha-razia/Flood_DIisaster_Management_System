@@ -149,26 +149,9 @@ export default function Navbar() {
           {isAuthenticated ? (
             <Link
               to={dashboardPath}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border transition-all ml-1 ${
-                location.pathname === dashboardPath
-                  ? "bg-teal-500/20 border-teal-500/50 text-teal-300 shadow-sm shadow-teal-500/10"
-                  : "bg-white/5 border-white/10 text-muted hover:text-teal-300 hover:border-teal-500/30 hover:bg-white/10"
-              }`}
-              title="Dashboard"
+              className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-muted hover:text-parchment hover:bg-white/5"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400">
-                <rect x="3" y="3" width="7" height="9" rx="1" />
-                <rect x="14" y="3" width="7" height="5" rx="1" />
-                <rect x="14" y="12" width="7" height="9" rx="1" />
-                <rect x="3" y="16" width="7" height="5" rx="1" />
-              </svg>
-              <span>
-                {userRole === 'admin'
-                  ? t('adminPanel')
-                  : userRole === 'rescue_worker'
-                  ? 'Operations Center'
-                  : t('dashboard')}
-              </span>
+              {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
             </Link>
           ) : (
             <>
@@ -297,15 +280,9 @@ export default function Navbar() {
               <Link
                 to={dashboardPath}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-2 text-teal-300 bg-teal-500/10 border border-teal-500/30 rounded-lg px-3 py-2 text-sm font-semibold"
+                className="text-muted hover:text-parchment text-sm font-medium py-1"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400">
-                  <rect x="3" y="3" width="7" height="9" rx="1" />
-                  <rect x="14" y="3" width="7" height="5" rx="1" />
-                  <rect x="14" y="12" width="7" height="9" rx="1" />
-                  <rect x="3" y="16" width="7" height="5" rx="1" />
-                </svg>
-                <span>{userRole === 'admin' ? t('adminPanel') : userRole === 'rescue_worker' ? 'Operations Center' : t('dashboard')}</span>
+                {userRole === 'admin' ? t('adminPanel') : t('dashboard')}
               </Link>
               {userName && (
                 <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="text-muted hover:text-parchment text-sm font-medium py-1">
