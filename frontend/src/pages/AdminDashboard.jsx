@@ -285,6 +285,8 @@ export default function AdminDashboard() {
       if (u.role === "admin") return false;
       if (currentLoggedInEmail && (u.email || "").toLowerCase().trim() === currentLoggedInEmail) return false;
       if (currentLoggedInId && String(u.id) === String(currentLoggedInId)) return false;
+      // Keep only the single designated government official account (govofficial@gmail.com)
+      if (u.role === "government_official" && (u.email || "").toLowerCase().trim() !== "govofficial@gmail.com") return false;
       return true;
     });
     const q = userSearch.trim().toLowerCase();
@@ -1174,7 +1176,7 @@ export default function AdminDashboard() {
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {user.role === 'government_official' ? (
+                                {user.role === 'government_official' && (user.email || '').toLowerCase().trim() === 'govofficial@gmail.com' ? (
                                   <span className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
                                     🔒 System Official
                                   </span>
