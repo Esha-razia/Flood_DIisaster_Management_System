@@ -819,6 +819,11 @@ if DB_AVAILABLE:
                 cursor.execute("ALTER TABLE hospitals ADD COLUMN capacity INTEGER DEFAULT 50")
             if "verified" not in existing_cols:
                 cursor.execute("ALTER TABLE hospitals ADD COLUMN verified INTEGER DEFAULT 0")
+            existing_shelter_cols = [row[1] for row in cursor.execute("PRAGMA table_info(shelters)").fetchall()]
+            if "occupancy" not in existing_shelter_cols:
+                cursor.execute("ALTER TABLE shelters ADD COLUMN occupancy INTEGER DEFAULT 0")
+            if "verified" not in existing_shelter_cols:
+                cursor.execute("ALTER TABLE shelters ADD COLUMN verified INTEGER DEFAULT 0")
             user_cols = [row[1] for row in cursor.execute("PRAGMA table_info(users)").fetchall()]
             if "status" not in user_cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'Active'")
@@ -2191,9 +2196,12 @@ def create_shelter():
     }
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            if DB_TYPE == "sql_server":
+                cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            else:
+                cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
             row_count = cursor.fetchone()
-            count_val = getattr(row_count, 'c', 0) if row_count else 0
+            count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
             if count_val == 0:
                 new_id = _db_insert_get_id(
                     "INSERT INTO shelters (name, address, capacity, contact, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
@@ -2352,9 +2360,12 @@ def create_hospital():
     }
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            if DB_TYPE == "sql_server":
+                cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            else:
+                cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
             row_count = cursor.fetchone()
-            count_val = getattr(row_count, 'c', 0) if row_count else 0
+            count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
             if count_val == 0:
                 new_id = _db_insert_get_id(
                     "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
