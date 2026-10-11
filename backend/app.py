@@ -2186,12 +2186,19 @@ def create_shelter():
     if existing:
         return jsonify({"message": "A shelter with this name and address already exists"}), 400
 
+    lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
+    lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
+    if lat is None or lng is None:
+        coords = resolve_coordinates(address) or resolve_coordinates(name)
+        if coords:
+            lat, lng = coords
+
     shelter = {
         "id": None,
         "name": name, "name_ur": data.get("name_ur") or None, "address": address,
         "capacity": data.get("capacity"), "contact": data.get("contact", ""),
-        "latitude": safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None,
-        "longitude": safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None,
+        "latitude": lat,
+        "longitude": lng,
         "verified": False, "occupancy": 0,
     }
     if DB_AVAILABLE:
@@ -2348,12 +2355,19 @@ def create_hospital():
     if existing:
         return jsonify({"message": "A hospital with this name and address already exists"}), 400
 
+    lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
+    lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
+    if lat is None or lng is None:
+        coords = resolve_coordinates(address) or resolve_coordinates(name)
+        if coords:
+            lat, lng = coords
+
     hospital = {
         "id": None,
         "name": name, "name_ur": data.get("name_ur") or None, "address": address,
         "contact": data.get("contact", ""), "services": data.get("services", ""),
-        "latitude": safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None,
-        "longitude": safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None,
+        "latitude": lat,
+        "longitude": lng,
         "verified": False,
         "occupancy": 0,
         "capacity": 50,
@@ -2774,21 +2788,23 @@ def get_map_markers():
 
     shelters_resp = get_shelters()
     for s in shelters_resp.json:
-        if s.get("latitude") and s.get("longitude"):
+        coords = (s["latitude"], s["longitude"]) if s.get("latitude") and s.get("longitude") else (resolve_coordinates(s.get("address")) or resolve_coordinates(s.get("name")))
+        if coords:
             markers.append({"id": f"shelter-{s['id']}", "type": "shelter", "category_color": "teal",
                              "name": s["name"], "name_ur": s.get("name_ur"), "location": s.get("address"),
                              "capacity": s.get("capacity"), "contact": s.get("contact"),
                              "verified": s.get("verified", False), "occupancy": s.get("occupancy"),
-                             "latitude": s["latitude"], "longitude": s["longitude"]})
+                             "latitude": coords[0], "longitude": coords[1]})
 
     hospitals_resp = get_hospitals()
     for h in hospitals_resp.json:
-        if h.get("latitude") and h.get("longitude"):
+        coords = (h["latitude"], h["longitude"]) if h.get("latitude") and h.get("longitude") else (resolve_coordinates(h.get("address")) or resolve_coordinates(h.get("name")))
+        if coords:
             markers.append({"id": f"hospital-{h['id']}", "type": "hospital", "category_color": "marigold",
                              "name": h["name"], "name_ur": h.get("name_ur"), "location": h.get("address"),
                              "services": h.get("services"), "contact": h.get("contact"),
                              "verified": h.get("verified", False),
-                             "latitude": h["latitude"], "longitude": h["longitude"]})
+                             "latitude": coords[0], "longitude": coords[1]})
 
     ops_resp = get_rescue_operations()
     for op in ops_resp.json:
