@@ -20,7 +20,6 @@ export default function GovDashboard() {
   const [advisories, setAdvisories] = useState([]);
   const [advisoryForm, setAdvisoryForm] = useState({ title: "", message: "", region: "All regions" });
   const [showAdvisoryForm, setShowAdvisoryForm] = useState(false);
-  const [resourceGap, setResourceGap] = useState([]);
   const [compareCities, setCompareCities] = useState(["", ""]);
   const [reportCity, setReportCity] = useState("");
   const [rescueWorkers, setRescueWorkers] = useState([]);
@@ -28,7 +27,6 @@ export default function GovDashboard() {
   const [assignForm, setAssignForm] = useState({ worker: "", description: "" });
   const [govFeedback, setGovFeedback] = useState("");
   const [allRescueOps, setAllRescueOps] = useState([]);
-  const [donations, setDonations] = useState([]);
   const [seasonalTrend, setSeasonalTrend] = useState([]);
   const [activeTab, setActiveTab] = useState("analytics");
 
@@ -36,13 +34,6 @@ export default function GovDashboard() {
     try {
       const res = await axios.get(`${API_BASE}/rescue-operations`);
       setAllRescueOps(res.data || []);
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchDonations = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/donations`);
-      setDonations(res.data || []);
     } catch (err) { console.error(err); }
   };
 
@@ -100,10 +91,8 @@ export default function GovDashboard() {
 
   useEffect(() => {
     fetchAdvisories();
-    fetchResourceGap();
     fetchRescueWorkers();
     fetchAllRescueOps();
-    fetchDonations();
     fetchSeasonalTrend();
   }, []);
 
@@ -111,13 +100,6 @@ export default function GovDashboard() {
     try {
       const res = await axios.get(`${API_BASE}/advisories`);
       setAdvisories(res.data || []);
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchResourceGap = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/admin/resource-gap-analysis`);
-      setResourceGap(res.data || []);
     } catch (err) { console.error(err); }
   };
 
@@ -347,6 +329,11 @@ export default function GovDashboard() {
   }, [filteredPredictions]);
 
   const exportData = () => {
+    if (filteredPredictions.length === 0) {
+      alert("Please select data to export.");
+      return;
+    }
+
     const csvContent = [
       ["Date", "Location", "Risk", "Confidence", "Rainfall", "River Level", "Temperature"],
       ...filteredPredictions.map(pred => [
@@ -429,7 +416,7 @@ export default function GovDashboard() {
             {[
               { id: "analytics", label: t("tabAnalytics") },
               { id: "emergency", label: t("tabEmergencyResponse") },
-              { id: "policy", label: t("tabPolicyPlanning") },
+              { id: "policy", label: t("tabReportsTrends") },
               { id: "communication", label: t("tabCommunication") },
             ].map((tab) => (
               <button
@@ -458,7 +445,7 @@ export default function GovDashboard() {
                 <select 
                   value={dateFilter} 
                   onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="field-input"
                 >
                   <option value="all">{t("allTime")}</option>
                   <option value="today">{t("todayLabel")}</option>
@@ -471,7 +458,7 @@ export default function GovDashboard() {
                 <select 
                   value={locationFilter} 
                   onChange={(e) => setLocationFilter(e.target.value)}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="field-input"
                 >
                   <option value="all">{t("allLocations")}</option>
                   {uniqueLocations.map(location => (
@@ -484,7 +471,7 @@ export default function GovDashboard() {
                 <select 
                   value={riskFilter} 
                   onChange={(e) => setRiskFilter(e.target.value)}
-                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="field-input"
                 >
                   <option value="all">{t("allRiskLevels")}</option>
                   <option value="Low">Low</option>
@@ -647,45 +634,8 @@ export default function GovDashboard() {
           )}
           {/* ============ END TAB: ANALYTICS ============ */}
 
-          {/* ============ TAB: POLICY & PLANNING ============ */}
+          {/* ============ TAB: REPORTS & TRENDS ============ */}
           {activeTab === "policy" && (<>
-          {/* Resource Gap Analysis */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-red-400 mb-2">{t("policyPlanning")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-2">{t("resourceGapAnalysis")}</h2>
-            <p className="text-sm text-muted mb-4">{t("resourceGapDesc")}</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-white/20 text-muted">
-                    <th className="pb-2">{t("location2")}</th>
-                    <th className="pb-2">{t("riskLabel")}</th>
-                    <th className="pb-2">{t("shelters")}</th>
-                    <th className="pb-2">{t("hospitals")}</th>
-                    <th className="pb-2">{t("statusLabel")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {resourceGap.slice(0, 15).map((row) => (
-                    <tr key={row.city} className={row.gap_flag ? "bg-red-500/5" : ""}>
-                      <td className="py-2 text-white">{row.city}</td>
-                      <td className="py-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${row.risk === "High" ? "text-red-300" : row.risk === "Medium" ? "text-marigold-300" : "text-teal-300"}`}>
-                          {t(SEVERITY_KEY_MAP[row.risk] || row.risk)}
-                        </span>
-                      </td>
-                      <td className="py-2 text-muted">{row.shelters}</td>
-                      <td className="py-2 text-muted">{row.hospitals}</td>
-                      <td className="py-2">
-                        {row.gap_flag && <span className="text-xs text-red-400 font-semibold">⚠ {t("underResourced")}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           {/* Multi-City Comparison */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("comparativeAnalysis")}</p>
@@ -739,7 +689,7 @@ export default function GovDashboard() {
             </div>
           </div>
           </>)}
-          {/* ============ END TAB: POLICY & PLANNING (part 1) ============ */}
+          {/* ============ END TAB: REPORTS & TRENDS (part 1) ============ */}
 
           {/* ============ TAB: EMERGENCY RESPONSE ============ */}
           {activeTab === "emergency" && (<>
@@ -749,12 +699,12 @@ export default function GovDashboard() {
             <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
             <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
             {govFeedback && <p className="text-sm text-emerald-400 mb-3">✓ {govFeedback}</p>}
-            {alerts.filter((a) => (a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium").length === 0 ? (
+            {alerts.filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")).length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
               <div className="space-y-3">
                 {alerts
-                  .filter((a) => (a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")
+                  .filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium"))
                   .slice(0, 10)
                   .map((a) => (
                     <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
@@ -893,28 +843,10 @@ export default function GovDashboard() {
 
           {/* ============ TAB: COMMUNICATION (part 1) ============ */}
           {activeTab === "communication" && (<>
-          {/* Donation / Resource Pledges Overview */}
-          <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("resourceCoordination")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-2">{t("donationPledges")}</h2>
-            <p className="text-sm text-muted mb-4">{t("donationPledgesOverviewDesc")}</p>
-            {donations.length === 0 ? (
-              <p className="text-sm text-muted">{t("noDonationsYet")}</p>
-            ) : (
-              <div className="space-y-2">
-                {donations.slice(0, 10).map((d) => (
-                  <div key={d.id} className="flex items-center justify-between bg-white/[0.03] rounded-lg px-4 py-2.5 text-sm">
-                    <div><span className="text-white font-medium">{d.item}</span> <span className="text-muted">× {d.quantity} — {d.donor_name}</span></div>
-                    <span className="text-xs text-teal-300 border border-teal-500/30 rounded-full px-2 py-0.5">{d.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           </>)}
           {/* ============ END TAB: COMMUNICATION (part 1) ============ */}
 
-          {/* ============ TAB: POLICY & PLANNING (part 2) ============ */}
+          {/* ============ TAB: REPORTS & TRENDS (part 2) ============ */}
           {activeTab === "policy" && (<>
           {/* Seasonal / Historical Trend */}
           <div className="dashboard-card p-6 mb-8">
@@ -938,7 +870,7 @@ export default function GovDashboard() {
             )}
           </div>
           </>)}
-          {/* ============ END TAB: POLICY & PLANNING (part 2) ============ */}
+          {/* ============ END TAB: REPORTS & TRENDS (part 2) ============ */}
 
           {/* ============ TAB: COMMUNICATION (part 2) ============ */}
           {activeTab === "communication" && (<>

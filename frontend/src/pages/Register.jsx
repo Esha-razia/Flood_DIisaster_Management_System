@@ -317,7 +317,6 @@ export default function Register() {
                   >
                     <option className="bg-ink text-white" value="citizen">{t("citizenSingular")}</option>
                     <option className="bg-ink text-white" value="rescue_worker">{t("rescueWorkerSingular")}</option>
-                    <option className="bg-ink text-white" value="government_official">{t("govOfficials")}</option>
                   </select>
                   <p className="mt-2 text-xs text-muted">
                     Select your role to access appropriate dashboard features

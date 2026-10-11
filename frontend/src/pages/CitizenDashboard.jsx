@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
@@ -6,6 +6,7 @@ import Navbar from "../components/Navbar";
 import { useLanguage } from "../context/LanguageContext";
 import Footer from "../components/Footer";
 import { API_BASE } from "../config";
+import { formatAlertDateTime } from "../utils/alertDateTime";
 
 // Coordinates for the cities the ML model was trained on — used to pull
 // live weather automatically so citizens don't have to guess numbers.
@@ -137,15 +138,14 @@ export default function CitizenDashboard() {
 
   useEffect(() => {
     fetchPredictions();
-    fetchAlerts();
   }, []);
 
-  // Once the citizen picks (or changes) their city, refresh alerts scoped
-  // to that city — this is what makes "alerts in your area" actually mean
-  // their area, instead of every alert system-wide.
+  // Prefer the selected city, then the latest saved prediction's city, so
+  // the initial alert list is scoped to the citizen's own area.
   useEffect(() => {
-    if (formData.location) fetchAlerts(formData.location);
-  }, [formData.location]);
+    const alertLocation = formData.location || prediction?.location;
+    fetchAlerts(alertLocation);
+  }, [formData.location, prediction?.location]);
 
   // Auto-fetch live weather once the citizen picks a recognised city — this
   // Auto-fetch live weather for whatever city the citizen types — this is
@@ -384,43 +384,6 @@ export default function CitizenDashboard() {
 
   const [forecast, setForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(false);
-  const [familyContacts, setFamilyContacts] = useState([]);
-  const [newContact, setNewContact] = useState({ name: "", phone: "", relation: "" });
-  const [showFamilyForm, setShowFamilyForm] = useState(false);
-
-  const fetchFamilyContacts = async () => {
-    if (!userEmail) return;
-    try {
-      const res = await axios.get(`${API_BASE}/family-contacts?email=${encodeURIComponent(userEmail)}`);
-      setFamilyContacts(res.data || []);
-    } catch (err) {
-      console.error("Failed to load family contacts:", err);
-    }
-  };
-
-  useEffect(() => { fetchFamilyContacts(); }, []);
-
-  const handleAddContact = async (e) => {
-    e.preventDefault();
-    if (!newContact.name || !newContact.phone) return;
-    try {
-      await axios.post(`${API_BASE}/family-contacts`, { owner_email: userEmail, ...newContact });
-      setNewContact({ name: "", phone: "", relation: "" });
-      setShowFamilyForm(false);
-      fetchFamilyContacts();
-    } catch (err) {
-      console.error("Failed to add contact:", err);
-    }
-  };
-
-  const handleDeleteContact = async (id) => {
-    try {
-      await axios.delete(`${API_BASE}/family-contacts/${id}`);
-      fetchFamilyContacts();
-    } catch (err) {
-      console.error("Failed to delete contact:", err);
-    }
-  };
 
   const handleGetForecast = async () => {
     if (!formData.location) return;
@@ -628,26 +591,8 @@ export default function CitizenDashboard() {
     return FEATURE_KEY_MAP[feature] ? t(FEATURE_KEY_MAP[feature]) : feature.replace(/_/g, " ");
   };
 
-  const riskWordKey = (risk) => (risk === "High" ? "highSeverity" : risk === "Medium" ? "mediumSeverity" : "lowSeverity");
-
   const buildExplanation = (pred) => {
-    if (!pred) return "";
-    const riskSummaryKey = pred.risk === "High" ? "riskSummaryHigh" : pred.risk === "Medium" ? "riskSummaryMedium" : "riskSummaryLow";
-    return [
-      `${t("floodRiskAnalysisFor")} ${pred.location} (${t("matchedCityLabel")}: ${pred.resolved_city})`,
-      "",
-      `${t("inputParameters")}:`,
-      `- ${t("rainfall")}: ${t(RAINFALL_OPTIONS.find((o) => o.value === formData.rainfall)?.labelKey) || formData.rainfall + " mm"}`,
-      `- ${t("temperature")}: ${parseFloat(formData.temperature || 0).toFixed(1)} °C`,
-      "",
-      `${t("mlModelPrediction")}: ${t(riskWordKey(pred.risk))} ${t("floodRiskWord")}`,
-      `${t("modelConfidenceLabel")}: ${(pred.confidence * 100).toFixed(1)}%`,
-      `${t("modelUsed")}: ${pred.model_used}`,
-      "",
-      `${t("riskAssessmentLabel")}: ${t(riskSummaryKey)}`,
-      "",
-      `${t("generatedUsingModel")} ${pred.model_used} ${t("modelTrainedOnData")}`,
-    ].join("\n");
+    return pred?.explanation || "";
   };
 
   const getSafetyTips = (risk) => {
@@ -668,6 +613,12 @@ export default function CitizenDashboard() {
         return [t("tipStayInformed")];
     }
   };
+
+  const alertArea = (formData.location || prediction?.location || "").trim().toLowerCase();
+  const nearbyAlerts = alerts.filter((alert) =>
+    alert.status !== "Cancelled" &&
+    (!alertArea || (alert.location || "").toLowerCase().includes(alertArea))
+  );
 
   return (
     <div className="min-h-screen bg-ink text-parchment font-sans">
@@ -927,23 +878,6 @@ export default function CitizenDashboard() {
                   </div>
                 )}
 
-                {prediction?.model_features && (
-                  <div className="relative dashboard-card p-6 mb-5">
-                    <h3 className="font-display text-xl text-parchment mb-1">{t("modelInputsUsed")}</h3>
-                    <p className="text-xs text-muted mb-4">
-                      {t("modelInputsNote")}
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {Object.entries(prediction.model_features).map(([key, val]) => (
-                        <div key={key} className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-                          <p className="text-[10px] font-mono-data uppercase tracking-wider text-muted">{FEATURE_KEY_MAP[key] ? t(FEATURE_KEY_MAP[key]) : key.replace(/_/g, " ")}</p>
-                          <p className="font-mono-data text-sm text-parchment">{typeof val === "number" ? val.toFixed(2) : val}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div className="relative dashboard-card p-6">
                   <h3 className="font-display text-xl text-parchment mb-3">{t("safetyRecommendations")}</h3>
                   <ul className="space-y-2">
@@ -958,59 +892,6 @@ export default function CitizenDashboard() {
               </div>
             </div>
           )}
-
-          {/* Family Emergency Contacts */}
-          <div className="max-w-4xl mx-auto mb-8">
-            <div className="dashboard-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="eyebrow text-marigold-400 mb-1">{t("safetyNetwork")}</p>
-                  <h3 className="font-display text-lg text-parchment">{t("familyContactsTitle")}</h3>
-                </div>
-                <button onClick={() => setShowFamilyForm((v) => !v)} className="btn-secondary text-xs py-2">
-                  {showFamilyForm ? t("cancel") : t("addContact")}
-                </button>
-              </div>
-              <p className="text-xs text-muted mb-4">
-                {t("familyContactsDesc")}
-              </p>
-              {showFamilyForm && (
-                <form onSubmit={handleAddContact} className="grid md:grid-cols-3 gap-3 mb-4 bg-white/5 rounded-xl p-4 border border-white/10">
-                  <input required placeholder={t("namePh")} value={newContact.name} onChange={(e) => setNewContact((p) => ({ ...p, name: e.target.value }))} className="field-input py-2 text-sm" />
-                  <input required placeholder={t("phonePh")} value={newContact.phone} onChange={(e) => setNewContact((p) => ({ ...p, phone: e.target.value }))} className="field-input py-2 text-sm" />
-                  <input placeholder={t("relationPh")} value={newContact.relation} onChange={(e) => setNewContact((p) => ({ ...p, relation: e.target.value }))} className="field-input py-2 text-sm" />
-                  <button type="submit" className="md:col-span-3 btn-primary py-2 text-sm">{t("saveContact")}</button>
-                </form>
-              )}
-              {familyContacts.length === 0 ? (
-                <p className="text-xs text-muted">{t("noContactsYet")}</p>
-              ) : (
-                <div className="space-y-2">
-                  {familyContacts.map((c) => (
-                    <div key={c.id} className="flex items-center justify-between text-sm bg-white/[0.03] rounded-lg px-3 py-2">
-                      <div>
-                        <span className="text-parchment font-medium">{c.name}</span>
-                        <span className="text-xs text-muted ml-2">{c.relation} · {c.phone}</span>
-                      </div>
-                      <button onClick={() => handleDeleteContact(c.id)} className="text-xs text-red-400 hover:text-red-300">{t("removeContact")}</button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={async () => {
-                      await axios.post(`${API_BASE}/family-contacts/notify`, {
-                        owner_email: userEmail,
-                        message: `Flood risk update for ${formData.location || "your area"}: please check the latest prediction.`,
-                      });
-                      alert("Contacts notified (simulated — check backend console).");
-                    }}
-                    className="btn-secondary text-xs py-2 mt-2 w-full"
-                  >
-                    {t("notifyAllContacts")}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Prediction Trend + Nearest Help */}
           <div className="max-w-4xl mx-auto mb-8 grid md:grid-cols-2 gap-6">
@@ -1109,7 +990,7 @@ export default function CitizenDashboard() {
             <div className="dashboard-card p-8">
               <p className="eyebrow text-marigold-400 mb-2">{t("nearby")}</p>
               <h3 className="font-display text-2xl text-parchment mb-6">{t("recentAlerts")}</h3>
-              {alerts.length === 0 ? (
+              {nearbyAlerts.length === 0 ? (
                 <div className="p-5 rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-300 text-sm flex items-center gap-3">
                   <span className="text-2xl">🟢</span>
                   <div>
@@ -1119,14 +1000,14 @@ export default function CitizenDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {alerts.slice(0, 5).map((alert, index) => (
+                  {nearbyAlerts.slice(0, 5).map((alert, index) => (
                     <div key={index} className={`p-4 rounded-xl border ${getRiskBgColor(alert.risk)}`}>
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className={`font-semibold text-sm ${getRiskColor(alert.risk)}`}>{alert.message}</h4>
                           <p className="text-sm text-muted mt-1">{alert.location}</p>
                         </div>
-                        <span className="text-xs text-muted font-mono-data">{new Date(alert.created_at).toLocaleDateString()}</span>
+                        <span className="text-xs text-muted font-mono-data">{formatAlertDateTime(alert.created_at)}</span>
                       </div>
                     </div>
                   ))}

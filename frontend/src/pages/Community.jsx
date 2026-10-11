@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { lookupLocation, getCurrentPosition, locationErrorMessage } from "../utils/mapLocation";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
-import FloodMap from "../components/FloodMap";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 
@@ -40,17 +40,14 @@ function statusStyles(value) {
 export default function Community() {
   const { t } = useLanguage();
   const [reports, setReports] = useState([]);
+  const [locationStatus, setLocationStatus] = useState("");
+  const locationEdited = useRef(false);
   const [loadingReports, setLoadingReports] = useState(true);
   const [formState, setFormState] = useState({ location: "", type: "Flooding", description: "", severity: "High", contact: "", imageFile: null, imagePreview: "" });
-  const [activeReportId, setActiveReportId] = useState(null);
+  const [activeReportId, setActiveReportId] = useState(() => Number(new URLSearchParams(window.location.search).get('report')) || null);
   const [toast, setToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [filters, setFilters] = useState({ severity: "All", status: "All", region: "All" });
-  const [volunteerForm, setVolunteerForm] = useState({ name: "", phone: "", city: "", skills: "" });
-  const [volunteerStatus, setVolunteerStatus] = useState(null);
-  const [donationForm, setDonationForm] = useState({ donor_name: "", contact: "", item: "", quantity: 1, shelter_id: "" });
-  const [shelterOptions, setShelterOptions] = useState([]);
-  const [donationStatus, setDonationStatus] = useState(null);
   const [rescueWorkers, setRescueWorkers] = useState([]);
   const [assigningReportId, setAssigningReportId] = useState(null);
   const [assignWorkerChoice, setAssignWorkerChoice] = useState("");
@@ -64,7 +61,9 @@ export default function Community() {
 
   const fetchReports = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/community-reports`);
+      const res = await axios.get(`${API_BASE}/community-reports`, {
+        params: isCitizen && userEmail ? { email: userEmail } : {},
+      });
       const data = res.data || [];
       setReports(data);
       setActiveReportId((prev) => prev ?? data[0]?.id ?? null);
@@ -77,11 +76,8 @@ export default function Community() {
 
   useEffect(() => {
     fetchReports();
-    const interval = setInterval(fetchReports, 30000); // keep the review queue live
+    const interval = setInterval(fetchReports, 3000); // keep the review queue live
     return () => clearInterval(interval);
-  }, []);
-  useEffect(() => {
-    axios.get(`${API_BASE}/shelters`).then((res) => setShelterOptions(res.data || [])).catch(() => {});
   }, []);
   useEffect(() => {
     if (!isReviewer) return;
@@ -91,18 +87,37 @@ export default function Community() {
   }, [isReviewer]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), 6000); return () => clearTimeout(timer); }, [toast]);
 
+  useEffect(() => {
+    let active = true;
+    setLocationStatus('Finding your current location...');
+    getCurrentPosition().then(async position => {
+      const latitude = position.coords.latitude, longitude = position.coords.longitude;
+      const location = await lookupLocation(latitude, longitude);
+      if (active && !locationEdited.current) {
+        setFormState(current => ({ ...current, location, latitude, longitude }));
+        setLocationStatus(location.includes('(address unavailable)') ? 'Address lookup unavailable. Your coordinates are filled; you can enter the address manually.' : '');
+      }
+    }).catch(error => {
+      if (active) setLocationStatus(locationErrorMessage(error));
+    });
+    return () => { active = false; };
+  }, []);
+
   const filteredReports = useMemo(() => reports.filter((r) => (filters.severity === "All" || r.severity === filters.severity) && (filters.status === "All" || r.status === filters.status) && (filters.region === "All" || r.region === filters.region)), [filters, reports]);
-  // A citizen's own report list only shows what's still open — once a rescue
-  // worker marks it Resolved, it's done and drops out of view here (and out
-  // of the timeline below) instead of lingering as a "resolved" entry forever.
-  const visibleReports = useMemo(() => isCitizen ? reports.filter((r) => r.authorEmail === userEmail && r.status !== "Resolved") : filteredReports, [isCitizen, reports, userEmail, filteredReports]);
+  const visibleReports = useMemo(() => isCitizen ? reports.filter(r => (r.authorEmail || '').toLowerCase() === (userEmail || '').toLowerCase()) : filteredReports, [isCitizen, reports, userEmail, filteredReports]);
   const currentReport = useMemo(() => {
     const pool = isCitizen ? visibleReports : reports;
     return pool.find((r) => r.id === activeReportId) || pool[0] || null;
   }, [activeReportId, reports, isCitizen, visibleReports]);
-  const handleFormChange = (field, value) => setFormState((prev) => ({ ...prev, [field]: value }));
+  const handleFormChange = (field, value) => {
+    if (field === 'location') { locationEdited.current = true; setLocationStatus(''); }
+    setFormState(prev => ({ ...prev, [field]:value, ...(field === 'location' ? { latitude:null, longitude:null } : {}) }));
+  };
   const handleFileSelect = (file) => {
     if (!file) return;
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setToast({ type:'error', message:'Upload a JPG, PNG, WebP or GIF image up to 5 MB.' }); return;
+    }
     const reader = new FileReader();
     reader.onload = () => setFormState((prev) => ({ ...prev, imageFile: file, imagePreview: reader.result }));
     reader.readAsDataURL(file);
@@ -118,6 +133,8 @@ export default function Community() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const { location, description, contact, type, severity } = formState;
+    if (!formState.imagePreview) { setToast({ type:'error', message:'Please upload an incident photo before submitting.' }); return; }
+    if (location.includes('(address unavailable)')) { setToast({ type:'error', message:'Address lookup failed. Enter the incident address before submitting.' }); return; }
     if (!location.trim() || !description.trim() || !contact.trim()) {
       setToast({ type: "error", message: t("fillRequiredFields"), time: new Date().toLocaleTimeString() });
       return;
@@ -141,6 +158,7 @@ export default function Community() {
     try {
       const res = await axios.post(`${API_BASE}/community-reports`, {
         location, region, type, severity, description, contact,
+        latitude: formState.latitude ?? null, longitude: formState.longitude ?? null,
         authorName: userName || "Guest User",
         authorEmail: userEmail || "guest@example.com",
         imageUrl: formState.imagePreview || "",
@@ -148,36 +166,12 @@ export default function Community() {
       const newReport = res.data;
       setReports((prev) => [newReport, ...prev]);
       setActiveReportId(newReport.id);
-      setFormState({ location: "", type: "Flooding", description: "", severity: "High", contact: "", imageFile: null, imagePreview: "" });
+      setFormState(prev => ({ location:prev.location, latitude:prev.latitude, longitude:prev.longitude, type:"Flooding", description:"", severity:"High", contact:"", imageFile:null, imagePreview:"" }));
       // FR06-03: acknowledgment notification on submission
       setToast({ type: "success", message: t("incidentReportSubmitted"), trackingId: newReport.trackingId, time: formatTimeStamp(newReport.createdAt) });
     } catch (err) {
       console.error("Failed to submit report:", err);
       setToast({ type: "error", message: t("couldNotSubmitReport"), time: new Date().toLocaleTimeString() });
-    }
-  };
-
-  const handleVolunteerSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(`${API_BASE}/volunteers`, volunteerForm);
-      setVolunteerForm({ name: "", phone: "", city: "", skills: "" });
-      setVolunteerStatus("done");
-    } catch (err) {
-      console.error(err);
-      setVolunteerStatus("error");
-    }
-  };
-
-  const handleDonationSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(`${API_BASE}/donations`, donationForm);
-      setDonationForm({ donor_name: "", contact: "", item: "", quantity: 1, shelter_id: "" });
-      setDonationStatus("done");
-    } catch (err) {
-      console.error(err);
-      setDonationStatus("error");
     }
   };
 
@@ -231,7 +225,7 @@ export default function Community() {
       <div className="pt-24 pb-24">
         <div className="max-w-7xl mx-auto px-6 sm:px-8 space-y-20">
           {/* COMMUNITY HUB INTRO */}
-          <section className="relative overflow-hidden rounded-[3rem] border border-white/10 bg-gradient-to-br from-ink-soft/90 to-ink/90 p-12 lg:p-16 shadow-2xl">
+          <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-ink-soft/90 to-ink/90 p-12 lg:p-16 shadow-2xl">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.15),_transparent_40%)]"></div>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(139,92,246,0.1),_transparent_50%)]"></div>
             <div className="relative z-10 grid gap-12 lg:grid-cols-3">
@@ -272,15 +266,15 @@ export default function Community() {
 
 
           {/* MAIN INCIDENT & TRACKING */}
-          <section className="grid gap-8 xl:grid-cols-[1.3fr_0.9fr]">
+          <section className="grid items-stretch gap-6 lg:grid-cols-2">
             {/* FORM */}
-            <div className="rounded-[3rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8 lg:p-12 shadow-xl">
+            <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl">
               <div className="space-y-8">
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-4 py-2 border border-emerald-500/30 text-xs text-emerald-300 uppercase tracking-[0.35em] font-semibold">
                     <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> {t("reportIncident")}
                   </div>
-                  <h2 className="font-display text-4xl text-parchment">{t("submitFloodReport")}</h2>
+                  <h2 className="font-display text-3xl text-parchment">{t("submitFloodReport")}</h2>
                   <p className="text-lg text-muted max-w-2xl">{t("submitFloodReportDesc")}</p>
                 </div>
 
@@ -297,7 +291,7 @@ export default function Community() {
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("locationAndType")}</p>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <label className="block"><span className="text-sm text-muted font-medium">{t("location")}</span><input value={formState.location} onChange={(e) => handleFormChange("location", e.target.value)} placeholder={t("cityRegionNeighbourhood")} className="field-input mt-2 rounded-2xl" required /></label>
+                        <label className="block"><span className="text-sm text-muted font-medium">{t("location")}</span><input value={formState.location} onChange={(e) => handleFormChange("location", e.target.value)} placeholder={t("cityRegionNeighbourhood")} className="field-input mt-2 rounded-2xl" required />{locationStatus && <span className="block text-xs text-muted mt-1">{locationStatus}</span>}</label>
                         <label className="block"><span className="text-sm text-muted font-medium">{t("incidentType")}</span><select value={formState.type} onChange={(e) => handleFormChange("type", e.target.value)} className="field-input mt-2 rounded-2xl">{INCIDENT_TYPES.map((type) => <option key={type} value={type}>{t(INCIDENT_TYPE_KEY_MAP[type])}</option>)}</select></label>
                       </div>
                     </div>
@@ -316,7 +310,7 @@ export default function Community() {
                     </div>
 
                     <div className="space-y-4">
-                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")}</p>
+                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} <span className="text-red-400">*</span></p>
                       <div onDragOver={(e) => { e.preventDefault(); setDragActive(true); }} onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }} onDrop={handleDrop} className={`rounded-2xl border-2 ${dragActive ? "border-teal-500 bg-teal-500/10" : "border-dashed border-white/10 bg-ink/60"} p-8 text-center transition-all duration-200`}>
                         <label className="flex cursor-pointer flex-col items-center justify-center gap-3 text-muted">
                           <span className="text-4xl">📷</span>
@@ -344,8 +338,8 @@ export default function Community() {
               </div>
             </div>
 
-            {/* RIGHT: TIMELINE & MAP */}
-            <div className="space-y-8">
+            {/* REPORTS & TIMELINE */}
+            <div className="flex min-w-0 flex-col gap-6 h-full">
               {/* MY REPORTS (citizens only) — lets them browse/switch between their own submitted reports */}
               {isCitizen && (
                 <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6">
@@ -378,7 +372,7 @@ export default function Community() {
               )}
 
               {/* TIMELINE */}
-              <div className="rounded-[3rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8 lg:p-10 shadow-xl">
+              <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl flex-1">
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <div className="inline-flex items-center gap-2 rounded-full bg-teal-500/15 px-4 py-2 border border-teal-500/30 text-xs text-teal-300 uppercase tracking-[0.35em] font-semibold">
@@ -395,6 +389,9 @@ export default function Community() {
                           <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusStyles(currentReport.status)}`}>{t(STATUS_KEY_MAP[currentReport.status] || currentReport.status)}</span>
                         </div>
                         <p className="text-sm text-muted">{currentReport.location} · {currentReport.type}</p>
+                        {currentReport.imageUrl && (
+                          <img src={currentReport.imageUrl} alt={t("visualEvidence")} className="mt-4 max-h-64 w-full rounded-xl border border-white/10 object-cover" />
+                        )}
                         {currentReport.linked_rescue_op_id && (
                           <p className="text-xs text-teal-300 mt-2">✓ {t("rescueOpCreatedMsg")} #{currentReport.linked_rescue_op_id}</p>
                         )}
@@ -439,74 +436,18 @@ export default function Community() {
                 </div>
               </div>
 
-              {/* MAP */}
-              <div className="rounded-[3rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8 lg:p-10 shadow-xl">
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-teal-500/15 px-4 py-2 border border-teal-500/30 text-xs text-teal-300 uppercase tracking-[0.35em] font-semibold">
-                      {t("liveMap")}
-                    </div>
-                    <h3 className="font-display text-3xl text-parchment">{t("incidentOverview")}</h3>
-                    <p className="text-sm text-muted">{t("incidentOverviewDesc")}</p>
-                  </div>
-                  <FloodMap height={340} canEdit={false} />
-                </div>
-              </div>
             </div>
           </section>
 
-          {/* VOLUNTEER + DONATIONS */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-12">
-            <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8">
-              <p className="eyebrow text-teal-400 mb-2">{t("getInvolved")}</p>
-              <h3 className="font-display text-2xl text-parchment mb-1">{t("registerVolunteerTitle")}</h3>
-              <p className="text-sm text-muted mb-5">{t("registerVolunteerDesc")}</p>
-              {volunteerStatus === "done" ? (
-                <p className="text-sm text-emerald-300">✓ {t("thankYouVolunteer")}</p>
-              ) : (
-                <form onSubmit={handleVolunteerSubmit} className="space-y-3">
-                  <input required placeholder={t("fullNamePh")} value={volunteerForm.name} onChange={(e) => setVolunteerForm((p) => ({ ...p, name: e.target.value }))} className="field-input rounded-2xl" />
-                  <input required placeholder={t("phoneNumberPh")} value={volunteerForm.phone} onChange={(e) => setVolunteerForm((p) => ({ ...p, phone: e.target.value }))} className="field-input rounded-2xl" />
-                  <input placeholder={t("yourCityPh")} value={volunteerForm.city} onChange={(e) => setVolunteerForm((p) => ({ ...p, city: e.target.value }))} className="field-input rounded-2xl" />
-                  <input placeholder={t("skillsExamplePh")} value={volunteerForm.skills} onChange={(e) => setVolunteerForm((p) => ({ ...p, skills: e.target.value }))} className="field-input rounded-2xl" />
-                  <button type="submit" className="btn-primary w-full">{t("registerAsVolunteerBtn")}</button>
-                </form>
-              )}
-            </div>
-
-            <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8">
-              <p className="eyebrow text-marigold-400 mb-2">{t("supportReliefEfforts")}</p>
-              <h3 className="font-display text-2xl text-parchment mb-1">{t("pledgeDonationTitle")}</h3>
-              <p className="text-sm text-muted mb-5">{t("pledgeDonationDesc")}</p>
-              {donationStatus === "done" ? (
-                <p className="text-sm text-emerald-300">✓ {t("thankYouDonation")}</p>
-              ) : (
-                <form onSubmit={handleDonationSubmit} className="space-y-3">
-                  <input required placeholder={t("nameOrgPh")} value={donationForm.donor_name} onChange={(e) => setDonationForm((p) => ({ ...p, donor_name: e.target.value }))} className="field-input rounded-2xl" />
-                  <input placeholder={t("contactNumberPh")} value={donationForm.contact} onChange={(e) => setDonationForm((p) => ({ ...p, contact: e.target.value }))} className="field-input rounded-2xl" />
-                  <div className="grid grid-cols-3 gap-3">
-                    <input required placeholder={t("itemExamplePh")} value={donationForm.item} onChange={(e) => setDonationForm((p) => ({ ...p, item: e.target.value }))} className="field-input rounded-2xl col-span-2" />
-                    <input type="number" min="1" value={donationForm.quantity} onChange={(e) => setDonationForm((p) => ({ ...p, quantity: e.target.value }))} className="field-input rounded-2xl" />
-                  </div>
-                  <select value={donationForm.shelter_id} onChange={(e) => setDonationForm((p) => ({ ...p, shelter_id: e.target.value }))} className="field-input rounded-2xl">
-                    <option value="">{t("chooseShelterOptional")}</option>
-                    {shelterOptions.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.address}</option>)}
-                  </select>
-                  <button type="submit" className="btn-primary w-full">{t("pledgeDonationBtn")}</button>
-                </form>
-              )}
-            </div>
-          </div>
-
           {/* REVIEW PANEL */}
           {isReviewer && (
-            <section className="rounded-[3rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-8 lg:p-12 shadow-xl">
+            <section className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl">
               <div className="space-y-8">
                 <div className="space-y-4 max-w-3xl">
                   <div className="inline-flex items-center gap-2 rounded-full bg-purple-500/15 px-4 py-2 border border-purple-500/30 text-xs text-purple-300 uppercase tracking-[0.35em] font-semibold">
                     {t("reviewPanel")}
                   </div>
-                  <h2 className="font-display text-4xl text-parchment">{t("officialReviewWorkspace")}</h2>
+                  <h2 className="font-display text-3xl text-parchment">{t("officialReviewWorkspace")}</h2>
                   <p className="text-lg text-muted">{t("filterReportsDesc")}</p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">

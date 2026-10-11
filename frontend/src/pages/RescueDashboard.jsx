@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import FloodMap from "../components/FloodMap";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 
@@ -406,7 +407,7 @@ export default function RescueDashboard() {
                     </span>
                   </h4>
                   <p className="text-xs text-muted mt-0.5">
-                    Assigned to: <strong className="text-teal-300">{newOpAlert.assigned_team || "Rescue Team Alpha"}</strong> · Real-time team dispatch notice.
+                    Assigned to: <strong className="text-teal-300">{newOpAlert.assigned_team || "Rescue Team Alpha"}</strong> · Real-time team notification broadcast.
                   </p>
                 </div>
               </div>
@@ -434,7 +435,7 @@ export default function RescueDashboard() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <div className="dashboard-card p-4 text-center">
               <div className="font-display text-2xl text-parchment">{totalActive}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">Total Active Operations</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Active Operations</div>
             </div>
             <div className="dashboard-card p-4 text-center border-red-500/30">
               <div className="font-display text-2xl text-red-400">{highRiskActive}</div>
@@ -442,11 +443,11 @@ export default function RescueDashboard() {
             </div>
             <div className="dashboard-card p-4 text-center border-teal-500/30">
               <div className="font-display text-2xl text-teal-400">{inProgressCount}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">In Progress Operations</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">In Progress</div>
             </div>
             <div className="dashboard-card p-4 text-center border-emerald-500/30">
               <div className="font-display text-2xl text-emerald-400">{completedCount}</div>
-              <div className="eyebrow text-muted text-[11px] mt-1">Completed Operations</div>
+              <div className="eyebrow text-muted text-[11px] mt-1">Completed</div>
             </div>
             <div className="dashboard-card p-4 text-center border-marigold-500/30 col-span-2 md:col-span-1">
               <div className="font-display text-2xl text-marigold-400">{totalRescued}</div>
@@ -454,8 +455,8 @@ export default function RescueDashboard() {
             </div>
           </div>
 
-          {/* Navigation: Active Operations vs Past Operations Log */}
-          <div className="flex gap-2 mb-6 border-b border-white/10 pb-1">
+          {/* Navigation: Active Operations vs Map vs Past Operations Log */}
+          <div className="flex flex-wrap gap-2 mb-6 border-b border-white/10 pb-1">
             <button
               onClick={() => setActiveTab("active")}
               className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-2 ${
@@ -464,12 +465,23 @@ export default function RescueDashboard() {
                   : "text-muted hover:text-parchment hover:bg-white/5"
               }`}
             >
-              <span>⚡ Active Rescue Operations</span>
+              <span>⚡ Active Operations</span>
               {totalActive > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
                   {totalActive}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("map")}
+              className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-2 ${
+                activeTab === "map"
+                  ? "bg-white/10 text-teal-300 border-b-2 border-teal-400"
+                  : "text-muted hover:text-parchment hover:bg-white/5"
+              }`}
+            >
+              <span>🗺️ Operations Map & Facilities</span>
             </button>
 
             <button
@@ -480,7 +492,7 @@ export default function RescueDashboard() {
                   : "text-muted hover:text-parchment hover:bg-white/5"
               }`}
             >
-              <span>📜 Past Operations Log & Reports</span>
+              <span>📜 Past Operations Log</span>
               {completedCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
                   {completedCount}
@@ -682,7 +694,42 @@ export default function RescueDashboard() {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 2: PAST OPERATIONS LOG & REPORTS                           */}
+          {/* TAB 2: INTERACTIVE OPERATIONS MAP & FACILITIES (FR-04)         */}
+          {/* ============================================================== */}
+          {activeTab === "map" && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="dashboard-card p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div>
+                    <span className="eyebrow text-teal-400 text-xs font-semibold">Geospatial Operations Center</span>
+                    <h2 className="font-display text-2xl text-parchment">🗺️ Live Interactive Operations Map</h2>
+                    <p className="text-xs text-muted mt-0.5">
+                      Real-time interactive map showing ongoing rescue operations, emergency relief shelters, hospitals, and road blockages across Pakistan.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-medium">
+                      ● Active Missions
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
+                      ● Shelters
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 font-medium">
+                      ● Hospitals
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-red-500/15 text-red-300 border border-red-500/30 font-medium">
+                      ● Blocked Roads
+                    </span>
+                  </div>
+                </div>
+
+                <FloodMap height={540} canEdit={true} />
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* TAB 3: PAST OPERATIONS LOG & REPORTS                           */}
           {/* ============================================================== */}
           {activeTab === "history" && (
             <div className="dashboard-card p-6">

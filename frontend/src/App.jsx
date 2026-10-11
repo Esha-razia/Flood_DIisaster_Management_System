@@ -72,6 +72,11 @@ function App() {
             <AdminDashboard />
           </ProtectedRoute>
         } />
+        <Route path="/admin" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
         <Route path="/community" element={<Community />} />
         <Route path="/map" element={<MapView />} />
         <Route path="/checkin/:shelterId" element={<CheckIn />} />

@@ -1,112 +1,79 @@
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
+import { formatAlertDateTime } from "../utils/alertDateTime";
 
 export default function Navbar() {
   const { lang, t, toggleLang } = useLanguage();
-  const location = useLocation();
-  const [userRole, setUserRole] = useState(null);
-  const [userName, setUserName] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole'));
+  const [userName, setUserName] = useState(() => localStorage.getItem('userName'));
+  const isAuthenticated = Boolean(userRole && userName);
   const [recentAlerts, setRecentAlerts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [error, setError] = useState('');
   const [showAlertsPanel, setShowAlertsPanel] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const seenAlertIds = useRef(new Set());
-  const seenAdvisoryIds = useRef(new Set());
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState({ message: '', location: '', risk_level: 'Medium' });
+  const versions = useRef(new Map());
   const navigate = useNavigate();
+  const official = ['admin', 'government_official'].includes(userRole);
 
-  useEffect(() => {
-    const role = localStorage.getItem('userRole');
-    const name = localStorage.getItem('userName');
-    if (role && name) {
-      setUserRole(role);
-      setUserName(name);
-      setIsAuthenticated(true);
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
+  const refresh = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/alerts`);
+      setRecentAlerts(response.data);
+      if (official) {
+        const result = await axios.get(`${API_BASE}/alerts/history`);
+        setHistory(result.data);
       }
-    } else {
-      setIsAuthenticated(false);
-      setUserRole(null);
-      setUserName(null);
+      setError('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not load alerts.');
     }
-  }, []);
+  }, [official]);
 
-  // Real-time alert notifications — polls for new Medium/High alerts and
-  // surfaces them as a native browser notification, wherever the user is.
   useEffect(() => {
     if (!isAuthenticated) return;
+    // Discard legacy saved notification/reminder entries, without touching accounts.
+    Object.keys(localStorage).filter(key => key.startsWith('flood-reminders:')).forEach(key => localStorage.removeItem(key));
+    refresh();
+    const timer = setInterval(refresh, 3000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, refresh]);
 
-    const checkAlerts = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/alerts`);
-        const alerts = res.data || [];
-        const fresh = alerts.filter((a) => !seenAlertIds.current.has(a.id) && a.status !== 'Cancelled');
-
-        if (seenAlertIds.current.size > 0) {
-          // Only notify for alerts that appeared *after* the first load
-          fresh.forEach((a) => {
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(`${a.risk} flood risk — ${a.location}`, {
-                body: a.message,
-                icon: undefined,
-              });
-            }
-          });
-        }
-        alerts.forEach((a) => seenAlertIds.current.add(a.id));
-        setRecentAlerts(alerts.slice(0, 8));
-      } catch (err) {
-        // silent — backend may just not be running yet
-      }
-    };
-
-    checkAlerts();
-    const interval = setInterval(checkAlerts, 20000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
-
-  // Same pattern as alerts above, but for Government-issued public
-  // advisories — these are policy-level notices, not emergencies, but
-  // people should still be notified when a new one is issued.
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const checkAdvisories = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/advisories`);
-        const advisories = res.data || [];
-        const fresh = advisories.filter((a) => !seenAdvisoryIds.current.has(a.id));
-
-        if (seenAdvisoryIds.current.size > 0) {
-          fresh.forEach((a) => {
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(`${t("publicAdvisories")}: ${a.title}`, {
-                body: a.message,
-                icon: undefined,
-              });
-            }
-          });
+    recentAlerts.forEach(item => {
+      if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`${item.risk_level} flood risk — ${item.location}`, { body: item.message });
         }
-        advisories.forEach((a) => seenAdvisoryIds.current.add(a.id));
-      } catch (err) {
-        // silent — backend may just not be running yet
       }
-    };
+      versions.current.set(item.id, item.updated_at);
+    });
+  }, [recentAlerts]);
 
-    checkAdvisories();
-    const advisoryInterval = setInterval(checkAdvisories, 20000);
-    return () => clearInterval(advisoryInterval);
-  }, [isAuthenticated]);
-
+  const saveAlert = async (event) => {
+    event.preventDefault();
+    try {
+      if (editing === 'new') await axios.post(`${API_BASE}/alerts`, draft);
+      else await axios.put(`${API_BASE}/alerts/${editing}`, draft);
+      setEditing(null);
+      await refresh();
+    } catch (err) { setError(err.response?.data?.message || 'Could not save alert.'); }
+  };
+  const cancelAlert = async (id) => {
+    try {
+      await axios.put(`${API_BASE}/alerts/${id}`, { status: 'Cancelled' });
+      if (editing === id) setEditing(null);
+      await refresh();
+    } catch (err) { setError(err.response?.data?.message || 'Could not cancel alert.'); }
+  };
   const handleLogout = () => {
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('userName');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userId');
-    setIsAuthenticated(false);
+    ['userRole', 'userName', 'userEmail', 'userId', 'notificationToken'].forEach(key => localStorage.removeItem(key));
     setUserRole(null);
     setUserName(null);
     navigate('/');
@@ -141,7 +108,7 @@ export default function Navbar() {
           <div className="w-9 h-9 rounded-full flex items-center justify-center border border-marigold-500/40 bg-gradient-to-br from-teal-600/30 to-marigold-600/20">
             <span className="font-display text-marigold-400 text-lg leading-none">F</span>
           </div>
-          <span className="font-display text-parchment text-lg tracking-tight">
+          <span className="font-display text-parchment text-sm sm:text-lg tracking-tight whitespace-nowrap">
             {t("brandName")}
           </span>
           <span className="hidden lg:inline-flex items-center gap-1.5 text-[10px] font-mono-data uppercase tracking-[0.2em] px-2 py-0.5 rounded-full border border-teal-500/30 text-teal-300">
@@ -188,41 +155,61 @@ export default function Navbar() {
         </div>
 
         {isAuthenticated && userName && (
-          <div className="hidden md:flex items-center gap-3 ml-4 pl-4 border-l border-white/10">
+          <div className="flex items-center gap-3 ml-auto md:ml-4 md:pl-4 md:border-l md:border-white/10">
             <div className="relative">
-              <button
-                onClick={() => setShowAlertsPanel((v) => !v)}
-                className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5 transition-colors"
-                title="Recent alerts"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                {recentAlerts.some((a) => a.status !== 'Cancelled') && (
-                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400" />
-                )}
+              <button onClick={() => setShowAlertsPanel(v => !v)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5" title="Notifications" aria-label="Notifications">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                {recentAlerts.some(a => a.status === 'Active') && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
               </button>
               {showAlertsPanel && (
-                <div className="absolute right-0 mt-2 w-80 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
+                <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/10">
-                    <p className="text-sm font-semibold text-parchment">{t("recentAlertsTitle")}</p>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto">
-                    {recentAlerts.length === 0 && (
-                      <p className="text-xs text-muted px-4 py-4">{t("noAlertsYet")}</p>
+                    <p className="text-sm font-semibold text-parchment">Alerts and Notifications</p>
+                    <div className="flex gap-2 mt-2 text-xs">
+                      <button className="text-teal-300" onClick={() => setShowHistory(false)}>Active alerts</button>
+                      {official && <button className="text-teal-300" onClick={() => setShowHistory(true)}>Alert history</button>}
+                      {userRole === 'admin' && <button className="text-marigold-300" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>Create alert</button>}
+                    </div>
+                    {'Notification' in window && Notification.permission === 'default' && <button className="text-xs text-muted mt-2" onClick={() => Notification.requestPermission()}>Enable browser notifications</button>}
+                    {error && <p className="text-xs text-red-300 mt-2" role="alert">{error}</p>}
+                    {editing !== null && userRole === 'admin' && (
+                      <form onSubmit={saveAlert} className="space-y-2 mt-3">
+                        <input required aria-label="Alert message" placeholder="Alert message" className="field-input text-xs" value={draft.message} onChange={e => setDraft({ ...draft, message: e.target.value })}/>
+                        <input required aria-label="Affected location" placeholder="Affected location" className="field-input text-xs" value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/>
+                        <select aria-label="Risk level" className="field-input text-xs" value={draft.risk_level} onChange={e => setDraft({ ...draft, risk_level: e.target.value })}>{['Low','Medium','High'].map(r => <option key={r}>{r}</option>)}</select>
+                        <button className="text-xs text-teal-300" type="submit">Save alert</button>
+                        <button className="text-xs text-muted ml-3" type="button" onClick={() => setEditing(null)}>Close</button>
+                      </form>
                     )}
-                    {recentAlerts.map((a, i) => (
-                      <div key={i} className="px-4 py-3 border-b border-white/5 last:border-0">
-                        <p className="text-sm text-parchment font-medium">{a.message}</p>
-                        <p className="text-xs text-muted mt-1">{a.location} · {new Date(a.created_at).toLocaleString()}</p>
-                      </div>
-                    ))}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto" aria-live="polite">
+                    {showHistory && official ? (
+                      history.length === 0 ? <p className="text-xs text-muted px-4 py-4">No alert history.</p> : history.map(entry => (
+                        <div key={entry.id} className="px-4 py-3 border-b border-white/5">
+                          <p className="text-xs text-teal-300">Alert #{entry.alert_id} · {entry.action} · {entry.alert.risk_level}</p>
+                          <p className="text-sm text-parchment">{entry.alert.message}</p>
+                          <p className="text-xs text-muted">{entry.alert.location} · {entry.actor}</p>
+                          <p className="text-xs text-muted">{formatAlertDateTime(entry.timestamp)}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <>
+                        {!recentAlerts.some(a => a.status === 'Active') && <p className="text-xs text-muted px-4 py-4">No active alerts.</p>}
+                        {recentAlerts.filter(a => a.status === 'Active').map(item => (
+                          <div key={item.id} className="px-4 py-3 border-b border-white/5">
+                            <p className="text-xs text-teal-300">{item.risk_level} risk · {item.location}</p>
+                            <p className="text-sm text-parchment font-medium mt-1">{item.message}</p>
+                            <p className="text-xs text-muted mt-1">Created: {formatAlertDateTime(item.created_at)}</p>
+                            {userRole === 'admin' && <div className="flex gap-3 mt-2 text-xs"><button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>Update</button><button className="text-red-300" onClick={() => cancelAlert(item.id)}>Cancel alert</button></div>}
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 </div>
               )}
             </div>
-            <Link to="/profile" className="text-right hover:opacity-80 transition-opacity" title="View Profile">
+            <Link to="/profile" className="hidden md:block text-right hover:opacity-80 transition-opacity" title="View Profile">
               <div className="text-sm text-parchment font-medium">{userName}</div>
               <div className="text-xs text-muted font-mono-data uppercase tracking-wide">
                 {userRole?.replace('_', ' ')}
@@ -230,14 +217,14 @@ export default function Navbar() {
             </Link>
             <Link
               to="/profile"
-              className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-marigold-500 flex items-center justify-center text-ink text-sm font-bold hover:scale-105 transition-transform"
+              className="hidden md:flex w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-marigold-500 items-center justify-center text-ink text-sm font-bold hover:scale-105 transition-transform"
               title="View Profile"
             >
               {userName.charAt(0).toUpperCase()}
             </Link>
             <button
               onClick={handleLogout}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-muted/70 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer group"
+              className="hidden md:flex w-8 h-8 rounded-full items-center justify-center text-muted/70 hover:text-red-400 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer group"
               title={t('logout')}
               aria-label="Logout"
             >

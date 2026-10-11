@@ -1,3 +1,5 @@
+import { lookupLocation, getCurrentPosition, escapeMapText, locationErrorMessage } from "../utils/mapLocation";
+import { printMapOnly } from "../utils/printMap";
 import { useEffect, useRef, useState, useMemo } from "react";
 import axios from "axios";
 import L from "leaflet";
@@ -14,10 +16,10 @@ const PAKISTAN_BOUNDS = [
 ];
 
 const TYPE_META = {
-  shelter: { label: "Shelters", color: "#3FBDB6" },        // teal
-  hospital: { label: "Hospitals", color: "#E8A33D" },       // marigold
+  shelter: { label: "Shelters", color: "#22c55e" },        // teal
+  hospital: { label: "Hospitals", color: "#f97316" },       // marigold
   rescue_operation: { label: "Rescue operations", color: "#8b5cf6" },  // violet
-  community_report: { label: "Community reports", color: "#F3EDE1" }, // parchment (was near-invisible black-on-black before)
+  community_report: { label: "Community reports", color: "#ffffff" }, // parchment (was near-invisible black-on-black before)
   blocked_road: { label: "Blocked roads", color: "#ef4444" },         // red
 };
 
@@ -36,11 +38,12 @@ const TYPE_LABEL_KEYS = {
 };
 
 const COLOR_HEX = {
-  teal: "#3FBDB6",
-  marigold: "#E8A33D",
+  teal: "#22c55e",
+  marigold: "#f97316",
   violet: "#8b5cf6",
   sky: "#38bdf8",
-  black: "#F3EDE1",
+  black: "#ffffff",
+  white: "#ffffff",
   red: "#ef4444",
 };
 
@@ -110,6 +113,10 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   });
   const [search, setSearch] = useState("");
   const [addingRoad, setAddingRoad] = useState(false);
+  const [addingFacility, setAddingFacility] = useState(null);
+  const [locationError, setLocationError] = useState("");
+  const locationSuccessVersion = useRef(0);
+  const locationRequest = useRef(0);
   const [loading, setLoading] = useState(true);
   const [routing, setRouting] = useState(false);
   const [routeInfo, setRouteInfo] = useState(null); // { destination, distanceKm, durationMin } | 'error'
@@ -153,7 +160,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         setLastUpdated(Date.now());
         setIsOffline(false);
         try {
-          localStorage.setItem("fdm_last_markers", JSON.stringify({ markers: res.data.markers || [], risk_zones: res.data.risk_zones || [], savedAt: Date.now() }));
+          localStorage.setItem("fdm_last_markers_v2", JSON.stringify({ markers: res.data.markers || [], risk_zones: res.data.risk_zones || [], savedAt: Date.now() }));
         } catch {}
       })
       .catch((err) => {
@@ -163,7 +170,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         // outcome. Falling back to the last successfully loaded data (even
         // if it's a bit stale) is far more useful than nothing at all.
         try {
-          const cached = JSON.parse(localStorage.getItem("fdm_last_markers") || "null");
+          const cached = JSON.parse(localStorage.getItem("fdm_last_markers_v2") || "null");
           if (cached) {
             setMarkers(cached.markers || []);
             setRiskZones(cached.risk_zones || []);
@@ -181,9 +188,26 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   };
 
   useEffect(() => {
+    let active = true;
+    let revision = null;
+    let checking = false;
     fetchMarkers();
-    const interval = setInterval(fetchMarkers, 20000); // FR04-05: reflect changes promptly
-    return () => clearInterval(interval);
+    const checkRevision = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const response = await axios.get(`${API_BASE}/map-revision`, { timeout: 5000 });
+        if (active && response.data.revision !== revision) {
+          revision = response.data.revision;
+          fetchMarkers();
+        }
+      } catch {
+        if (active) fetchMarkers();
+      } finally { checking = false; }
+    };
+    checkRevision();
+    const interval = setInterval(checkRevision, 1000);
+    return () => { active = false; clearInterval(interval); };
   }, []);
 
   useEffect(() => {
@@ -199,11 +223,25 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (pos) => {
+        locationSuccessVersion.current += 1;
+        setLocationError('');
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
       () => {},
       { timeout: 8000 }
     );
   }, []);
+
+  useEffect(() => {
+    if (!userLocation || userLocation.location) return;
+    let active = true;
+    const { lat, lng } = userLocation;
+    lookupLocation(lat, lng).then(location => {
+      if (active) setUserLocation(current => current?.lat === lat && current?.lng === lng ? { ...current, location } : current);
+    });
+    return () => { active = false; };
+  }, [userLocation]);
 
   // Initialise the map once
   useEffect(() => {
@@ -312,6 +350,24 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     return () => map.off("click", handler);
   }, [addingRoad]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !addingFacility || !canEdit) return;
+    const handler = async event => {
+      const category = addingFacility;
+      setAddingFacility(null);
+      const name = window.prompt(`${category === 'shelter' ? 'Shelter' : 'Hospital'} name:`);
+      if (!name?.trim()) return;
+      const location = await lookupLocation(event.latlng.lat, event.latlng.lng);
+      try {
+        await axios.post(`${API_BASE}/${category === 'shelter' ? 'shelters' : 'hospitals'}`, { name:name.trim(), address:location, latitude:event.latlng.lat, longitude:event.latlng.lng });
+        fetchMarkers();
+      } catch (error) { window.alert(error.response?.data?.message || 'Could not add marker.'); }
+    };
+    map.on('click', handler);
+    return () => map.off('click', handler);
+  }, [addingFacility, canEdit]);
+
   // Click two points to measure the straight-line distance between them —
   // useful for quick rescue-planning estimates without needing a full route.
   useEffect(() => {
@@ -341,39 +397,46 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     ? haversineKm(measurePoints[0][0], measurePoints[0][1], measurePoints[1][0], measurePoints[1][1])
     : null;
 
-  // Click anywhere to start a quick incident report at that exact spot —
-  // the location field is pre-filled with whichever known shelter/hospital
-  // is nearest, since community reports are keyed by city/area name rather
-  // than raw coordinates.
+  // Use the address of the clicked point and retain its exact coordinates.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const handler = (e) => {
+    const handler = async event => {
       if (!reportMode) return;
-      const known = markers.filter((m) => m.type === "shelter" || m.type === "hospital");
-      let nearestName = "";
-      if (known.length > 0) {
-        const nearest = known
-          .map((m) => ({ ...m, d: haversineKm(e.latlng.lat, e.latlng.lng, m.latitude, m.longitude) }))
-          .sort((a, b) => a.d - b.d)[0];
-        nearestName = nearest.location || nearest.name || "";
-      }
-      setReportDraft({ lat: e.latlng.lat, lng: e.latlng.lng, location: nearestName, description: "", severity: "", contact: "" });
+      const lat = event.latlng.lat, lng = event.latlng.lng;
+      const request = ++locationRequest.current;
       setReportMode(false);
+      setReportDraft({ lat, lng, location:'', locating:true, description:'', severity:'', contact:'', imageUrl:'', error:'' });
+      const location = await lookupLocation(lat, lng);
+      if (request === locationRequest.current) setReportDraft(current => current?.lat === lat && current?.lng === lng ? { ...current, location, locating:false } : current);
     };
-    map.on("click", handler);
-    return () => map.off("click", handler);
-  }, [reportMode, markers]);
+    map.on('click', handler);
+    return () => map.off('click', handler);
+  }, [reportMode]);
 
+  const chooseReportPhoto = file => {
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setReportDraft(current => ({...current,error:'Upload a JPG, PNG, WebP or GIF image up to 5 MB.'})); return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setReportDraft(current => current ? {...current,imageUrl:reader.result,error:''} : current);
+    reader.readAsDataURL(file);
+  };
   const submitQuickReport = async () => {
-    if (!reportDraft || !reportDraft.location.trim() || !reportDraft.description.trim() || !reportDraft.contact.trim() || !reportDraft.severity) return;
+    if (reportDraft && !reportDraft.imageUrl) {setReportDraft(current=>({...current,error:'Please upload an incident photo before submitting.'}));return;}
+    if (reportDraft?.location.includes('(address unavailable)')) {setReportDraft(current=>({...current,error:'Enter the incident address before submitting.'}));return;}
+    if (!reportDraft || reportDraft.locating || !reportDraft.location.trim() || !reportDraft.description.trim() || !reportDraft.contact.trim() || !reportDraft.severity) return;
     try {
       await axios.post(`${API_BASE}/community-reports`, {
         location: reportDraft.location.trim(),
+        imageUrl:reportDraft.imageUrl,
         description: reportDraft.description.trim(),
         severity: reportDraft.severity,
         contact: reportDraft.contact.trim(),
         type: "Flooding",
+        latitude: reportDraft.lat,
+        longitude: reportDraft.lng,
       });
       setReportDraft(null);
       fetchMarkers();
@@ -524,7 +587,8 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     // "You are here" marker
     if (userLocation) {
       L.marker([userLocation.lat, userLocation.lng], { icon: makeUserDivIcon(), zIndexOffset: 1000 })
-        .bindPopup(`<strong>${t("yourLocationLabel")}</strong>`, { className: "fdm-popup" })
+        .bindPopup(`<strong>${t("yourLocationLabel")}</strong><div>${escapeMapText(userLocation.location || "Finding address...")}</div><small>${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}</small>`, { className: "fdm-popup" })
+        .bindTooltip(escapeMapText(userLocation.location || t("yourLocationLabel")), { permanent:true, direction:"top", offset:[0,-12], className:"fdm-location-label" })
         .addTo(layer);
     }
 
@@ -610,6 +674,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         const details = [
           `<strong>${(lang === "ur" && m.name_ur) ? m.name_ur : (m.name || "")}</strong>`,
           verifiedBadge,
+          m.type === 'community_report' && canEdit ? `<div>${escapeMapText(m.description || '')}</div>${m.imageUrl ? `<img src="${escapeMapText(m.imageUrl)}" alt="Incident photo" style="max-width:220px;max-height:140px;margin-top:6px" />` : ''}<a href="/community?report=${m.report_id}" style="display:block;margin-top:8px;color:#3FBDB6">Review report ${escapeMapText(m.trackingId || '')}</a>` : '',
           m.location ? `<div>${m.location}</div>` : "",
           (m.type === "shelter") ? `<div style="opacity:.7">${t("capacityPrefix")}: ${
             m.capacity
@@ -695,22 +760,54 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           });
         }
 
+        if (canEdit && ['shelter','hospital','blocked_road'].includes(m.type)) {
+          marker.on('popupopen', () => {
+            const root = marker.getPopup().getElement();
+            if (root.querySelector('.fdm-marker-edit')) return;
+            const category = { shelter:'shelters', hospital:'hospitals', blocked_road:'blocked-roads' }[m.type];
+            const recordId = m.id.split('-').pop();
+            const edit = document.createElement('button');
+            edit.className = 'fdm-popup-btn fdm-marker-edit'; edit.textContent = 'Update marker';
+            edit.onclick = async () => {
+              const name = window.prompt('Name:', m.name || ''); if (name === null) return;
+              const address = window.prompt('Location / address:', m.location || ''); if (address === null) return;
+              const latText = window.prompt('Latitude:', String(m.latitude)); if (latText === null) return;
+              const lngText = window.prompt('Longitude:', String(m.longitude)); if (lngText === null) return;
+              const latitude = Number(latText), longitude = Number(lngText);
+              if (!name.trim() || !address.trim() || !latText.trim() || !lngText.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude)>90 || Math.abs(longitude)>180) { window.alert('Enter a name, address and valid coordinates.'); return; }
+              try {
+                await axios.put(`${API_BASE}/${category}/${recordId}`, { name:name.trim(), [m.type === 'blocked_road' ? 'location' : 'address']:address.trim(), latitude, longitude });
+                fetchMarkers();
+              } catch (error) { window.alert(error.response?.data?.message || 'Could not update marker.'); }
+            };
+            const remove = document.createElement('button'); remove.className='fdm-popup-btn'; remove.textContent='Remove marker';
+            remove.onclick = async () => {
+              if (!window.confirm(`Remove ${m.name}?`)) return;
+              try { await axios.delete(`${API_BASE}/${category}/${recordId}`); fetchMarkers(); }
+              catch (error) { window.alert(error.response?.data?.message || 'Could not remove marker.'); }
+            };
+            root.querySelector('.leaflet-popup-content').append(edit, document.createTextNode(' '), remove);
+          });
+        }
+
         marker.addTo(layer);
   }
 
-  const handleLocateMe = () => {
-    if (!navigator.geolocation) return;
+  const handleLocateMe = async () => {
+    const successVersion = locationSuccessVersion.current;
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setUserLocation(loc);
-        mapRef.current?.setView([loc.lat, loc.lng], 14, { animate: true });
-        setLocating(false);
-      },
-      () => setLocating(false),
-      { timeout: 8000 }
-    );
+    setLocationError('');
+    try {
+      const position = await getCurrentPosition();
+      const loc = { lat:position.coords.latitude, lng:position.coords.longitude };
+      locationSuccessVersion.current += 1;
+      setLocationError('');
+      setUserLocation(loc);
+      mapRef.current?.setView([loc.lat, loc.lng], 14, { animate:true });
+    } catch (error) {
+      if (locationSuccessVersion.current === successVersion) setLocationError(locationErrorMessage(error));
+    }
+    finally { setLocating(false); }
   };
 
   const toggleFullscreen = () => {
@@ -973,15 +1070,26 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         .fdm-sidebar-item.is-selected { background: rgba(63,189,182,0.12); border-color: rgba(63,189,182,0.4); }
         .fdm-sidebar-item.is-kb-focused { outline: 2px solid rgba(63,189,182,0.6); outline-offset: -2px; }
         .leaflet-control-scale-line { background: rgba(20,29,46,0.85) !important; color: #F3EDE1 !important; border-color: rgba(255,255,255,.3) !important; }
+        .fdm-location-label { max-width:260px; white-space:normal; }
+        .fdm-picking .leaflet-interactive,
+        .fdm-picking .leaflet-tooltip-pane,
+        .fdm-picking .leaflet-popup-pane { pointer-events:none !important; }
         @media print {
           .fdm-no-print { display: none !important; }
-          .fdm-print-only-map { height: 90vh !important; }
+          body.fdm-printing .fdm-print-path > :not(.fdm-print-path):not(.fdm-print-target) { display:none !important; }
+          body.fdm-printing .fdm-print-path { margin:0 !important; padding:0 !important; border:0 !important; width:100% !important; max-width:none !important; min-height:0 !important; }
+          body.fdm-printing .fdm-print-target { height:95vh !important; width:100% !important; }
+          body.fdm-printing .leaflet-control-zoom { display:none !important; }
+          body.fdm-printing { margin:0 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
         }
         @keyframes fdmDrop { from { opacity: 0; transform: translateY(-10px) scale(0.7); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .fdm-marker-pin { animation: fdmDrop 0.28s ease-out; }
         .fdm-locate-btn:disabled { opacity: 0.5; cursor: default; }
       `}</style>
 
+      <div className="fdm-no-print flex flex-wrap gap-x-5 gap-y-2 px-4 py-3 border-b border-white/10 bg-white/[0.02]" aria-label="Map marker colours">
+        {Object.entries(TYPE_META).map(([type, meta]) => <span key={type} className="inline-flex items-center gap-2 text-xs text-parchment"><span className="w-3 h-3 rounded-full ring-2 ring-white/10" style={{backgroundColor:meta.color}} />{t(TYPE_LABEL_KEYS[type])}</span>)}
+      </div>
       {!isFullscreen && (
         <>
           {/* Live status bar — quick counts so the numbers behind the dots are
@@ -1035,23 +1143,26 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           )}
         </div>
         {canEdit && (
+          <>
+          {['shelter','hospital'].map(category => <button key={category} onClick={() => { setAddingFacility(category); setAddingRoad(false); setReportMode(false); setMeasuring(false); }} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">{addingFacility === category ? 'Click map to place' : category === 'shelter' ? 'Add shelter' : 'Add hospital'}</button>)}
           <button
-            onClick={() => setAddingRoad((v) => !v)}
+            onClick={() => { setAddingRoad(v => !v); setAddingFacility(null); setReportMode(false); setMeasuring(false); }}
             className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${
               addingRoad ? "bg-red-500 text-white" : "btn-secondary"
             }`}
           >
             {addingRoad ? t("clickMapToPlace") : t("markBlockedRoad")}
           </button>
+          </>
         )}
         <button
-          onClick={() => { setReportMode((v) => !v); setMeasuring(false); }}
+          onClick={() => { setReportMode((v) => !v); setMeasuring(false); setAddingRoad(false); setAddingFacility(null); }}
           className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${reportMode ? "bg-marigold-500 text-ink" : "btn-secondary"}`}
         >
           {reportMode ? t("clickMapToReport") : t("reportHereBtn")}
         </button>
         <button
-          onClick={() => { setMeasuring((v) => !v); setMeasurePoints([]); setReportMode(false); }}
+          onClick={() => { setMeasuring((v) => !v); setMeasurePoints([]); setReportMode(false); setAddingRoad(false); setAddingFacility(null); }}
           className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${measuring ? "bg-teal-500 text-ink" : "btn-secondary"}`}
         >
           {measuring ? t("clickTwoPoints") : t("measureBtn")}
@@ -1094,7 +1205,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         <button onClick={toggleFullscreen} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">
           {isFullscreen ? t("exitFullscreenBtn") : t("fullscreenBtn")}
         </button>
-        <button onClick={() => window.print()} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">
+        <button onClick={() => printMapOnly(mapContainerRef.current, mapRef.current)} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">
           {t("printMapBtn")}
         </button>
         {isOffline && (
@@ -1131,12 +1242,13 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           <button onClick={() => setMeasurePoints([])} className="text-teal-300 hover:text-teal-100">✕</button>
         </div>
       )}
+      {locationError && <p className="fdm-no-print px-4 py-2 text-xs text-red-300">{locationError}</p>}
       {reportDraft && (
         <div className="fdm-no-print px-4 py-3 bg-marigold-500/10 border-b border-marigold-500/20 space-y-2">
           <p className="text-xs text-marigold-200 font-semibold">{t("quickReportTitle")}</p>
           <div className="grid sm:grid-cols-2 gap-2">
             <input value={reportDraft.location} onChange={(e) => setReportDraft((d) => ({ ...d, location: e.target.value }))}
-              placeholder={t("locationLabel")} className="field-input py-2 text-sm" />
+              placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")} disabled={reportDraft.locating} className="field-input py-2 text-sm" />
             <select value={reportDraft.severity} onChange={(e) => setReportDraft((d) => ({ ...d, severity: e.target.value }))}
               className="field-input py-2 text-sm">
               <option value="">{t("selectSeverityPh")}</option>
@@ -1149,6 +1261,9 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
             placeholder={t("descriptionLabel")} rows={2} className="field-input py-2 text-sm w-full" />
           <input value={reportDraft.contact} onChange={(e) => setReportDraft((d) => ({ ...d, contact: e.target.value }))}
             placeholder={t("contactLabel")} className="field-input py-2 text-sm w-full" />
+          <label className="block text-xs text-parchment">Incident photo <span className="text-red-400">*</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
+          {reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
+          {reportDraft.error && <p role="alert" className="text-xs text-red-300">{reportDraft.error}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={() => setReportDraft(null)} className="text-xs px-3 py-2 rounded-full btn-secondary">{t("cancel")}</button>
             <button onClick={submitQuickReport} className="text-xs px-3 py-2 rounded-full bg-marigold-500 text-ink font-semibold">{t("submitReportBtn")}</button>
@@ -1168,7 +1283,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       )}
 
       <div className="flex flex-col lg:flex-row">
-        <div className="relative flex-1 lg:flex-[1.7]">
+        <div className={`relative flex-1 lg:flex-[1.7]${reportMode || addingRoad || addingFacility || measuring ? ' fdm-picking' : ''}`}>
           <div ref={mapContainerRef} className="fdm-print-only-map" style={{ height: isFullscreen ? "calc(100vh - 64px)" : height, width: "100%", background: "#101826" }} />
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-ink/70 backdrop-blur-sm">

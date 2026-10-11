@@ -9,8 +9,19 @@ import { API_BASE } from "./config";
 axios.interceptors.request.use((config) => {
   if (config.url && config.url.startsWith(`${API_BASE}`)) {
     config.url = config.url.replace(`${API_BASE}`, API_BASE);
+    const notificationToken = localStorage.getItem('notificationToken');
+    if (notificationToken) config.headers.set('Authorization', `Bearer ${notificationToken}`);
+    const actorName = localStorage.getItem('userName');
+    const actorRole = localStorage.getItem('userRole');
+    if (actorName) config.headers.set('X-FMS-Actor-Name', actorName);
+    if (actorRole) config.headers.set('X-FMS-Actor-Role', actorRole);
   }
   return config;
+});
+
+axios.interceptors.response.use((response) => {
+  if (response.data?.notification_token) localStorage.setItem('notificationToken', response.data.notification_token);
+  return response;
 });
 
 createRoot(document.getElementById('root')).render(

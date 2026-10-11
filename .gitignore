@@ -16,3 +16,8 @@ venv/
 
 # Logs
 *.log
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3

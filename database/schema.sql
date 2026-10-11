@@ -21,6 +21,7 @@ CREATE TABLE predictions (
   risk VARCHAR(10),
   confidence FLOAT,
   explanation TEXT,
+  shap_contributions NVARCHAR(MAX),
   user_email VARCHAR(100),
   created_at DATETIME DEFAULT GETDATE()
 );
@@ -30,7 +31,7 @@ CREATE TABLE alerts (
   message TEXT,
   risk_level VARCHAR(10),
   location VARCHAR(100),
-  status VARCHAR(20),
+  status VARCHAR(20) DEFAULT 'Active',
   assigned_worker VARCHAR(100),
   linked_rescue_op_id INT,
   created_at DATETIME DEFAULT GETDATE()
@@ -85,6 +86,8 @@ CREATE TABLE community_reports (
   author_email VARCHAR(100),
   description TEXT,
   contact VARCHAR(50),
+  latitude FLOAT NULL,
+  longitude FLOAT NULL,
   image_url TEXT,
   notes TEXT,
   linked_rescue_op_id INT NULL,  -- set when status moves to 'Action Taken' (FR06-04 <-> FR-05 link)

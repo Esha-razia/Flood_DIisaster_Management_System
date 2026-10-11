@@ -38,15 +38,45 @@ def handle_options_preflight():
         response = app.make_default_options_response()
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role"
         return response, 200
 
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role"
+    if response.status_code < 400 and request.method in ("POST", "PUT", "DELETE"):
+        record_api_activity(response)
     return response
+
+def record_api_activity(response):
+    if request.path in ("/login", "/register", "/admin/login", "/forgot-password", "/reset-password", "/predict"):
+        return
+
+    try:
+        payload = response.get_json(silent=True) or {}
+        actor_role = request.headers.get("X-FMS-Actor-Role", "User").replace("_", " ").strip().title()
+        actor_name = request.headers.get("X-FMS-Actor-Name", "").strip()
+        method_action = {"POST": "created", "PUT": "updated", "DELETE": "removed"}.get(request.method, "changed")
+        resource = request.path.strip("/").split("/")[0].replace("-", " ")
+        detail = next(
+            (str(payload[field]).strip() for field in ("title", "name", "location", "status")
+             if payload.get(field) not in (None, "")),
+            "",
+        )
+        activity = {
+            "id": uuid.uuid4().hex,
+            "actor": actor_name or actor_role,
+            "actor_role": actor_role,
+            "action": method_action,
+            "resource": resource,
+            "detail": detail,
+            "created_at": datetime.now().isoformat(),
+        }
+        log_event("activity", json.dumps(activity, ensure_ascii=False))
+    except Exception as error:
+        print(f"[ACTIVITY] Could not record API activity: {error}")
 
 @app.route("/", methods=["GET"])
 @app.route("/health", methods=["GET"])
@@ -197,6 +227,7 @@ def initialize_sqlite_db(cursor, conn):
       risk TEXT,
       confidence REAL,
       explanation TEXT,
+    shap_contributions TEXT,
       user_id INTEGER,
       user_email TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -208,7 +239,7 @@ def initialize_sqlite_db(cursor, conn):
       message TEXT,
       risk_level TEXT,
       location TEXT,
-      status TEXT,
+    status TEXT DEFAULT 'Active',
       assigned_worker TEXT,
       linked_rescue_op_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -254,6 +285,8 @@ def initialize_sqlite_db(cursor, conn):
       author_email TEXT,
       description TEXT,
       contact TEXT,
+    latitude REAL,
+    longitude REAL,
       image_url TEXT,
       notes TEXT,
       linked_rescue_op_id INTEGER NULL,
@@ -362,7 +395,7 @@ def initialize_sqlite_db(cursor, conn):
     # which is exactly what caused assignments to appear to "not save."
     expected_columns = {
         "users": ["status", "is_verified", "otp", "on_duty"],
-        "predictions": ["user_id", "user_email"],
+        "predictions": ["user_id", "user_email", "shap_contributions"],
         "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
         "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log", "checklist"],
         "equipment_items": ["city"],
@@ -372,13 +405,22 @@ def initialize_sqlite_db(cursor, conn):
     for table, columns in expected_columns.items():
         try:
             cursor.execute(f"PRAGMA table_info({table})")
-            existing = {getattr(row, "name", None) for row in cursor.fetchall()}
+            existing = set()
+            for row in cursor.fetchall():
+                column_name = getattr(row, "name", None)
+                if column_name is None:
+                    try:
+                        column_name = row[1]
+                    except (IndexError, TypeError):
+                        continue
+                existing.add(column_name)
             for col in columns:
                 if col not in existing:
                     cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
 
+    cursor.execute("UPDATE alerts SET status = 'Active' WHERE status IS NULL OR TRIM(status) = ''")
     conn.commit()
 
 def initialize_postgresql_db(cursor, conn):
@@ -407,6 +449,7 @@ def initialize_postgresql_db(cursor, conn):
       risk TEXT,
       confidence REAL,
       explanation TEXT,
+    shap_contributions TEXT,
       user_id INTEGER,
       user_email TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -418,7 +461,7 @@ def initialize_postgresql_db(cursor, conn):
       message TEXT,
       risk_level TEXT,
       location TEXT,
-      status TEXT,
+    status TEXT DEFAULT 'Active',
       assigned_worker TEXT,
       linked_rescue_op_id INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -543,6 +586,8 @@ def initialize_postgresql_db(cursor, conn):
       author_email TEXT,
       description TEXT,
       contact TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
       image_url TEXT,
       notes TEXT,
       linked_rescue_op_id INTEGER NULL,
@@ -603,14 +648,16 @@ def initialize_postgresql_db(cursor, conn):
     # update endpoint then misreported as "operation not found" (404),
     # even though the operation existed the whole time.
     integer_columns_pg = {"people_rescued", "needs_backup", "verified", "occupancy"}
+    real_columns_pg = {"latitude", "longitude"}
     expected_columns_pg = {
         "users": ["status", "is_verified", "otp", "on_duty"],
-        "predictions": ["user_id", "user_email"],
+        "predictions": ["user_id", "user_email", "shap_contributions"],
         "alerts": ["location", "status", "assigned_worker", "linked_rescue_op_id"],
         "rescue_operations": ["description", "people_rescued", "resources_used", "completion_notes", "needs_backup", "update_log", "checklist"],
         "equipment_items": ["city"],
         "shelters": ["verified", "occupancy"],
         "hospitals": ["verified"],
+        "community_reports": ["latitude", "longitude"],
     }
     for table, columns in expected_columns_pg.items():
         try:
@@ -622,7 +669,7 @@ def initialize_postgresql_db(cursor, conn):
             for row in cursor.fetchall():
                 existing[getattr(row, "column_name", None)] = getattr(row, "data_type", None)
             for col in columns:
-                col_type = "INTEGER" if col in integer_columns_pg else "TEXT"
+                col_type = "INTEGER" if col in integer_columns_pg else "DOUBLE PRECISION" if col in real_columns_pg else "TEXT"
                 if col not in existing:
                     cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}")
                 elif col in integer_columns_pg and existing[col] not in ("integer", "bigint", "smallint"):
@@ -635,6 +682,8 @@ def initialize_postgresql_db(cursor, conn):
                         pass
         except Exception as e:
             print(f"[MIGRATION] Could not check/update '{table}': {e}")
+
+    cursor.execute("UPDATE alerts SET status = 'Active' WHERE status IS NULL OR BTRIM(status) = ''")
 
     # Seed default admin account in PostgreSQL so admin login works immediately
     try:
@@ -655,6 +704,24 @@ def initialize_postgresql_db(cursor, conn):
         print(f"[SEED] Could not seed default users: {seed_err}")
 
     conn.commit()
+
+def _purge_stale_community_report_tracking_ids():
+    """Remove stale blank tracking IDs left behind by earlier failed report inserts.
+    Those blank values violate the UNIQUE tracking_id constraint and block fresh
+    submissions even when the user has entered valid data.
+    """
+    if not DB_AVAILABLE or not conn or not cursor:
+        return
+    try:
+        cursor.execute("DELETE FROM community_reports WHERE tracking_id IS NULL OR tracking_id = ''")
+        conn.commit()
+    except Exception as exc:
+        log_event("error", f"Failed to purge stale community report tracking IDs: {exc}")
+    try:
+        cursor.execute("DELETE FROM community_reports WHERE LENGTH(TRIM(COALESCE(tracking_id, ''))) = 0")
+        conn.commit()
+    except Exception as exc:
+        log_event("error", f"Failed to trim blank community report tracking IDs: {exc}")
 
 DB_AVAILABLE = False
 conn = None
@@ -727,7 +794,7 @@ if not DB_AVAILABLE and pyodbc is not None:
             os.makedirs(app_data_dir, exist_ok=True)
             db_path = os.path.join(app_data_dir, "database.db")
             raw_conn = sqlite3.connect(db_path, check_same_thread=False)
-            raw_conn.row_factory = SQLiteRowObject
+            raw_conn.row_factory = lambda raw_cursor, row: SQLiteRowObject(raw_cursor.description, row)
             conn = CompatibleConnection(raw_conn, "sqlite")
             cursor = conn.cursor()
             DB_AVAILABLE = True
@@ -755,6 +822,11 @@ if DB_AVAILABLE:
             user_cols = [row[1] for row in cursor.execute("PRAGMA table_info(users)").fetchall()]
             if "status" not in user_cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'Active'")
+            report_cols = {getattr(row, "name", None) for row in cursor.execute("PRAGMA table_info(community_reports)").fetchall()}
+            if "latitude" not in report_cols:
+                cursor.execute("ALTER TABLE community_reports ADD COLUMN latitude REAL")
+            if "longitude" not in report_cols:
+                cursor.execute("ALTER TABLE community_reports ADD COLUMN longitude REAL")
             conn.commit()
         elif DB_TYPE in ("postgresql", "sql_server"):
             for col, coltype, default in [("occupancy", "INTEGER", "0"), ("capacity", "INTEGER", "50"), ("verified", "INTEGER", "0")]:
@@ -769,6 +841,34 @@ if DB_AVAILABLE:
                     conn.commit()
                 except Exception:
                     pass
+            if DB_TYPE == "sql_server":
+                try:
+                    cursor.execute("IF COL_LENGTH('predictions', 'shap_contributions') IS NULL ALTER TABLE predictions ADD shap_contributions NVARCHAR(MAX)")
+                    cursor.execute("IF COL_LENGTH('community_reports', 'latitude') IS NULL ALTER TABLE community_reports ADD latitude FLOAT")
+                    cursor.execute("IF COL_LENGTH('community_reports', 'longitude') IS NULL ALTER TABLE community_reports ADD longitude FLOAT")
+                    cursor.execute("IF COL_LENGTH('shelters', 'verified') IS NULL ALTER TABLE shelters ADD verified INT DEFAULT 0")
+                    cursor.execute("IF COL_LENGTH('shelters', 'occupancy') IS NULL ALTER TABLE shelters ADD occupancy INT DEFAULT 0")
+                    cursor.execute("IF COL_LENGTH('hospitals', 'verified') IS NULL ALTER TABLE hospitals ADD verified INT DEFAULT 0")
+                    cursor.execute("IF COL_LENGTH('hospitals', 'occupancy') IS NULL ALTER TABLE hospitals ADD occupancy INT DEFAULT 0")
+                    cursor.execute("IF COL_LENGTH('hospitals', 'capacity') IS NULL ALTER TABLE hospitals ADD capacity INT DEFAULT 50")
+                    cursor.execute("UPDATE alerts SET status = 'Active' WHERE status IS NULL OR LTRIM(RTRIM(status)) = ''")
+                    # Seed fixed Government Official account if not already present
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(CAST(email AS VARCHAR(MAX))) = 'govofficial@gmail.com'")
+                    if cursor.fetchone()[0] == 0:
+                        cursor.execute(
+                            "INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)",
+                            ("Government Official", "govofficial@gmail.com", "gov123", "government_official", "Active")
+                        )
+                    # Seed admin account if not already present
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(CAST(email AS VARCHAR(MAX))) = 'admin@example.com'")
+                    if cursor.fetchone()[0] == 0:
+                        cursor.execute(
+                            "INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)",
+                            ("Admin User", "admin@example.com", "admin123", "admin", "Active")
+                        )
+                    conn.commit()
+                except Exception as migration_error:
+                    print(f"[MIGRATION] SQL Server migration failed: {migration_error}")
         print("[MIGRATION] users & hospitals table columns verified/added")
     except Exception as mig_err:
         print(f"[MIGRATION] migration error (non-fatal): {mig_err}")
@@ -861,6 +961,17 @@ MEMORY_USERS.append({
     "created_at": str(datetime.now())
 })
 
+# Fixed Government Official account — only one, pre-seeded, cannot be registered by anyone
+MEMORY_USERS.append({
+    "id": 2,
+    "name": "Government Official",
+    "email": "govofficial@gmail.com",
+    "password": "gov123",
+    "role": "government_official",
+    "status": "Active",
+    "created_at": str(datetime.now())
+})
+
 
 def safe_float(value, default=0.0):
     try:
@@ -878,6 +989,11 @@ def register():
     password = data.get("password", "")
     name = (data.get("name") or "").strip()
     role = data.get("role", "citizen")
+
+    # Privileged roles cannot be self-registered — they are pre-seeded accounts only.
+    # This prevents anyone from creating an admin or government_official via the public API.
+    if role in ("admin", "government_official"):
+        return jsonify({"message": "Registration is not allowed for this role. Contact the system administrator."}), 403
 
     # The database (when available) is the authoritative source of truth for
     # "does this email already exist" -- MEMORY_USERS resets on every server
@@ -1280,6 +1396,15 @@ def reset_password():
     return jsonify({"message": "Password reset successfully. You can now log in with your new password."})
 
 # ---------------- PREDICT ----------------
+def _selected_class_confidence(estimator, features, predicted_class):
+    if not hasattr(estimator, "predict_proba") or not hasattr(estimator, "classes_"):
+        return None
+    class_indexes = np.flatnonzero(np.asarray(estimator.classes_) == predicted_class)
+    if not len(class_indexes):
+        return None
+    return float(estimator.predict_proba(features)[0][class_indexes[0]])
+
+
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json or {}
@@ -1349,11 +1474,8 @@ def predict():
         risk = RISK_MAP.get(prediction, "Unknown")
 
         # Get prediction probabilities for confidence
-        if hasattr(model, 'predict_proba'):
-            probabilities = model.predict_proba(scaled_features)[0]
-            confidence = float(probabilities[prediction])
-        else:
-            confidence = 0.75 if risk == "Low" else 0.82 if risk == "Medium" else 0.90
+        confidence = _selected_class_confidence(model, scaled_features, prediction)
+        confidence_text = f"{confidence * 100:.1f}%" if confidence is not None else "unavailable"
 
         # ---- Real SHAP explanation (FR-11) ----
         shap_contributions = []
@@ -1393,22 +1515,6 @@ def predict():
             except Exception as shap_error:
                 print(f"SHAP explanation failed: {shap_error}")
 
-        if not shap_contributions:
-            # Smart fallback calculation based on feature inputs
-            r_val = float(feature_dict.get("rain_intensity", 0))
-            s_top = float(feature_dict.get("soil_moisture_top", 0.3))
-            s_avg = float(feature_dict.get("soil_7day_avg", 0.3))
-            is_mon = float(feature_dict.get("is_monsoon", 0))
-            temp_v = float(feature_dict.get("temperature", 25))
-            
-            shap_contributions = [
-                {"feature": "rain_intensity", "impact": round(r_val * 0.18 + 0.05, 4), "value": round(r_val, 2)},
-                {"feature": "soil_moisture_top", "impact": round((s_top - 0.2) * 0.4, 4), "value": round(s_top, 2)},
-                {"feature": "soil_7day_avg", "impact": round((s_avg - 0.2) * 0.3, 4), "value": round(s_avg, 2)},
-                {"feature": "is_monsoon", "impact": round(is_mon * 0.15, 4), "value": round(is_mon, 2)},
-                {"feature": "temperature", "impact": round(- (temp_v - 25) * 0.01, 4), "value": round(temp_v, 2)},
-            ]
-
         def humanize_feature(name):
             return {
                 "rain_intensity": "rainfall intensity",
@@ -1442,7 +1548,7 @@ Input Parameters:
 • Temperature: {temperature:.1f} °C
 
 ML Model Prediction: {risk} flood risk
-Model Confidence: {(confidence * 100):.1f}%
+Model Confidence: {confidence_text}
 Model used: {ACTIVE_MODEL_NAME}
 
 Top contributing factors (SHAP):
@@ -1457,7 +1563,12 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
             "rainfall": rainfall,
             "river_level": river_level,
             "temperature": temperature,
+            "humidity": feature_dict["humidity"],
+            "wind_speed": feature_dict["wind_speed"],
+            "soil_moisture_top": feature_dict["soil_moisture_top"],
+            "soil_7day_avg": feature_dict["soil_7day_avg"],
             "city": resolved_city,
+            "model_features": feature_dict,
         }
         user_email = (data.get("user_email") or "").strip().lower()
 
@@ -1471,6 +1582,7 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
             "confidence": confidence,
             "explanation": explanation,
             "shap_contributions": shap_contributions,
+            "model_features": feature_dict,
             "model_used": ACTIVE_MODEL_NAME,
             "user_email": user_email,
             "created_at": str(datetime.now())
@@ -1478,10 +1590,10 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
 
         if DB_AVAILABLE:
             try:
-                cursor.execute("""
+                prediction_record["id"] = _db_insert_get_id("""
                     INSERT INTO predictions
-                    (location, rainfall, river_level, temperature, input_data, risk, confidence, explanation, user_email)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (location, rainfall, river_level, temperature, input_data, risk, confidence, explanation, shap_contributions, user_email)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data.get("location"),
                     rainfall,
@@ -1491,6 +1603,7 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
                     risk,
                     confidence,
                     explanation,
+                    json.dumps(shap_contributions),
                     user_email
                 ))
                 conn.commit()
@@ -1498,6 +1611,7 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
                 log_event("error", f"Failed to save prediction to database: {db_error}")
         else:
             # Save to memory when database is not available
+            prediction_record["id"] = len(MEMORY_PREDICTIONS) + 1
             MEMORY_PREDICTIONS.append(prediction_record)
             # Keep only last 100 predictions in memory
             if len(MEMORY_PREDICTIONS) > 100:
@@ -1512,35 +1626,13 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
                 alert_message += "Stay alert and monitor conditions. "
             alert_message += f"Rainfall: {rainfall}mm, River Level: {river_level}m"
             
-            alert_record = {
-                "id": len(MEMORY_ALERTS) + 1,
-                "message": alert_message,
-                "risk_level": risk,
-                "risk": risk,
-                "location": location,
-                "status": "Active",
-                "assigned_worker": None,
-                "linked_rescue_op_id": None,
-                "created_at": str(datetime.now())
-            }
-            
-            MEMORY_ALERTS.append(alert_record)
-            
-            if DB_AVAILABLE:
-                try:
-                    cursor.execute("""
-                        INSERT INTO alerts (message, risk_level, location)
-                        VALUES (?, ?, ?)
-                    """, (alert_message, risk, location))
-                    conn.commit()
-                except Exception as db_error:
-                    print(f"Failed to save alert to database: {db_error}")
+            create_notification(alert_message, risk, location, source="automatic")
 
         model_comparison = None
         if COMPARISON_MODEL is not None:
             try:
                 cmp_pred = int(COMPARISON_MODEL.predict(scaled_features)[0])
-                cmp_conf = float(COMPARISON_MODEL.predict_proba(scaled_features)[0][cmp_pred]) if hasattr(COMPARISON_MODEL, "predict_proba") else None
+                cmp_conf = _selected_class_confidence(COMPARISON_MODEL, scaled_features, cmp_pred)
                 model_comparison = {
                     "primary": {"model": ACTIVE_MODEL_NAME, "risk": risk, "confidence": confidence},
                     "secondary": {"model": COMPARISON_MODEL_NAME, "risk": RISK_MAP.get(cmp_pred, "Unknown"), "confidence": cmp_conf},
@@ -1565,7 +1657,7 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
         log_event("error", f"Prediction failed: {e}")
         return jsonify({
             "risk": "Unknown",
-            "confidence": 0.70,
+            "confidence": None,
             "explanation": f"Prediction failed: {str(e)}. Please check inputs."
         }), 500
 
@@ -1578,7 +1670,7 @@ def get_predictions():
 
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT * FROM predictions ORDER BY created_at DESC")
+            cursor.execute("SELECT * FROM predictions ORDER BY created_at DESC, id DESC")
             rows = cursor.fetchall()
 
             for row in rows:
@@ -1588,7 +1680,13 @@ def get_predictions():
                 except Exception:
                     input_data = None
 
+                try:
+                    shap_contributions = json.loads(getattr(row, "shap_contributions", None) or "[]")
+                except (TypeError, ValueError):
+                    shap_contributions = []
+
                 record = {
+                    "id": getattr(row, "id", None),
                     "location": getattr(row, "location", None),
                     "rainfall": getattr(row, "rainfall", None),
                     "river_level": getattr(row, "river_level", None),
@@ -1597,6 +1695,8 @@ def get_predictions():
                     "risk": getattr(row, "risk", None),
                     "confidence": getattr(row, "confidence", None),
                     "explanation": getattr(row, "explanation", None),
+                    "shap_contributions": shap_contributions,
+                    "model_features": input_data.get("model_features") if input_data else None,
                     "user_email": getattr(row, "user_email", None),
                     "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) is not None else None
                 }
@@ -1623,137 +1723,39 @@ def get_predictions():
 
     return jsonify(data)
 
-# ---------------- ALERTS ----------------
-@app.route("/alerts", methods=["GET"])
-def get_alerts():
-    location_filter = (request.args.get("location") or "").strip().lower()
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("SELECT id, message, risk_level, location, status, assigned_worker, linked_rescue_op_id, created_at FROM alerts ORDER BY created_at DESC")
-            rows = cursor.fetchall()
-            data = []
-            seen_ids = set()
-            for row in rows:
-                record = {
-                    "id": getattr(row, "id", None),
-                    "message": getattr(row, "message", None),
-                    "risk_level": getattr(row, "risk_level", None),
-                    "risk": getattr(row, "risk_level", None),
-                    "location": getattr(row, "location", None),
-                    "status": getattr(row, "status", None),
-                    "assigned_worker": getattr(row, "assigned_worker", None),
-                    "linked_rescue_op_id": getattr(row, "linked_rescue_op_id", None),
-                    "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) is not None else None
-                }
-                data.append(record)
-                seen_ids.add(record["id"])
-            # Append in-memory alerts if not duplicated
-            for alert in MEMORY_ALERTS[::-1]:
-                if alert["id"] not in seen_ids:
-                    data.append(alert)
-            if location_filter:
-                # Used by the Citizen Dashboard's "alerts in your area" —
-                # everywhere else (Admin/Rescue/Navbar) calls this with no
-                # filter and still gets every alert, unchanged.
-                data = [a for a in data if location_filter in (a.get("location") or "").strip().lower()]
-            return jsonify(data)
-        except Exception as e:
-            log_event("error", f"Failed to fetch alerts: {e}")
-            fallback = MEMORY_ALERTS[::-1]
-            if location_filter:
-                fallback = [a for a in fallback if location_filter in (a.get("location") or "").strip().lower()]
-            return jsonify(fallback)
-    else:
-        # Return in-memory alerts
-        fallback = MEMORY_ALERTS[::-1]  # Reverse to show newest first
-        if location_filter:
-            fallback = [a for a in fallback if location_filter in (a.get("location") or "").strip().lower()]
-        return jsonify(fallback)
+# ---------------- ALERTS (FR-03) ----------------
+from notifications import register as register_notifications, create as create_notification
+register_notifications(app)
+from map_support import register as register_map_support
+register_map_support(app)
 
-@app.route("/alerts", methods=["POST"])
-def create_alert():
-    data = request.json
-    
-    alert_record = {
-        "id": len(MEMORY_ALERTS) + 1,
-        "message": data["message"],
-        "risk_level": data.get("risk_level", "Medium"),
-        "risk": data.get("risk", data.get("risk_level", "Medium")),
-        "location": data.get("location", "Unknown"),
-        "status": "Active",
-        "assigned_worker": None,
-        "linked_rescue_op_id": None,
-        "created_at": str(datetime.now())
-    }
-    
-    MEMORY_ALERTS.append(alert_record)
-    
-    if DB_AVAILABLE:
+# Preserve report coordinates when dispatching an operation, including after restart.
+if DB_AVAILABLE:
+    for table, column, datatype in [('rescue_operations','latitude','FLOAT'), ('rescue_operations','longitude','FLOAT'), ('community_reports','linked_rescue_op_id','INTEGER')]:
         try:
-            cursor.execute("""
-                INSERT INTO alerts (message, risk_level, location)
-                VALUES (?, ?, ?)
-            """, (data["message"], data.get("risk_level", "Medium"), data.get("location", "Unknown")))
+            if DB_TYPE == 'sqlite':
+                names = {row.name for row in cursor.execute(f'PRAGMA table_info({table})').fetchall()}
+                if column not in names: cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {datatype}')
+            elif DB_TYPE == 'postgresql':
+                cursor.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {datatype}')
+            else:
+                cursor.execute(f"IF COL_LENGTH('{table}', '{column}') IS NULL ALTER TABLE {table} ADD {column} {datatype}")
             conn.commit()
-        except Exception as db_error:
-            print(f"Failed to save alert to database: {db_error}")
-    
-    return jsonify(alert_record)
-
-@app.route("/alerts/<int:alert_id>", methods=["DELETE"])
-def delete_alert(alert_id):
-    # Remove from memory
-    MEMORY_ALERTS[:] = [a for a in MEMORY_ALERTS if a["id"] != alert_id]
-    
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
-            conn.commit()
-        except Exception as db_error:
-            print(f"Failed to delete alert from database: {db_error}")
-    
-    return jsonify({"message": "Alert deleted successfully"})
-
-@app.route("/alerts/<int:alert_id>", methods=["PUT"])
-def update_alert(alert_id):
-    """FR03-04: allow admins to cancel or update an active alert."""
-    data = request.json or {}
-    updated = None
-    for a in MEMORY_ALERTS:
-        if a["id"] == alert_id:
-            if "message" in data:
-                a["message"] = data["message"]
-            if "risk_level" in data:
-                a["risk_level"] = data["risk_level"]
-                a["risk"] = data["risk_level"]
-            if "location" in data:
-                a["location"] = data["location"]
-            if "status" in data:
-                a["status"] = data["status"]  # e.g. "Cancelled"
-            if "assigned_worker" in data:
-                a["assigned_worker"] = data["assigned_worker"]
-                log_event("info", f"Alert #{alert_id} ({a.get('location')}) escalated — rescue worker '{data['assigned_worker']}' assigned")
-            if "linked_rescue_op_id" in data:
-                a["linked_rescue_op_id"] = data["linked_rescue_op_id"]
-            updated = a
-            break
-
-    if DB_AVAILABLE:
-        try:
-            cursor.execute(
-                "UPDATE alerts SET message = COALESCE(?, message), risk_level = COALESCE(?, risk_level), "
-                "location = COALESCE(?, location), status = COALESCE(?, status), "
-                "assigned_worker = COALESCE(?, assigned_worker), linked_rescue_op_id = COALESCE(?, linked_rescue_op_id) WHERE id = ?",
-                (data.get("message"), data.get("risk_level"), data.get("location"), data.get("status"),
-                 data.get("assigned_worker"), data.get("linked_rescue_op_id"), alert_id)
-            )
-            conn.commit()
-        except Exception as db_error:
-            log_event("error", f"Failed to update alert in database: {db_error}")
-
-    if not updated and not DB_AVAILABLE:
-        return jsonify({"message": "Alert not found"}), 404
-    return jsonify(updated or {"id": alert_id, **data})
+        except Exception as error:
+            if hasattr(conn, 'rollback'): conn.rollback()
+            print(f'[MAP MIGRATION] {error}')
+    # One-time removal of the legacy Sialkot alert-response record requested by the user.
+    # Other operations and user-added roads/risk overlays are preserved.
+    try:
+        cursor.execute('CREATE TABLE IF NOT EXISTS fms_map_migrations (name VARCHAR(100) PRIMARY KEY)') if DB_TYPE != 'sql_server' else cursor.execute("IF OBJECT_ID('fms_map_migrations') IS NULL CREATE TABLE fms_map_migrations (name VARCHAR(100) PRIMARY KEY)")
+        cursor.execute('SELECT name FROM fms_map_migrations WHERE name = ?', ('remove_legacy_sialkot_response',))
+        if not cursor.fetchone():
+            cursor.execute("DELETE FROM rescue_operations WHERE location = ? AND description LIKE ?", ('Sialkot','Response to alert:%'))
+            cursor.execute('INSERT INTO fms_map_migrations (name) VALUES (?)', ('remove_legacy_sialkot_response',))
+        conn.commit()
+    except Exception as error:
+        if hasattr(conn, 'rollback'): conn.rollback()
+        print(f'[MAP CLEANUP] {error}')
 
 # ---------------- RESCUE OPERATIONS (FR-05) ----------------
 MEMORY_RESCUE_OPS = []
@@ -1780,6 +1782,7 @@ def _get_all_rescue_operations():
                     "id": row_id,
                     "location": getattr(row, "location", None),
                     "description": getattr(row, "description", None),
+                    "latitude": getattr(row, "latitude", None), "longitude": getattr(row, "longitude", None),
                     "risk_level": getattr(row, "risk_level", None),
                     "assigned_team": getattr(row, "assigned_team", None),
                     "status": getattr(row, "status", None),
@@ -1824,6 +1827,36 @@ def _db_insert_get_id(insert_query_with_qmarks, params):
         if not row:
             raise RuntimeError("INSERT ... RETURNING id returned no row")
         return row.id if hasattr(row, "id") else row[0]
+    elif db_type == "sql_server":
+        # Inject OUTPUT INSERTED.id into the INSERT statement for reliable ID retrieval.
+        # SCOPE_IDENTITY() can return NULL when pyodbc sends implicit queries between
+        # the INSERT and the SELECT. OUTPUT INSERTED.id is atomic and always correct.
+        import re as _re
+        output_query = _re.sub(
+            r'(?i)(INSERT\s+INTO\s+\S+\s*\([^)]+\))\s*(VALUES)',
+            r'\1 OUTPUT INSERTED.id \2',
+            insert_query_with_qmarks,
+            count=1
+        )
+        try:
+            cursor.execute(output_query, params)
+            row = cursor.fetchone()
+            conn.commit()
+            if row and row[0] is not None:
+                return int(row[0])
+        except Exception:
+            conn.commit()
+        # Fallback: plain INSERT then SCOPE_IDENTITY()
+        try:
+            cursor.execute(insert_query_with_qmarks, params)
+            cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT)")
+            row = cursor.fetchone()
+            conn.commit()
+            if row and row[0] is not None:
+                return int(row[0])
+        except Exception:
+            conn.commit()
+        return None
     else:
         cursor.execute(insert_query_with_qmarks, params)
         conn.commit()
@@ -1841,12 +1874,13 @@ DEFAULT_OP_CHECKLIST = [
     {"label": "Reached shelter", "done": False},
 ]
 
-def _create_rescue_op_internal(location, description="", risk_level="Medium", assigned_team="Unassigned"):
+def _create_rescue_op_internal(location, description="", risk_level="Medium", assigned_team="Unassigned", latitude=None, longitude=None):
     """Shared by the manual '+ New Operation' form and the automatic
     community-report -> rescue-operation link (see update_community_report_status)."""
     op = {
         "id": (max([o["id"] for o in MEMORY_RESCUE_OPS], default=0) + 1),
         "location": location,
+        "latitude": latitude, "longitude": longitude,
         "description": description,
         "risk_level": risk_level,
         "assigned_team": assigned_team or "Unassigned",
@@ -1867,14 +1901,8 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"])
             )
-            cursor.execute("UPDATE rescue_operations SET checklist = ? WHERE id = ?", (json.dumps(op["checklist"]), op["id"]))
-            try:
-                cursor.execute(
-                    "INSERT INTO alerts (message, risk_level, location) VALUES (?, ?, ?)",
-                    (f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}", op["risk_level"], op["location"])
-                )
-            except Exception:
-                pass
+            cursor.execute("UPDATE rescue_operations SET checklist = ?, latitude = ?, longitude = ? WHERE id = ?", (json.dumps(op["checklist"]), latitude, longitude, op["id"]))
+            create_notification(f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}", op["risk_level"], op["location"], source="dispatch")
             conn.commit()
         except Exception as db_error:
             # If we couldn't confirm the real database id, don't silently
@@ -1899,6 +1927,7 @@ def create_rescue_operation():
         op = _create_rescue_op_internal(
             location=location, description=data.get("description", ""),
             risk_level=data.get("risk_level", "High"), assigned_team=data.get("assigned_team", "Unassigned"),
+            latitude=data.get("latitude"), longitude=data.get("longitude"),
         )
     except Exception:
         return jsonify({"message": "Could not save the operation to the database — please try again."}), 503
@@ -1975,8 +2004,8 @@ def update_rescue_operation_status(op_id):
             log_event("error", f"Failed to update rescue operation in database: {db_error}")
 
     # Sync status back to linked community reports
-    target_report_status = "Completed" if new_status == "Completed" else ("Action Taken" if new_status == "In Progress" else "Reviewed")
-    if DB_AVAILABLE:
+    target_report_status = "Resolved" if new_status == "Completed" else ("Action Taken" if new_status == "In Progress" else "Under Review")
+    if DB_AVAILABLE and new_status:
         try:
             cursor.execute("UPDATE community_reports SET status = ? WHERE linked_rescue_op_id = ?", (target_report_status, op_id))
             conn.commit()
@@ -1984,7 +2013,7 @@ def update_rescue_operation_status(op_id):
             print("REPORT STATUS SYNC ERROR:", sync_err)
 
     for r in MEMORY_COMMUNITY_REPORTS:
-        if r.get("linked_rescue_op_id") == op_id:
+        if new_status and r.get("linked_rescue_op_id") == op_id:
             r["status"] = target_report_status
 
     if result is None:
@@ -2153,28 +2182,33 @@ def create_shelter():
         return jsonify({"message": "A shelter with this name and address already exists"}), 400
 
     shelter = {
-        "id": (max([s["id"] for s in MEMORY_SHELTERS], default=0) + 1),
+        "id": None,
         "name": name, "name_ur": data.get("name_ur") or None, "address": address,
         "capacity": data.get("capacity"), "contact": data.get("contact", ""),
         "latitude": safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None,
         "longitude": safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None,
         "verified": False, "occupancy": 0,
     }
-    MEMORY_SHELTERS.append(shelter)
-
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE LOWER(name)=? AND LOWER(address)=?", (name.lower(), address.lower()))
-            if cursor.fetchone().c == 0:
-                cursor.execute(
+            cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            row_count = cursor.fetchone()
+            count_val = getattr(row_count, 'c', 0) if row_count else 0
+            if count_val == 0:
+                new_id = _db_insert_get_id(
                     "INSERT INTO shelters (name, address, capacity, contact, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
                     (name, address, shelter["capacity"], shelter["contact"], shelter["latitude"], shelter["longitude"], 0, 0)
                 )
-                conn.commit()
+                shelter["id"] = new_id
             else:
                 return jsonify({"message": "A shelter with this name and address already exists"}), 400
         except Exception as e:
-            print("Failed to save shelter to database:", e)
+            print(f"[ERROR] Failed to save shelter: {e}")
+            return jsonify({"message": "Could not save shelter"}), 503
+    else:
+        shelter["id"] = max([s["id"] for s in MEMORY_SHELTERS], default=0) + 1
+        MEMORY_SHELTERS.append(shelter)
+        MEMORY_SHELTERS.append(shelter)
 
     return jsonify(shelter), 201
 
@@ -2191,7 +2225,7 @@ def update_shelter(shelter_id):
     if DB_AVAILABLE:
         try:
             cursor.execute(
-                "UPDATE shelters SET name=?, address=?, capacity=?, contact=?, latitude=?, longitude=? WHERE id=?",
+                "UPDATE shelters SET name=COALESCE(?,name), address=COALESCE(?,address), capacity=COALESCE(?,capacity), contact=COALESCE(?,contact), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude) WHERE id=?",
                 (data.get("name"), data.get("address"), data.get("capacity"), data.get("contact"),
                  data.get("latitude"), data.get("longitude"), shelter_id)
             )
@@ -2307,7 +2341,7 @@ def create_hospital():
         return jsonify({"message": "A hospital with this name and address already exists"}), 400
 
     hospital = {
-        "id": (max([h["id"] for h in MEMORY_HOSPITALS], default=0) + 1),
+        "id": None,
         "name": name, "name_ur": data.get("name_ur") or None, "address": address,
         "contact": data.get("contact", ""), "services": data.get("services", ""),
         "latitude": safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None,
@@ -2316,21 +2350,25 @@ def create_hospital():
         "occupancy": 0,
         "capacity": 50,
     }
-    MEMORY_HOSPITALS.append(hospital)
-
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=? AND LOWER(address)=?", (name.lower(), address.lower()))
-            if cursor.fetchone().c == 0:
-                cursor.execute(
+            cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+            row_count = cursor.fetchone()
+            count_val = getattr(row_count, 'c', 0) if row_count else 0
+            if count_val == 0:
+                new_id = _db_insert_get_id(
                     "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
                     (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0)
                 )
-                conn.commit()
+                hospital["id"] = new_id
             else:
                 return jsonify({"message": "A hospital with this name and address already exists"}), 400
         except Exception as e:
-            print("Failed to save hospital to database:", e)
+            print(f"[ERROR] Failed to save hospital: {e}")
+            return jsonify({"message": "Could not save hospital"}), 503
+    else:
+        hospital["id"] = max([h["id"] for h in MEMORY_HOSPITALS], default=0) + 1
+        MEMORY_HOSPITALS.append(hospital)
 
     return jsonify(hospital), 201
 
@@ -2351,7 +2389,7 @@ def update_hospital(hospital_id):
     if DB_AVAILABLE:
         try:
             cursor.execute(
-                "UPDATE hospitals SET name=?, address=?, contact=?, services=?, latitude=?, longitude=? WHERE id=?",
+                "UPDATE hospitals SET name=COALESCE(?,name), address=COALESCE(?,address), contact=COALESCE(?,contact), services=COALESCE(?,services), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude) WHERE id=?",
                 (data.get("name"), data.get("address"), data.get("contact"), data.get("services"), safe_float(data.get("latitude"), None), safe_float(data.get("longitude"), None), hospital_id)
             )
             conn.commit()
@@ -2422,10 +2460,11 @@ def get_community_reports():
     # "skip if already seen" here is enough to guarantee one entry per report.
     data = list(MEMORY_COMMUNITY_REPORTS)
     seen_ids = {r["id"] for r in data}
+    email_filter = (request.args.get("email") or "").strip().lower()
     if DB_AVAILABLE:
         try:
             cursor.execute("""SELECT id, tracking_id, location, region, incident_type, severity, status,
-                               author_name, author_email, description, contact, image_url, notes, created_at
+                               author_name, author_email, description, contact, latitude, longitude, image_url, notes, created_at, linked_rescue_op_id
                                FROM community_reports ORDER BY created_at DESC""")
             for row in cursor.fetchall():
                 if row.id in seen_ids:
@@ -2434,13 +2473,21 @@ def get_community_reports():
                     "id": row.id, "trackingId": row.tracking_id, "location": row.location,
                     "region": row.region, "type": row.incident_type, "severity": row.severity,
                     "status": row.status, "authorName": row.author_name, "authorEmail": row.author_email,
-                    "description": row.description, "contact": row.contact, "imageUrl": row.image_url,
+                    "description": row.description, "contact": row.contact, "latitude": row.latitude,
+                    "longitude": row.longitude, "imageUrl": row.image_url, "linked_rescue_op_id": getattr(row, "linked_rescue_op_id", None),
                     "notes": row.notes, "createdAt": row.created_at.isoformat() if row.created_at else None,
                     "confirmedBy": [],
                 })
                 seen_ids.add(row.id)
         except Exception as e:
             print("COMMUNITY REPORTS DB ERROR:", e)
+    if request.path == '/community-reports':
+        from notifications import identity
+        actor = identity()
+        if actor.get('role') not in ('admin','government_official','rescue_worker'):
+            email_filter = actor.get('email') or '__no_authenticated_reports__'
+    if email_filter:
+        data = [r for r in data if (r.get("authorEmail") or "").strip().lower() == email_filter]
     return jsonify(data)
 
 @app.route("/community-reports", methods=["POST"])
@@ -2451,7 +2498,30 @@ def create_community_report():
     contact = (data.get("contact") or "").strip()
     if not location or not description or not contact:
         return jsonify({"message": "Location, description and contact are required"}), 400
+    import base64, io
+    from PIL import Image
+    image_url = data.get('imageUrl') or ''
+    try:
+        header, encoded = image_url.split(',', 1)
+        if header not in ('data:image/jpeg;base64','data:image/png;base64','data:image/webp;base64','data:image/gif;base64'): raise ValueError()
+        if len(encoded) > 7 * 1024 * 1024: raise ValueError()
+        raw = base64.b64decode(encoded, validate=True)
+        if len(raw) > 5 * 1024 * 1024: raise ValueError()
+        with Image.open(io.BytesIO(raw)) as image: image.verify()
+    except Exception:
+        return jsonify(message='An incident photo (JPG, PNG, WebP or GIF, up to 5 MB) is required'), 400
+    latitude = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
+    longitude = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
+    if (latitude is None) != (longitude is None):
+        return jsonify({"message": "Latitude and longitude must be provided together"}), 400
+    if latitude is not None and not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return jsonify({"message": "Coordinates are outside valid latitude/longitude ranges"}), 400
 
+    from notifications import identity
+    actor = identity()
+    if actor.get('email'):
+        data['authorEmail'] = actor['email']
+        data['authorName'] = actor.get('name') or data.get('authorName')
     report = {
         "location": location,
         "region": data.get("region", ""),
@@ -2462,6 +2532,8 @@ def create_community_report():
         "authorEmail": data.get("authorEmail", ""),
         "description": description,
         "contact": contact,
+        "latitude": latitude,
+        "longitude": longitude,
         "imageUrl": data.get("imageUrl", ""),  # FR06-05
         "notes": "Incident added to the community review queue.",
         "createdAt": str(datetime.now()),
@@ -2470,6 +2542,7 @@ def create_community_report():
 
     if DB_AVAILABLE:
         try:
+            _purge_stale_community_report_tracking_ids()
             # tracking_id is derived from the row's real database id (assigned
             # AFTER insert), never from a count of existing rows. Counting
             # rows broke the moment anything was ever deleted: e.g. delete 2
@@ -2479,9 +2552,11 @@ def create_community_report():
             # even though the person filling the form did nothing wrong.
             new_id = _db_insert_get_id(
                 "INSERT INTO community_reports (tracking_id, location, region, incident_type, severity, status, "
-                "author_name, author_email, description, contact, image_url, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                ("", location, report["region"], report["type"], report["severity"], report["status"],
-                 report["authorName"], report["authorEmail"], description, contact, report["imageUrl"], report["notes"])
+                "author_name, author_email, description, contact, latitude, longitude, image_url, notes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (None, location, report["region"], report["type"], report["severity"], report["status"],
+                 report["authorName"], report["authorEmail"], description, contact, latitude, longitude,
+                 report["imageUrl"], report["notes"])
             )
             tracking_id = f"FMS-{1000 + new_id}"
             cursor.execute("UPDATE community_reports SET tracking_id = ? WHERE id = ?", (tracking_id, new_id))
@@ -2510,7 +2585,7 @@ def update_community_report_status(report_id):
     if DB_AVAILABLE:
         try:
             cursor.execute("""SELECT id, tracking_id, location, region, incident_type, severity, status,
-                               author_name, author_email, description, contact, image_url, notes, created_at
+                               author_name, author_email, description, contact, latitude, longitude, image_url, notes, created_at, linked_rescue_op_id
                                FROM community_reports WHERE id = ?""", (report_id,))
             row = cursor.fetchone()
             if not row:
@@ -2519,7 +2594,8 @@ def update_community_report_status(report_id):
                 "id": row.id, "trackingId": row.tracking_id, "location": row.location,
                 "region": row.region, "type": row.incident_type, "severity": row.severity,
                 "status": row.status, "authorName": row.author_name, "authorEmail": row.author_email,
-                "description": row.description, "contact": row.contact, "imageUrl": row.image_url,
+                "description": row.description, "contact": row.contact, "latitude": row.latitude,
+                "longitude": row.longitude, "imageUrl": row.image_url, "linked_rescue_op_id": getattr(row, "linked_rescue_op_id", None),
                 "notes": row.notes, "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "confirmedBy": [],
             }
@@ -2529,13 +2605,14 @@ def update_community_report_status(report_id):
             # FR06-04 made real: moving a report to "Action Taken" creates an
             # actual Rescue Operation (FR-05) linked back to this report,
             # instead of just flipping a status label.
-            if new_status == "Action Taken":
+            if new_status == "Action Taken" and not r.get("linked_rescue_op_id"):
                 try:
                     linked_op = _create_rescue_op_internal(
                         location=r["location"],
                         description=f"Community report {r['trackingId']}: {r['description']}",
                         risk_level=r.get("severity", "Medium"),
                         assigned_team=data.get("assigned_team", "Unassigned"),
+                        latitude=r.get("latitude"), longitude=r.get("longitude"),
                     )
                 except Exception:
                     return jsonify({"message": "Could not create the rescue operation — please try again."}), 503
@@ -2543,7 +2620,8 @@ def update_community_report_status(report_id):
             else:
                 r["notes"] = f"Status updated to {new_status}."
 
-            cursor.execute("UPDATE community_reports SET status = ?, notes = ? WHERE id = ?", (r["status"], r["notes"], report_id))
+            if linked_op: r['linked_rescue_op_id'] = linked_op['id']
+            cursor.execute("UPDATE community_reports SET status = ?, notes = ?, linked_rescue_op_id = ? WHERE id = ?", (r["status"], r["notes"], r.get('linked_rescue_op_id'), report_id))
             conn.commit()
             if linked_op:
                 r["linked_rescue_op"] = linked_op
@@ -2560,6 +2638,7 @@ def update_community_report_status(report_id):
                     linked_op = _create_rescue_op_internal(
                         location=r["location"], description=f"Community report {r['trackingId']}: {r['description']}",
                         risk_level=r.get("severity", "Medium"), assigned_team=data.get("assigned_team", "Unassigned"),
+                        latitude=r.get("latitude"), longitude=r.get("longitude"),
                     )
                 except Exception:
                     r["status"] = "Submitted"
@@ -2604,13 +2683,11 @@ def create_blocked_road():
     lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else (coords[1] if coords else None)
 
     road = {
-        "id": (max([r["id"] for r in MEMORY_BLOCKED_ROADS], default=0) + 1),
+        "id": None,
         "name": name, "location": location,
         "latitude": lat, "longitude": lng,
         "reason": data.get("reason", ""), "status": "Blocked",
     }
-    MEMORY_BLOCKED_ROADS.append(road)
-
     if DB_AVAILABLE:
         try:
             cursor.execute(
@@ -2618,31 +2695,48 @@ def create_blocked_road():
                 (name, location, lat, lng, road["reason"], "Blocked")
             )
             conn.commit()
+            cursor.execute(
+                "SELECT id FROM blocked_roads WHERE name = ? AND location = ? AND latitude IS ? AND longitude IS ? ORDER BY id DESC",
+                (name, location, lat, lng),
+            )
+            saved_row = cursor.fetchone()
+            if not saved_row:
+                raise RuntimeError("Inserted blocked road could not be reloaded")
+            road["id"] = saved_row.id
         except Exception as e:
-            print("Failed to save blocked road:", e)
+            log_event("error", f"Failed to save blocked road to database: {e}")
+            return jsonify({"message": "Could not save blocked road"}), 503
+    else:
+        road["id"] = max([r["id"] for r in MEMORY_BLOCKED_ROADS], default=0) + 1
+        MEMORY_BLOCKED_ROADS.append(road)
 
     return jsonify(road), 201
 
 @app.route("/blocked-roads/<int:road_id>", methods=["PUT"])
 def update_blocked_road(road_id):
-    """Allows officials to mark a road as Cleared (FR04-03/04-05)."""
     data = request.json or {}
+    fields = ("name", "location", "reason", "status", "latitude", "longitude")
+    for field in ("name", "location"):
+        if field in data and (not isinstance(data[field], str) or not data[field].strip()):
+            return jsonify(message=f"{field} is required"), 400
     updated = None
-    for r in MEMORY_BLOCKED_ROADS:
-        if r["id"] == road_id:
-            if "status" in data:
-                r["status"] = data["status"]
-            updated = r
-            break
     if DB_AVAILABLE:
         try:
-            cursor.execute("UPDATE blocked_roads SET status = ? WHERE id = ?", (data.get("status"), road_id))
+            cursor.execute("UPDATE blocked_roads SET " + ", ".join(f"{field}=COALESCE(?,{field})" for field in fields) + " WHERE id=?", tuple(data.get(field) for field in fields) + (road_id,))
+            if cursor.rowcount == 0:
+                return jsonify(message="Blocked road not found"), 404
             conn.commit()
-        except Exception as e:
-            print("Failed to update blocked road:", e)
+        except Exception as error:
+            log_event("error", f"Failed to update blocked road: {error}")
+            return jsonify(message="Could not update blocked road"), 503
+    for road in MEMORY_BLOCKED_ROADS:
+        if road["id"] == road_id:
+            road.update({field:data[field] for field in fields if field in data})
+            updated = road
+            break
     if not updated and not DB_AVAILABLE:
-        return jsonify({"message": "Blocked road not found"}), 404
-    return jsonify(updated or {"id": road_id, **data})
+        return jsonify(message="Blocked road not found"), 404
+    return jsonify(updated or {"id":road_id, **data})
 
 @app.route("/blocked-roads/<int:road_id>", methods=["DELETE"])
 def delete_blocked_road(road_id):
@@ -2687,7 +2781,9 @@ def get_map_markers():
 
     ops_resp = get_rescue_operations()
     for op in ops_resp.json:
-        coords = resolve_coordinates(op.get("location", ""))
+        if op.get("status") not in ("Assigned", "In Progress"):
+            continue
+        coords = (op["latitude"], op["longitude"]) if op.get("latitude") is not None and op.get("longitude") is not None else resolve_coordinates(op.get("location", ""))
         if coords:
             markers.append({"id": f"rescue-{op['id']}", "type": "rescue_operation",
                              "category_color": "violet",
@@ -2697,13 +2793,15 @@ def get_map_markers():
 
     reports_resp = get_community_reports()
     for rep in reports_resp.json:
-        coords = resolve_coordinates(rep.get("location", ""))
-        if coords:
+        latitude = rep.get("latitude")
+        longitude = rep.get("longitude")
+        if latitude is not None and longitude is not None:
             markers.append({"id": f"report-{rep['id']}", "type": "community_report",
-                             "category_color": "black",
+                             "category_color": "white",
                              "name": f"Report: {rep.get('type')}", "location": rep.get("location"),
                              "status": rep.get("status"), "severity": rep.get("severity"),
-                             "latitude": coords[0], "longitude": coords[1]})
+                             "report_id":rep["id"], "trackingId":rep.get("trackingId"), "description":rep.get("description"), "imageUrl":rep.get("imageUrl"),
+                             "latitude": latitude, "longitude": longitude})
 
     roads_resp = get_blocked_roads()
     for r in roads_resp.json:
@@ -2818,244 +2916,37 @@ def retrain_model():
         print("RETRAIN ERROR:", e)
         return jsonify({"message": f"Retraining failed: {e}"}), 500
 
-# ---------------- SEED SAMPLE DATA (so the app isn't empty on first run) ----------------
-def seed_sample_data():
-    if MEMORY_SHELTERS:
-        return  # already seeded (or a restart with data still in memory)
+@app.route("/activity", methods=["GET"])
+def get_activity():
+    activity_items = []
+    if DB_AVAILABLE:
+        try:
+            cursor.execute(
+                "SELECT message, created_at FROM system_logs WHERE level = ? ORDER BY created_at DESC LIMIT 100",
+                ("activity",),
+            )
+            for row in cursor.fetchall():
+                try:
+                    item = json.loads(getattr(row, "message", "") or "")
+                except (TypeError, ValueError):
+                    continue
+                item["created_at"] = item.get("created_at") or str(getattr(row, "created_at", None))
+                activity_items.append(item)
+        except Exception as error:
+            log_event("error", f"Failed to fetch recent activity: {error}")
+            return jsonify({"message": "Could not load recent activity"}), 503
+    else:
+        for item in MEMORY_LOGS:
+            if item.get("level") != "activity":
+                continue
+            try:
+                activity_items.append(json.loads(item.get("message") or ""))
+            except (TypeError, ValueError):
+                continue
+        activity_items.sort(key=lambda item: item.get("created_at", ""), reverse=True)
 
-    # 2-3 named hospitals and 2 relief-camp-style shelters per known city, so
-    # every city a citizen searches for has real, distinct facilities to
-    # find (not one generic "{city} General Hospital" record). Major cities
-    # use genuine well-known hospital names; smaller towns use Pakistan's
-    # standard DHQ/THQ hospital naming convention. Coordinates are jittered
-    # slightly around the city center so markers don't overlap on the map.
-    # Administrators should still verify/update contact numbers and exact
-    # addresses for their region.
-    MEMORY_SHELTERS.extend([
-        {"id": 1, "name": "Karachi Sports Complex (Potential Shelter Site)", "name_ur": "کراچی سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Karachi", "capacity": None, "contact": "", "latitude": 24.86884, "longitude": 66.98705},
-        {"id": 2, "name": "Govt Degree College Karachi (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج کراچی (ممکنہ پناہ گاہ)", "address": "Karachi", "capacity": None, "contact": "", "latitude": 24.82694, "longitude": 67.00142},
-        {"id": 3, "name": "Lahore Sports Complex (Potential Shelter Site)", "name_ur": "لاہور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Lahore", "capacity": None, "contact": "", "latitude": 31.54369, "longitude": 74.34849},
-        {"id": 4, "name": "Govt Degree College Lahore (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج لاہور (ممکنہ پناہ گاہ)", "address": "Lahore", "capacity": None, "contact": "", "latitude": 31.50123, "longitude": 74.33803},
-        {"id": 5, "name": "Faisalabad Sports Complex (Potential Shelter Site)", "name_ur": "فیصل آباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Faisalabad", "capacity": None, "contact": "", "latitude": 31.45974, "longitude": 73.14421},
-        {"id": 6, "name": "Govt Degree College Faisalabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج فیصل آباد (ممکنہ پناہ گاہ)", "address": "Faisalabad", "capacity": None, "contact": "", "latitude": 31.45475, "longitude": 73.16339},
-        {"id": 7, "name": "Rawalpindi Sports Complex (Potential Shelter Site)", "name_ur": "راولپنڈی سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Rawalpindi", "capacity": None, "contact": "", "latitude": 33.52422, "longitude": 73.00874},
-        {"id": 8, "name": "Govt Degree College Rawalpindi (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج راولپنڈی (ممکنہ پناہ گاہ)", "address": "Rawalpindi", "capacity": None, "contact": "", "latitude": 33.62333, "longitude": 73.03822},
-        {"id": 9, "name": "Multan Sports Complex (Potential Shelter Site)", "name_ur": "ملتان سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Multan", "capacity": None, "contact": "", "latitude": 30.14582, "longitude": 71.51619},
-        {"id": 10, "name": "Govt Degree College Multan (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج ملتان (ممکنہ پناہ گاہ)", "address": "Multan", "capacity": None, "contact": "", "latitude": 30.18172, "longitude": 71.53591},
-        {"id": 11, "name": "Hyderabad Sports Complex (Potential Shelter Site)", "name_ur": "حیدرآباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Hyderabad", "capacity": None, "contact": "", "latitude": 25.38515, "longitude": 68.37249},
-        {"id": 12, "name": "Govt Degree College Hyderabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج حیدرآباد (ممکنہ پناہ گاہ)", "address": "Hyderabad", "capacity": None, "contact": "", "latitude": 25.41815, "longitude": 68.37837},
-        {"id": 13, "name": "Gujranwala Sports Complex (Potential Shelter Site)", "name_ur": "گوجرانوالہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Gujranwala", "capacity": None, "contact": "", "latitude": 32.14866, "longitude": 74.20689},
-        {"id": 14, "name": "Govt Degree College Gujranwala (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج گوجرانوالہ (ممکنہ پناہ گاہ)", "address": "Gujranwala", "capacity": None, "contact": "", "latitude": 32.15322, "longitude": 74.19445},
-        {"id": 15, "name": "Peshawar Sports Complex (Potential Shelter Site)", "name_ur": "پشاور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Peshawar", "capacity": None, "contact": "", "latitude": 34.03733, "longitude": 71.52275},
-        {"id": 16, "name": "Govt Degree College Peshawar (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج پشاور (ممکنہ پناہ گاہ)", "address": "Peshawar", "capacity": None, "contact": "", "latitude": 33.99854, "longitude": 71.55474},
-        {"id": 17, "name": "Quetta Sports Complex (Potential Shelter Site)", "name_ur": "کوئٹہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Quetta", "capacity": None, "contact": "", "latitude": 30.19127, "longitude": 66.98376},
-        {"id": 18, "name": "Govt Degree College Quetta (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج کوئٹہ (ممکنہ پناہ گاہ)", "address": "Quetta", "capacity": None, "contact": "", "latitude": 30.19137, "longitude": 66.96809},
-        {"id": 19, "name": "Islamabad Sports Complex (Potential Shelter Site)", "name_ur": "اسلام آباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Islamabad", "capacity": None, "contact": "", "latitude": 33.70075, "longitude": 73.04901},
-        {"id": 20, "name": "Govt Degree College Islamabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج اسلام آباد (ممکنہ پناہ گاہ)", "address": "Islamabad", "capacity": None, "contact": "", "latitude": 33.71663, "longitude": 73.03831},
-        {"id": 21, "name": "Sialkot Sports Complex (Potential Shelter Site)", "name_ur": "سیالکوٹ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Sialkot", "capacity": None, "contact": "", "latitude": 32.53697, "longitude": 74.53076},
-        {"id": 22, "name": "Govt Degree College Sialkot (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج سیالکوٹ (ممکنہ پناہ گاہ)", "address": "Sialkot", "capacity": None, "contact": "", "latitude": 32.53896, "longitude": 74.51081},
-        {"id": 23, "name": "Sargodha Sports Complex (Potential Shelter Site)", "name_ur": "سرگودھا سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Sargodha", "capacity": None, "contact": "", "latitude": 32.09251, "longitude": 72.67076},
-        {"id": 24, "name": "Govt Degree College Sargodha (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج سرگودھا (ممکنہ پناہ گاہ)", "address": "Sargodha", "capacity": None, "contact": "", "latitude": 32.13509, "longitude": 72.69382},
-        {"id": 25, "name": "Bahawalpur Sports Complex (Potential Shelter Site)", "name_ur": "بہاولپور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Bahawalpur", "capacity": None, "contact": "", "latitude": 29.35831, "longitude": 71.68318},
-        {"id": 26, "name": "Govt Degree College Bahawalpur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج بہاولپور (ممکنہ پناہ گاہ)", "address": "Bahawalpur", "capacity": None, "contact": "", "latitude": 29.45296, "longitude": 71.68556},
-        {"id": 27, "name": "Sukkur Sports Complex (Potential Shelter Site)", "name_ur": "سکھر سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Sukkur", "capacity": None, "contact": "", "latitude": 27.74699, "longitude": 68.87027},
-        {"id": 28, "name": "Govt Degree College Sukkur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج سکھر (ممکنہ پناہ گاہ)", "address": "Sukkur", "capacity": None, "contact": "", "latitude": 27.73075, "longitude": 68.85134},
-        {"id": 29, "name": "Larkana Sports Complex (Potential Shelter Site)", "name_ur": "لاڑکانہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Larkana", "capacity": None, "contact": "", "latitude": 27.52489, "longitude": 68.20404},
-        {"id": 30, "name": "Govt Degree College Larkana (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج لاڑکانہ (ممکنہ پناہ گاہ)", "address": "Larkana", "capacity": None, "contact": "", "latitude": 27.50152, "longitude": 68.21554},
-        {"id": 31, "name": "Sheikhupura Sports Complex (Potential Shelter Site)", "name_ur": "شیخوپورہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Sheikhupura", "capacity": None, "contact": "", "latitude": 31.75319, "longitude": 73.99579},
-        {"id": 32, "name": "Govt Degree College Sheikhupura (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج شیخوپورہ (ممکنہ پناہ گاہ)", "address": "Sheikhupura", "capacity": None, "contact": "", "latitude": 31.7184, "longitude": 73.97171},
-        {"id": 33, "name": "Jhang Sports Complex (Potential Shelter Site)", "name_ur": "جھنگ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Jhang", "capacity": None, "contact": "", "latitude": 31.24727, "longitude": 72.31729},
-        {"id": 34, "name": "Govt Degree College Jhang (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج جھنگ (ممکنہ پناہ گاہ)", "address": "Jhang", "capacity": None, "contact": "", "latitude": 31.23325, "longitude": 72.29392},
-        {"id": 35, "name": "Rahim Yar Khan Sports Complex (Potential Shelter Site)", "name_ur": "رحیم یار خان سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Rahim Yar Khan", "capacity": None, "contact": "", "latitude": 28.38066, "longitude": 70.30205},
-        {"id": 36, "name": "Govt Degree College Rahim Yar Khan (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج رحیم یار خان (ممکنہ پناہ گاہ)", "address": "Rahim Yar Khan", "capacity": None, "contact": "", "latitude": 28.39004, "longitude": 70.27661},
-        {"id": 37, "name": "Gujrat Sports Complex (Potential Shelter Site)", "name_ur": "گجرات سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Gujrat", "capacity": None, "contact": "", "latitude": 32.56798, "longitude": 74.08974},
-        {"id": 38, "name": "Govt Degree College Gujrat (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج گجرات (ممکنہ پناہ گاہ)", "address": "Gujrat", "capacity": None, "contact": "", "latitude": 32.51917, "longitude": 74.10886},
-        {"id": 39, "name": "Mardan Sports Complex (Potential Shelter Site)", "name_ur": "مردان سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Mardan", "capacity": None, "contact": "", "latitude": 34.16887, "longitude": 72.03997},
-        {"id": 40, "name": "Govt Degree College Mardan (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج مردان (ممکنہ پناہ گاہ)", "address": "Mardan", "capacity": None, "contact": "", "latitude": 34.24266, "longitude": 72.06455},
-        {"id": 41, "name": "Kasur Sports Complex (Potential Shelter Site)", "name_ur": "قصور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Kasur", "capacity": None, "contact": "", "latitude": 31.09867, "longitude": 74.4526},
-        {"id": 42, "name": "Govt Degree College Kasur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج قصور (ممکنہ پناہ گاہ)", "address": "Kasur", "capacity": None, "contact": "", "latitude": 31.07658, "longitude": 74.4345},
-        {"id": 43, "name": "Okara Sports Complex (Potential Shelter Site)", "name_ur": "اوکاڑہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Okara", "capacity": None, "contact": "", "latitude": 30.76761, "longitude": 73.4446},
-        {"id": 44, "name": "Govt Degree College Okara (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج اوکاڑہ (ممکنہ پناہ گاہ)", "address": "Okara", "capacity": None, "contact": "", "latitude": 30.75493, "longitude": 73.44577},
-        {"id": 45, "name": "Sahiwal Sports Complex (Potential Shelter Site)", "name_ur": "ساہیوال سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Sahiwal", "capacity": None, "contact": "", "latitude": 30.63399, "longitude": 73.12311},
-        {"id": 46, "name": "Govt Degree College Sahiwal (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج ساہیوال (ممکنہ پناہ گاہ)", "address": "Sahiwal", "capacity": None, "contact": "", "latitude": 30.67767, "longitude": 73.08378},
-        {"id": 47, "name": "Nawabshah Sports Complex (Potential Shelter Site)", "name_ur": "نوابشاہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Nawabshah", "capacity": None, "contact": "", "latitude": 26.21758, "longitude": 68.41649},
-        {"id": 48, "name": "Govt Degree College Nawabshah (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج نوابشاہ (ممکنہ پناہ گاہ)", "address": "Nawabshah", "capacity": None, "contact": "", "latitude": 26.21607, "longitude": 68.38785},
-        {"id": 49, "name": "Mingora Sports Complex (Potential Shelter Site)", "name_ur": "مینگورہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Mingora", "capacity": None, "contact": "", "latitude": 34.76795, "longitude": 72.37535},
-        {"id": 50, "name": "Govt Degree College Mingora (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج مینگورہ (ممکنہ پناہ گاہ)", "address": "Mingora", "capacity": None, "contact": "", "latitude": 34.72049, "longitude": 72.34319},
-        {"id": 51, "name": "Dera Ghazi Khan Sports Complex (Potential Shelter Site)", "name_ur": "ڈیرہ غازی خان سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Dera Ghazi Khan", "capacity": None, "contact": "", "latitude": 30.09023, "longitude": 70.63059},
-        {"id": 52, "name": "Govt Degree College Dera Ghazi Khan (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج ڈیرہ غازی خان (ممکنہ پناہ گاہ)", "address": "Dera Ghazi Khan", "capacity": None, "contact": "", "latitude": 30.04868, "longitude": 70.63709},
-        {"id": 53, "name": "Mirpur Khas Sports Complex (Potential Shelter Site)", "name_ur": "میرپورخاص سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Mirpur Khas", "capacity": None, "contact": "", "latitude": 25.56566, "longitude": 68.99881},
-        {"id": 54, "name": "Govt Degree College Mirpur Khas (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج میرپورخاص (ممکنہ پناہ گاہ)", "address": "Mirpur Khas", "capacity": None, "contact": "", "latitude": 25.49854, "longitude": 69.03408},
-        {"id": 55, "name": "Chiniot Sports Complex (Potential Shelter Site)", "name_ur": "چنیوٹ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Chiniot", "capacity": None, "contact": "", "latitude": 31.69332, "longitude": 72.98213},
-        {"id": 56, "name": "Govt Degree College Chiniot (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج چنیوٹ (ممکنہ پناہ گاہ)", "address": "Chiniot", "capacity": None, "contact": "", "latitude": 31.72065, "longitude": 72.96317},
-        {"id": 57, "name": "Kamoke Sports Complex (Potential Shelter Site)", "name_ur": "کاموکی سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Kamoke", "capacity": None, "contact": "", "latitude": 32.05422, "longitude": 74.23443},
-        {"id": 58, "name": "Govt Degree College Kamoke (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج کاموکی (ممکنہ پناہ گاہ)", "address": "Kamoke", "capacity": None, "contact": "", "latitude": 32.05829, "longitude": 74.22281},
-        {"id": 59, "name": "Mandi Bahauddin Sports Complex (Potential Shelter Site)", "name_ur": "منڈی بہاؤالدین سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Mandi Bahauddin", "capacity": None, "contact": "", "latitude": 32.59, "longitude": 73.50174},
-        {"id": 60, "name": "Govt Degree College Mandi Bahauddin (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج منڈی بہاؤالدین (ممکنہ پناہ گاہ)", "address": "Mandi Bahauddin", "capacity": None, "contact": "", "latitude": 32.57747, "longitude": 73.46421},
-        {"id": 61, "name": "Jacobabad Sports Complex (Potential Shelter Site)", "name_ur": "جیکب آباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Jacobabad", "capacity": None, "contact": "", "latitude": 28.25081, "longitude": 68.43059},
-        {"id": 62, "name": "Govt Degree College Jacobabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج جیکب آباد (ممکنہ پناہ گاہ)", "address": "Jacobabad", "capacity": None, "contact": "", "latitude": 28.25934, "longitude": 68.44169},
-        {"id": 63, "name": "Jhelum Sports Complex (Potential Shelter Site)", "name_ur": "جہلم سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Jhelum", "capacity": None, "contact": "", "latitude": 32.97531, "longitude": 73.73999},
-        {"id": 64, "name": "Govt Degree College Jhelum (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج جہلم (ممکنہ پناہ گاہ)", "address": "Jhelum", "capacity": None, "contact": "", "latitude": 32.98827, "longitude": 73.69719},
-        {"id": 65, "name": "Kohat Sports Complex (Potential Shelter Site)", "name_ur": "کوہاٹ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Kohat", "capacity": None, "contact": "", "latitude": 33.56901, "longitude": 71.44862},
-        {"id": 66, "name": "Govt Degree College Kohat (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج کوہاٹ (ممکنہ پناہ گاہ)", "address": "Kohat", "capacity": None, "contact": "", "latitude": 33.57591, "longitude": 71.41232},
-        {"id": 67, "name": "Shikarpur Sports Complex (Potential Shelter Site)", "name_ur": "شکارپور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Shikarpur", "capacity": None, "contact": "", "latitude": 27.93066, "longitude": 68.643},
-        {"id": 68, "name": "Govt Degree College Shikarpur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج شکارپور (ممکنہ پناہ گاہ)", "address": "Shikarpur", "capacity": None, "contact": "", "latitude": 27.93499, "longitude": 68.66006},
-        {"id": 69, "name": "Khanewal Sports Complex (Potential Shelter Site)", "name_ur": "خانیوال سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Khanewal", "capacity": None, "contact": "", "latitude": 30.34103, "longitude": 71.91946},
-        {"id": 70, "name": "Govt Degree College Khanewal (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج خانیوال (ممکنہ پناہ گاہ)", "address": "Khanewal", "capacity": None, "contact": "", "latitude": 30.26293, "longitude": 71.95875},
-        {"id": 71, "name": "Muzaffargarh Sports Complex (Potential Shelter Site)", "name_ur": "مظفر گڑھ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Muzaffargarh", "capacity": None, "contact": "", "latitude": 30.06678, "longitude": 71.20773},
-        {"id": 72, "name": "Govt Degree College Muzaffargarh (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج مظفر گڑھ (ممکنہ پناہ گاہ)", "address": "Muzaffargarh", "capacity": None, "contact": "", "latitude": 30.05872, "longitude": 71.1978},
-        {"id": 73, "name": "Abbottabad Sports Complex (Potential Shelter Site)", "name_ur": "ایبٹ آباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Abbottabad", "capacity": None, "contact": "", "latitude": 34.13408, "longitude": 73.1987},
-        {"id": 74, "name": "Govt Degree College Abbottabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج ایبٹ آباد (ممکنہ پناہ گاہ)", "address": "Abbottabad", "capacity": None, "contact": "", "latitude": 34.16108, "longitude": 73.2214},
-        {"id": 75, "name": "Muridke Sports Complex (Potential Shelter Site)", "name_ur": "مریدکے سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Muridke", "capacity": None, "contact": "", "latitude": 31.79372, "longitude": 74.25837},
-        {"id": 76, "name": "Govt Degree College Muridke (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج مریدکے (ممکنہ پناہ گاہ)", "address": "Muridke", "capacity": None, "contact": "", "latitude": 31.76552, "longitude": 74.2744},
-        {"id": 77, "name": "Bahawalnagar Sports Complex (Potential Shelter Site)", "name_ur": "بہاولنگر سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Bahawalnagar", "capacity": None, "contact": "", "latitude": 30.00321, "longitude": 73.24281},
-        {"id": 78, "name": "Govt Degree College Bahawalnagar (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج بہاولنگر (ممکنہ پناہ گاہ)", "address": "Bahawalnagar", "capacity": None, "contact": "", "latitude": 29.96412, "longitude": 73.27495},
-        {"id": 79, "name": "Khairpur Sports Complex (Potential Shelter Site)", "name_ur": "خیرپور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Khairpur", "capacity": None, "contact": "", "latitude": 27.55594, "longitude": 68.77299},
-        {"id": 80, "name": "Govt Degree College Khairpur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج خیرپور (ممکنہ پناہ گاہ)", "address": "Khairpur", "capacity": None, "contact": "", "latitude": 27.54856, "longitude": 68.74623},
-        {"id": 81, "name": "Turbat Sports Complex (Potential Shelter Site)", "name_ur": "تربت سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Turbat", "capacity": None, "contact": "", "latitude": 26.01865, "longitude": 63.04004},
-        {"id": 82, "name": "Govt Degree College Turbat (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج تربت (ممکنہ پناہ گاہ)", "address": "Turbat", "capacity": None, "contact": "", "latitude": 25.96078, "longitude": 63.02107},
-        {"id": 83, "name": "Dadu Sports Complex (Potential Shelter Site)", "name_ur": "دادو سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Dadu", "capacity": None, "contact": "", "latitude": 26.75045, "longitude": 67.77262},
-        {"id": 84, "name": "Govt Degree College Dadu (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج دادو (ممکنہ پناہ گاہ)", "address": "Dadu", "capacity": None, "contact": "", "latitude": 26.70008, "longitude": 67.78546},
-        {"id": 85, "name": "Chaman Sports Complex (Potential Shelter Site)", "name_ur": "چمن سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Chaman", "capacity": None, "contact": "", "latitude": 30.8957, "longitude": 66.46882},
-        {"id": 86, "name": "Govt Degree College Chaman (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج چمن (ممکنہ پناہ گاہ)", "address": "Chaman", "capacity": None, "contact": "", "latitude": 30.86703, "longitude": 66.44465},
-        {"id": 87, "name": "Charsadda Sports Complex (Potential Shelter Site)", "name_ur": "چارسدہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Charsadda", "capacity": None, "contact": "", "latitude": 34.1905, "longitude": 71.75174},
-        {"id": 88, "name": "Govt Degree College Charsadda (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج چارسدہ (ممکنہ پناہ گاہ)", "address": "Charsadda", "capacity": None, "contact": "", "latitude": 34.18967, "longitude": 71.74287},
-        {"id": 89, "name": "Nowshera Sports Complex (Potential Shelter Site)", "name_ur": "نوشہرہ سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Nowshera", "capacity": None, "contact": "", "latitude": 34.04559, "longitude": 71.96832},
-        {"id": 90, "name": "Govt Degree College Nowshera (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج نوشہرہ (ممکنہ پناہ گاہ)", "address": "Nowshera", "capacity": None, "contact": "", "latitude": 34.03021, "longitude": 71.96148},
-        {"id": 91, "name": "Swabi Sports Complex (Potential Shelter Site)", "name_ur": "صوابی سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Swabi", "capacity": None, "contact": "", "latitude": 34.08745, "longitude": 72.46194},
-        {"id": 92, "name": "Govt Degree College Swabi (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج صوابی (ممکنہ پناہ گاہ)", "address": "Swabi", "capacity": None, "contact": "", "latitude": 34.14477, "longitude": 72.44385},
-        {"id": 93, "name": "Bannu Sports Complex (Potential Shelter Site)", "name_ur": "بنوں سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Bannu", "capacity": None, "contact": "", "latitude": 32.97805, "longitude": 70.61109},
-        {"id": 94, "name": "Govt Degree College Bannu (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج بنوں (ممکنہ پناہ گاہ)", "address": "Bannu", "capacity": None, "contact": "", "latitude": 33.03081, "longitude": 70.61894},
-        {"id": 95, "name": "Dera Ismail Khan Sports Complex (Potential Shelter Site)", "name_ur": "ڈیرہ اسماعیل خان سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Dera Ismail Khan", "capacity": None, "contact": "", "latitude": 31.83444, "longitude": 70.90804},
-        {"id": 96, "name": "Govt Degree College Dera Ismail Khan (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج ڈیرہ اسماعیل خان (ممکنہ پناہ گاہ)", "address": "Dera Ismail Khan", "capacity": None, "contact": "", "latitude": 31.82959, "longitude": 70.88738},
-        {"id": 97, "name": "Muzaffarabad Sports Complex (Potential Shelter Site)", "name_ur": "مظفرآباد سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Muzaffarabad", "capacity": None, "contact": "", "latitude": 34.40065, "longitude": 73.48259},
-        {"id": 98, "name": "Govt Degree College Muzaffarabad (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج مظفرآباد (ممکنہ پناہ گاہ)", "address": "Muzaffarabad", "capacity": None, "contact": "", "latitude": 34.41883, "longitude": 73.47551},
-        {"id": 99, "name": "Mirpur Sports Complex (Potential Shelter Site)", "name_ur": "میرپور سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Mirpur", "capacity": None, "contact": "", "latitude": 33.10733, "longitude": 73.74717},
-        {"id": 100, "name": "Govt Degree College Mirpur (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج میرپور (ممکنہ پناہ گاہ)", "address": "Mirpur", "capacity": None, "contact": "", "latitude": 33.14236, "longitude": 73.74105},
-        {"id": 101, "name": "Gilgit Sports Complex (Potential Shelter Site)", "name_ur": "گلگت سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Gilgit", "capacity": None, "contact": "", "latitude": 35.8985, "longitude": 74.30186},
-        {"id": 102, "name": "Govt Degree College Gilgit (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج گلگت (ممکنہ پناہ گاہ)", "address": "Gilgit", "capacity": None, "contact": "", "latitude": 35.95068, "longitude": 74.28753},
-        {"id": 103, "name": "Skardu Sports Complex (Potential Shelter Site)", "name_ur": "سکردو سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Skardu", "capacity": None, "contact": "", "latitude": 35.32241, "longitude": 75.63785},
-        {"id": 104, "name": "Govt Degree College Skardu (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج سکردو (ممکنہ پناہ گاہ)", "address": "Skardu", "capacity": None, "contact": "", "latitude": 35.35105, "longitude": 75.61526},
-        {"id": 105, "name": "Gwadar Sports Complex (Potential Shelter Site)", "name_ur": "گوادر سپورٹس کمپلیکس (ممکنہ پناہ گاہ)", "address": "Gwadar", "capacity": None, "contact": "", "latitude": 25.12402, "longitude": 62.31093},
-        {"id": 106, "name": "Govt Degree College Gwadar (Potential Shelter Site)", "name_ur": "گورنمنٹ ڈگری کالج گوادر (ممکنہ پناہ گاہ)", "address": "Gwadar", "capacity": None, "contact": "", "latitude": 25.1222, "longitude": 62.30787},
-    ])
-    MEMORY_HOSPITALS.extend([
-        {"id": 1, "name": "Jinnah Postgraduate Medical Centre", "name_ur": "جناح پوسٹ گریجویٹ میڈیکل سینٹر", "address": "Karachi", "contact": "", "services": None, "latitude": 24.86488, "longitude": 66.9156},
-        {"id": 2, "name": "Civil Hospital Karachi", "name_ur": "سول ہسپتال کراچی", "address": "Karachi", "contact": "", "services": None, "latitude": 24.8472, "longitude": 66.94297},
-        {"id": 3, "name": "Aga Khan University Hospital", "name_ur": "آغا خان یونیورسٹی ہسپتال", "address": "Karachi", "contact": "", "services": None, "latitude": 24.88198, "longitude": 67.04351},
-        {"id": 4, "name": "Mayo Hospital", "name_ur": "میو ہسپتال", "address": "Lahore", "contact": "", "services": None, "latitude": 31.5062, "longitude": 74.30449},
-        {"id": 5, "name": "Jinnah Hospital Lahore", "name_ur": "جناح ہسپتال لاہور", "address": "Lahore", "contact": "", "services": None, "latitude": 31.52939, "longitude": 74.36814},
-        {"id": 6, "name": "Services Hospital Lahore", "name_ur": "سروسز ہسپتال لاہور", "address": "Lahore", "contact": "", "services": None, "latitude": 31.49524, "longitude": 74.38012},
-        {"id": 7, "name": "Allied Hospital Faisalabad", "name_ur": "الائیڈ ہسپتال فیصل آباد", "address": "Faisalabad", "contact": "", "services": None, "latitude": 31.46412, "longitude": 73.10559},
-        {"id": 8, "name": "DHQ Hospital Faisalabad", "name_ur": "ڈی ایچ کیو ہسپتال فیصل آباد", "address": "Faisalabad", "contact": "", "services": None, "latitude": 31.42596, "longitude": 73.05031},
-        {"id": 9, "name": "Benazir Bhutto Hospital", "name_ur": "بے نظیر بھٹو ہسپتال", "address": "Rawalpindi", "contact": "", "services": None, "latitude": 33.56146, "longitude": 73.02627},
-        {"id": 10, "name": "Holy Family Hospital", "name_ur": "ہولی فیملی ہسپتال", "address": "Rawalpindi", "contact": "", "services": None, "latitude": 33.58486, "longitude": 73.04179},
-        {"id": 11, "name": "DHQ Hospital Rawalpindi", "name_ur": "ڈی ایچ کیو ہسپتال راولپنڈی", "address": "Rawalpindi", "contact": "", "services": None, "latitude": 33.59765, "longitude": 73.03546},
-        {"id": 12, "name": "Nishtar Hospital Multan", "name_ur": "نشتر ہسپتال ملتان", "address": "Multan", "contact": "", "services": None, "latitude": 30.16849, "longitude": 71.50332},
-        {"id": 13, "name": "DHQ Hospital Multan", "name_ur": "ڈی ایچ کیو ہسپتال ملتان", "address": "Multan", "contact": "", "services": None, "latitude": 30.1547, "longitude": 71.59506},
-        {"id": 14, "name": "Liaquat University Hospital", "name_ur": "لیاقت یونیورسٹی ہسپتال", "address": "Hyderabad", "contact": "", "services": None, "latitude": 25.38314, "longitude": 68.3821},
-        {"id": 15, "name": "Civil Hospital Hyderabad", "name_ur": "سول ہسپتال حیدرآباد", "address": "Hyderabad", "contact": "", "services": None, "latitude": 25.39805, "longitude": 68.30421},
-        {"id": 16, "name": "DHQ Hospital Gujranwala", "name_ur": "ڈی ایچ کیو ہسپتال گوجرانوالہ", "address": "Gujranwala", "contact": "", "services": None, "latitude": 32.19598, "longitude": 74.14573},
-        {"id": 17, "name": "Aziz Bhatti Shaheed Teaching Hospital", "name_ur": "عزیز بھٹی شہید ٹیچنگ ہسپتال", "address": "Gujranwala", "contact": "", "services": None, "latitude": 32.15963, "longitude": 74.15575},
-        {"id": 18, "name": "Lady Reading Hospital", "name_ur": "لیڈی ریڈنگ ہسپتال", "address": "Peshawar", "contact": "", "services": None, "latitude": 34.02664, "longitude": 71.55061},
-        {"id": 19, "name": "Khyber Teaching Hospital", "name_ur": "خیبر ٹیچنگ ہسپتال", "address": "Peshawar", "contact": "", "services": None, "latitude": 33.99367, "longitude": 71.44922},
-        {"id": 20, "name": "Sandeman Provincial Hospital", "name_ur": "سنڈیمن پرووِنشل ہسپتال", "address": "Quetta", "contact": "", "services": None, "latitude": 30.16895, "longitude": 66.97383},
-        {"id": 21, "name": "Bolan Medical Complex Hospital", "name_ur": "بولان میڈیکل کمپلیکس ہسپتال", "address": "Quetta", "contact": "", "services": None, "latitude": 30.19515, "longitude": 67.05083},
-        {"id": 22, "name": "Pakistan Institute of Medical Sciences (PIMS)", "name_ur": "پاکستان انسٹی ٹیوٹ آف میڈیکل سائنسز (پمز)", "address": "Islamabad", "contact": "", "services": None, "latitude": 33.68728, "longitude": 73.04215},
-        {"id": 23, "name": "Shifa International Hospital", "name_ur": "شفاء انٹرنیشنل ہسپتال", "address": "Islamabad", "contact": "", "services": None, "latitude": 33.66948, "longitude": 73.05908},
-        {"id": 24, "name": "Polyclinic Hospital", "name_ur": "پولی کلینک ہسپتال", "address": "Islamabad", "contact": "", "services": None, "latitude": 33.72422, "longitude": 73.09117},
-        {"id": 25, "name": "Allama Iqbal Memorial Hospital", "name_ur": "علامہ اقبال میموریل ہسپتال", "address": "Sialkot", "contact": "", "services": None, "latitude": 32.48831, "longitude": 74.46137},
-        {"id": 26, "name": "DHQ Hospital Sialkot", "name_ur": "ڈی ایچ کیو ہسپتال سیالکوٹ", "address": "Sialkot", "contact": "", "services": None, "latitude": 32.46469, "longitude": 74.56954},
-        {"id": 27, "name": "DHQ Hospital Sargodha", "name_ur": "ڈی ایچ کیو ہسپتال سرگودھا", "address": "Sargodha", "contact": "", "services": None, "latitude": 32.08777, "longitude": 72.69071},
-        {"id": 28, "name": "Sargodha Medical College Hospital", "name_ur": "سرگودھا میڈیکل کالج ہسپتال", "address": "Sargodha", "contact": "", "services": None, "latitude": 32.06277, "longitude": 72.72623},
-        {"id": 29, "name": "Bahawal Victoria Hospital", "name_ur": "بہاول وکٹوریہ ہسپتال", "address": "Bahawalpur", "contact": "", "services": None, "latitude": 29.40555, "longitude": 71.64895},
-        {"id": 30, "name": "DHQ Hospital Bahawalpur", "name_ur": "ڈی ایچ کیو ہسپتال بہاولپور", "address": "Bahawalpur", "contact": "", "services": None, "latitude": 29.36908, "longitude": 71.76298},
-        {"id": 31, "name": "Ghulam Muhammad Mahar Medical College Hospital", "name_ur": "غلام محمد مہر میڈیکل کالج ہسپتال", "address": "Sukkur", "contact": "", "services": None, "latitude": 27.69397, "longitude": 68.88616},
-        {"id": 32, "name": "Civil Hospital Sukkur", "name_ur": "سول ہسپتال سکھر", "address": "Sukkur", "contact": "", "services": None, "latitude": 27.73201, "longitude": 68.78708},
-        {"id": 33, "name": "Chandka Medical College Hospital", "name_ur": "چانڈکا میڈیکل کالج ہسپتال", "address": "Larkana", "contact": "", "services": None, "latitude": 27.56415, "longitude": 68.18952},
-        {"id": 34, "name": "DHQ Hospital Sheikhupura", "name_ur": "ڈی ایچ کیو ہسپتال شیخوپورہ", "address": "Sheikhupura", "contact": "", "services": None, "latitude": 31.71935, "longitude": 73.89629},
-        {"id": 35, "name": "THQ Hospital Sheikhupura", "name_ur": "ٹی ایچ کیو ہسپتال شیخوپورہ", "address": "Sheikhupura", "contact": "", "services": None, "latitude": 31.72917, "longitude": 73.89236},
-        {"id": 36, "name": "DHQ Hospital Jhang", "name_ur": "ڈی ایچ کیو ہسپتال جھنگ", "address": "Jhang", "contact": "", "services": None, "latitude": 31.26996, "longitude": 72.32516},
-        {"id": 37, "name": "THQ Hospital Jhang", "name_ur": "ٹی ایچ کیو ہسپتال جھنگ", "address": "Jhang", "contact": "", "services": None, "latitude": 31.2838, "longitude": 72.3984},
-        {"id": 38, "name": "DHQ Hospital Rahim Yar Khan", "name_ur": "ڈی ایچ کیو ہسپتال رحیم یار خان", "address": "Rahim Yar Khan", "contact": "", "services": None, "latitude": 28.41813, "longitude": 70.28144},
-        {"id": 39, "name": "THQ Hospital Rahim Yar Khan", "name_ur": "ٹی ایچ کیو ہسپتال رحیم یار خان", "address": "Rahim Yar Khan", "contact": "", "services": None, "latitude": 28.41822, "longitude": 70.34331},
-        {"id": 40, "name": "DHQ Hospital Gujrat", "name_ur": "ڈی ایچ کیو ہسپتال گجرات", "address": "Gujrat", "contact": "", "services": None, "latitude": 32.57156, "longitude": 74.06484},
-        {"id": 41, "name": "THQ Hospital Gujrat", "name_ur": "ٹی ایچ کیو ہسپتال گجرات", "address": "Gujrat", "contact": "", "services": None, "latitude": 32.55981, "longitude": 74.02636},
-        {"id": 42, "name": "Mardan Medical Complex", "name_ur": "مردان میڈیکل کمپلیکس", "address": "Mardan", "contact": "", "services": None, "latitude": 34.20898, "longitude": 72.12482},
-        {"id": 43, "name": "DHQ Hospital Kasur", "name_ur": "ڈی ایچ کیو ہسپتال قصور", "address": "Kasur", "contact": "", "services": None, "latitude": 31.10794, "longitude": 74.35709},
-        {"id": 44, "name": "THQ Hospital Kasur", "name_ur": "ٹی ایچ کیو ہسپتال قصور", "address": "Kasur", "contact": "", "services": None, "latitude": 31.11143, "longitude": 74.53627},
-        {"id": 45, "name": "DHQ Hospital Okara", "name_ur": "ڈی ایچ کیو ہسپتال اوکاڑہ", "address": "Okara", "contact": "", "services": None, "latitude": 30.82216, "longitude": 73.45955},
-        {"id": 46, "name": "THQ Hospital Okara", "name_ur": "ٹی ایچ کیو ہسپتال اوکاڑہ", "address": "Okara", "contact": "", "services": None, "latitude": 30.81063, "longitude": 73.49737},
-        {"id": 47, "name": "DHQ Hospital Sahiwal", "name_ur": "ڈی ایچ کیو ہسپتال ساہیوال", "address": "Sahiwal", "contact": "", "services": None, "latitude": 30.67874, "longitude": 73.03373},
-        {"id": 48, "name": "THQ Hospital Sahiwal", "name_ur": "ٹی ایچ کیو ہسپتال ساہیوال", "address": "Sahiwal", "contact": "", "services": None, "latitude": 30.64228, "longitude": 73.18738},
-        {"id": 49, "name": "DHQ Hospital Nawabshah", "name_ur": "ڈی ایچ کیو ہسپتال نوابشاہ", "address": "Nawabshah", "contact": "", "services": None, "latitude": 26.23166, "longitude": 68.43833},
-        {"id": 50, "name": "THQ Hospital Nawabshah", "name_ur": "ٹی ایچ کیو ہسپتال نوابشاہ", "address": "Nawabshah", "contact": "", "services": None, "latitude": 26.24811, "longitude": 68.37144},
-        {"id": 51, "name": "DHQ Hospital Mingora", "name_ur": "ڈی ایچ کیو ہسپتال مینگورہ", "address": "Mingora", "contact": "", "services": None, "latitude": 34.77607, "longitude": 72.3527},
-        {"id": 52, "name": "THQ Hospital Mingora", "name_ur": "ٹی ایچ کیو ہسپتال مینگورہ", "address": "Mingora", "contact": "", "services": None, "latitude": 34.79744, "longitude": 72.4519},
-        {"id": 53, "name": "DHQ Hospital Dera Ghazi Khan", "name_ur": "ڈی ایچ کیو ہسپتال ڈیرہ غازی خان", "address": "Dera Ghazi Khan", "contact": "", "services": None, "latitude": 30.04906, "longitude": 70.71249},
-        {"id": 54, "name": "DHQ Hospital Mirpur Khas", "name_ur": "ڈی ایچ کیو ہسپتال میرپورخاص", "address": "Mirpur Khas", "contact": "", "services": None, "latitude": 25.52088, "longitude": 69.09779},
-        {"id": 55, "name": "THQ Hospital Mirpur Khas", "name_ur": "ٹی ایچ کیو ہسپتال میرپورخاص", "address": "Mirpur Khas", "contact": "", "services": None, "latitude": 25.54523, "longitude": 69.01678},
-        {"id": 56, "name": "DHQ Hospital Chiniot", "name_ur": "ڈی ایچ کیو ہسپتال چنیوٹ", "address": "Chiniot", "contact": "", "services": None, "latitude": 31.72727, "longitude": 72.91608},
-        {"id": 57, "name": "THQ Hospital Chiniot", "name_ur": "ٹی ایچ کیو ہسپتال چنیوٹ", "address": "Chiniot", "contact": "", "services": None, "latitude": 31.70691, "longitude": 72.91733},
-        {"id": 58, "name": "DHQ Hospital Kamoke", "name_ur": "ڈی ایچ کیو ہسپتال کاموکی", "address": "Kamoke", "contact": "", "services": None, "latitude": 32.11114, "longitude": 74.14544},
-        {"id": 59, "name": "THQ Hospital Kamoke", "name_ur": "ٹی ایچ کیو ہسپتال کاموکی", "address": "Kamoke", "contact": "", "services": None, "latitude": 32.10696, "longitude": 74.29546},
-        {"id": 60, "name": "DHQ Hospital Mandi Bahauddin", "name_ur": "ڈی ایچ کیو ہسپتال منڈی بہاؤالدین", "address": "Mandi Bahauddin", "contact": "", "services": None, "latitude": 32.59207, "longitude": 73.50266},
-        {"id": 61, "name": "THQ Hospital Mandi Bahauddin", "name_ur": "ٹی ایچ کیو ہسپتال منڈی بہاؤالدین", "address": "Mandi Bahauddin", "contact": "", "services": None, "latitude": 32.56261, "longitude": 73.58516},
-        {"id": 62, "name": "DHQ Hospital Jacobabad", "name_ur": "ڈی ایچ کیو ہسپتال جیکب آباد", "address": "Jacobabad", "contact": "", "services": None, "latitude": 28.27284, "longitude": 68.51606},
-        {"id": 63, "name": "THQ Hospital Jacobabad", "name_ur": "ٹی ایچ کیو ہسپتال جیکب آباد", "address": "Jacobabad", "contact": "", "services": None, "latitude": 28.30523, "longitude": 68.34148},
-        {"id": 64, "name": "DHQ Hospital Jhelum", "name_ur": "ڈی ایچ کیو ہسپتال جہلم", "address": "Jhelum", "contact": "", "services": None, "latitude": 32.95374, "longitude": 73.81099},
-        {"id": 65, "name": "THQ Hospital Jhelum", "name_ur": "ٹی ایچ کیو ہسپتال جہلم", "address": "Jhelum", "contact": "", "services": None, "latitude": 32.95747, "longitude": 73.81511},
-        {"id": 66, "name": "DHQ Hospital Kohat", "name_ur": "ڈی ایچ کیو ہسپتال کوہاٹ", "address": "Kohat", "contact": "", "services": None, "latitude": 33.5971, "longitude": 71.40979},
-        {"id": 67, "name": "THQ Hospital Kohat", "name_ur": "ٹی ایچ کیو ہسپتال کوہاٹ", "address": "Kohat", "contact": "", "services": None, "latitude": 33.61585, "longitude": 71.50347},
-        {"id": 68, "name": "DHQ Hospital Shikarpur", "name_ur": "ڈی ایچ کیو ہسپتال شکارپور", "address": "Shikarpur", "contact": "", "services": None, "latitude": 27.95472, "longitude": 68.58412},
-        {"id": 69, "name": "THQ Hospital Shikarpur", "name_ur": "ٹی ایچ کیو ہسپتال شکارپور", "address": "Shikarpur", "contact": "", "services": None, "latitude": 27.98071, "longitude": 68.60663},
-        {"id": 70, "name": "DHQ Hospital Khanewal", "name_ur": "ڈی ایچ کیو ہسپتال خانیوال", "address": "Khanewal", "contact": "", "services": None, "latitude": 30.31551, "longitude": 71.89124},
-        {"id": 71, "name": "THQ Hospital Khanewal", "name_ur": "ٹی ایچ کیو ہسپتال خانیوال", "address": "Khanewal", "contact": "", "services": None, "latitude": 30.30999, "longitude": 71.90993},
-        {"id": 72, "name": "DHQ Hospital Muzaffargarh", "name_ur": "ڈی ایچ کیو ہسپتال مظفر گڑھ", "address": "Muzaffargarh", "contact": "", "services": None, "latitude": 30.06546, "longitude": 71.12271},
-        {"id": 73, "name": "THQ Hospital Muzaffargarh", "name_ur": "ٹی ایچ کیو ہسپتال مظفر گڑھ", "address": "Muzaffargarh", "contact": "", "services": None, "latitude": 30.06857, "longitude": 71.24119},
-        {"id": 74, "name": "Ayub Teaching Hospital", "name_ur": "ایوب ٹیچنگ ہسپتال", "address": "Abbottabad", "contact": "", "services": None, "latitude": 34.13894, "longitude": 73.24918},
-        {"id": 75, "name": "DHQ Hospital Abbottabad", "name_ur": "ڈی ایچ کیو ہسپتال ایبٹ آباد", "address": "Abbottabad", "contact": "", "services": None, "latitude": 34.1164, "longitude": 73.30097},
-        {"id": 76, "name": "DHQ Hospital Muridke", "name_ur": "ڈی ایچ کیو ہسپتال مریدکے", "address": "Muridke", "contact": "", "services": None, "latitude": 31.79124, "longitude": 74.33651},
-        {"id": 77, "name": "THQ Hospital Muridke", "name_ur": "ٹی ایچ کیو ہسپتال مریدکے", "address": "Muridke", "contact": "", "services": None, "latitude": 31.80293, "longitude": 74.29955},
-        {"id": 78, "name": "DHQ Hospital Bahawalnagar", "name_ur": "ڈی ایچ کیو ہسپتال بہاولنگر", "address": "Bahawalnagar", "contact": "", "services": None, "latitude": 29.99527, "longitude": 73.30246},
-        {"id": 79, "name": "THQ Hospital Bahawalnagar", "name_ur": "ٹی ایچ کیو ہسپتال بہاولنگر", "address": "Bahawalnagar", "contact": "", "services": None, "latitude": 29.97934, "longitude": 73.27231},
-        {"id": 80, "name": "DHQ Hospital Khairpur", "name_ur": "ڈی ایچ کیو ہسپتال خیرپور", "address": "Khairpur", "contact": "", "services": None, "latitude": 27.5327, "longitude": 68.7272},
-        {"id": 81, "name": "THQ Hospital Khairpur", "name_ur": "ٹی ایچ کیو ہسپتال خیرپور", "address": "Khairpur", "contact": "", "services": None, "latitude": 27.52601, "longitude": 68.79608},
-        {"id": 82, "name": "DHQ Hospital Turbat", "name_ur": "ڈی ایچ کیو ہسپتال تربت", "address": "Turbat", "contact": "", "services": None, "latitude": 26.00802, "longitude": 63.06977},
-        {"id": 83, "name": "THQ Hospital Turbat", "name_ur": "ٹی ایچ کیو ہسپتال تربت", "address": "Turbat", "contact": "", "services": None, "latitude": 25.9787, "longitude": 63.14322},
-        {"id": 84, "name": "DHQ Hospital Dadu", "name_ur": "ڈی ایچ کیو ہسپتال دادو", "address": "Dadu", "contact": "", "services": None, "latitude": 26.74532, "longitude": 67.79613},
-        {"id": 85, "name": "THQ Hospital Dadu", "name_ur": "ٹی ایچ کیو ہسپتال دادو", "address": "Dadu", "contact": "", "services": None, "latitude": 26.74691, "longitude": 67.76674},
-        {"id": 86, "name": "DHQ Hospital Chaman", "name_ur": "ڈی ایچ کیو ہسپتال چمن", "address": "Chaman", "contact": "", "services": None, "latitude": 30.90617, "longitude": 66.50487},
-        {"id": 87, "name": "THQ Hospital Chaman", "name_ur": "ٹی ایچ کیو ہسپتال چمن", "address": "Chaman", "contact": "", "services": None, "latitude": 30.9372, "longitude": 66.37708},
-        {"id": 88, "name": "DHQ Hospital Charsadda", "name_ur": "ڈی ایچ کیو ہسپتال چارسدہ", "address": "Charsadda", "contact": "", "services": None, "latitude": 34.16045, "longitude": 71.73216},
-        {"id": 89, "name": "THQ Hospital Charsadda", "name_ur": "ٹی ایچ کیو ہسپتال چارسدہ", "address": "Charsadda", "contact": "", "services": None, "latitude": 34.16808, "longitude": 71.77519},
-        {"id": 90, "name": "DHQ Hospital Nowshera", "name_ur": "ڈی ایچ کیو ہسپتال نوشہرہ", "address": "Nowshera", "contact": "", "services": None, "latitude": 34.02692, "longitude": 72.01886},
-        {"id": 91, "name": "THQ Hospital Nowshera", "name_ur": "ٹی ایچ کیو ہسپتال نوشہرہ", "address": "Nowshera", "contact": "", "services": None, "latitude": 34.01348, "longitude": 71.92443},
-        {"id": 92, "name": "DHQ Hospital Swabi", "name_ur": "ڈی ایچ کیو ہسپتال صوابی", "address": "Swabi", "contact": "", "services": None, "latitude": 34.10732, "longitude": 72.43143},
-        {"id": 93, "name": "THQ Hospital Swabi", "name_ur": "ٹی ایچ کیو ہسپتال صوابی", "address": "Swabi", "contact": "", "services": None, "latitude": 34.1063, "longitude": 72.43214},
-        {"id": 94, "name": "DHQ Hospital Bannu", "name_ur": "ڈی ایچ کیو ہسپتال بنوں", "address": "Bannu", "contact": "", "services": None, "latitude": 32.98523, "longitude": 70.61067},
-        {"id": 95, "name": "THQ Hospital Bannu", "name_ur": "ٹی ایچ کیو ہسپتال بنوں", "address": "Bannu", "contact": "", "services": None, "latitude": 32.98295, "longitude": 70.54144},
-        {"id": 96, "name": "DHQ Hospital Dera Ismail Khan", "name_ur": "ڈی ایچ کیو ہسپتال ڈیرہ اسماعیل خان", "address": "Dera Ismail Khan", "contact": "", "services": None, "latitude": 31.82741, "longitude": 70.81206},
-        {"id": 97, "name": "THQ Hospital Dera Ismail Khan", "name_ur": "ٹی ایچ کیو ہسپتال ڈیرہ اسماعیل خان", "address": "Dera Ismail Khan", "contact": "", "services": None, "latitude": 31.82211, "longitude": 70.95423},
-        {"id": 98, "name": "Combined Military Hospital Muzaffarabad", "name_ur": "کمبائنڈ ملٹری ہسپتال مظفرآباد", "address": "Muzaffarabad", "contact": "", "services": None, "latitude": 34.36957, "longitude": 73.44999},
-        {"id": 99, "name": "Abbas Institute of Medical Sciences", "name_ur": "عباس انسٹی ٹیوٹ آف میڈیکل سائنسز", "address": "Muzaffarabad", "contact": "", "services": None, "latitude": 34.38013, "longitude": 73.53261},
-        {"id": 100, "name": "DHQ Hospital Mirpur", "name_ur": "ڈی ایچ کیو ہسپتال میرپور", "address": "Mirpur", "contact": "", "services": None, "latitude": 33.15269, "longitude": 73.67591},
-        {"id": 101, "name": "THQ Hospital Mirpur", "name_ur": "ٹی ایچ کیو ہسپتال میرپور", "address": "Mirpur", "contact": "", "services": None, "latitude": 33.14352, "longitude": 73.82784},
-        {"id": 102, "name": "DHQ Hospital Gilgit", "name_ur": "ڈی ایچ کیو ہسپتال گلگت", "address": "Gilgit", "contact": "", "services": None, "latitude": 35.93219, "longitude": 74.27449},
-        {"id": 103, "name": "DHQ Hospital Skardu", "name_ur": "ڈی ایچ کیو ہسپتال سکردو", "address": "Skardu", "contact": "", "services": None, "latitude": 35.31066, "longitude": 75.58366},
-        {"id": 104, "name": "Gwadar DHQ Hospital", "name_ur": "گوادر ڈی ایچ کیو ہسپتال", "address": "Gwadar", "contact": "", "services": None, "latitude": 25.11201, "longitude": 62.25993},
-    ])
+    return jsonify(activity_items[:100])
 
-    # Rescue operations, community reports and blocked roads are intentionally
-    # left empty — they should reflect only what real users actually submit
-    # (via the Rescue Dashboard, Community page, and Admin/Rescue map tools).
-
-    print(f"[SEED] {len(MEMORY_SHELTERS)} shelters + {len(MEMORY_HOSPITALS)} hospitals (per known city) loaded. "
-          f"No dummy rescue operations, community reports, or blocked roads were added.")
-
-seed_sample_data()
-
-# ---------------- SYSTEM LOGS (NFR06-02) ----------------
 @app.route("/admin/logs", methods=["GET"])
 def get_logs():
     all_logs = list(MEMORY_LOGS)
