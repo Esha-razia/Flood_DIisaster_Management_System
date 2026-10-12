@@ -1,0 +1,157 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import axios from 'axios';
+import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
+import { API_BASE } from "../config";
+
+export default function GovOfficialLogin() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (localStorage.getItem('userRole') === 'government_official') {
+      navigate('/gov-dashboard', { replace: true });
+    }
+  }, [navigate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    const cleanUser = username.trim();
+    if (!cleanUser) {
+      setError('Please enter your Government Official username or email.');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        username: cleanUser,
+        email: cleanUser.toLowerCase(),
+        password: password.trim()
+      };
+      const response = await axios.post(`${API_BASE}/login`, payload);
+
+      if (response.data.role !== 'government_official') {
+        setError('Access Denied: This portal is restricted to Government Officials.');
+        return;
+      }
+
+      localStorage.setItem('userRole', 'government_official');
+      localStorage.setItem('userName', response.data.name || 'Government Official');
+      localStorage.setItem('userEmail', response.data.email || cleanUser);
+      if (response.data.id) localStorage.setItem('userId', response.data.id);
+
+      setSuccess('Government Official login successful! Redirecting...');
+      setTimeout(() => navigate('/gov-dashboard'), 1000);
+    } catch (err) {
+      const serverMessage = err.response?.data?.message || err.response?.data?.error;
+      setError(serverMessage || err.message || 'Invalid Government Official credentials.');
+      console.error('Government Official login error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-ink text-parchment font-sans">
+      <Navbar />
+      <div className="pt-24 pb-16">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="max-w-md mx-auto">
+            <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl">
+              <div className="text-center mb-8">
+                <h1 className="font-display text-3xl text-parchment mb-2">Government Official Portal</h1>
+                <p className="text-muted">Sign in with your government credentials</p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3"><p className="text-red-400 text-sm">{error}</p></div>}
+                {success && <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3"><p className="text-green-400 text-sm">{success}</p></div>}
+
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2">Government Official Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Enter username or email"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-3 pr-12 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      placeholder="Enter government password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white p-1 rounded transition-colors focus:outline-none cursor-pointer"
+                      title={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center">
+                    <input type="checkbox" className="mr-2" />
+                    <span className="text-sm text-muted">Remember me</span>
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
+                >
+                  {loading ? 'Authenticating...' : 'Sign In as Government Official'}
+                </button>
+
+                <div className="pt-4 mt-2 border-t border-white/10 text-center">
+                  <Link to="/login" className="text-sm text-teal-400 hover:text-teal-300 transition-colors">
+                    ← Return to Citizen & Staff Sign In
+                  </Link>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+      <Footer />
+    </div>
+  );
+}

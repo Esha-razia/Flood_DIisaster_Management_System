@@ -183,13 +183,19 @@ export default function Login() {
                   {loading ? t('analysing') : t('signIn')}
                 </button>
 
-                <div className="pt-4 mt-2 border-t border-white/10 text-center flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted">
-                  <span>Authorized Staff?</span>
+                <div className="pt-4 mt-2 border-t border-white/10 text-center flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-muted">
                   <Link
                     to="/admin-login"
                     className="text-amber-400 hover:text-amber-300 font-semibold transition-colors inline-flex items-center gap-1"
                   >
                     🛡️ Administrator Portal →
+                  </Link>
+                  <span className="hidden sm:inline text-white/30">|</span>
+                  <Link
+                    to="/government-login"
+                    className="text-teal-400 hover:text-teal-300 font-semibold transition-colors inline-flex items-center gap-1"
+                  >
+                    🏛️ Government Official Portal →
                   </Link>
                 </div>
               </form>

@@ -856,6 +856,16 @@ if DB_AVAILABLE:
                     cursor.execute("IF COL_LENGTH('hospitals', 'verified') IS NULL ALTER TABLE hospitals ADD verified INT DEFAULT 0")
                     cursor.execute("IF COL_LENGTH('hospitals', 'occupancy') IS NULL ALTER TABLE hospitals ADD occupancy INT DEFAULT 0")
                     cursor.execute("IF COL_LENGTH('hospitals', 'capacity') IS NULL ALTER TABLE hospitals ADD capacity INT DEFAULT 50")
+                    # Keep existing SQL Server databases compatible with the
+                    # rescue-operation API. Each statement is idempotent and
+                    # only adds a column when the live table is missing it.
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'description') IS NULL ALTER TABLE rescue_operations ADD description NVARCHAR(MAX) NULL")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'people_rescued') IS NULL ALTER TABLE rescue_operations ADD people_rescued INT NULL")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'resources_used') IS NULL ALTER TABLE rescue_operations ADD resources_used NVARCHAR(MAX) NULL")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'completion_notes') IS NULL ALTER TABLE rescue_operations ADD completion_notes NVARCHAR(MAX) NULL")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'needs_backup') IS NULL ALTER TABLE rescue_operations ADD needs_backup INT NULL DEFAULT 0")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'update_log') IS NULL ALTER TABLE rescue_operations ADD update_log NVARCHAR(MAX) NULL")
+                    cursor.execute("IF COL_LENGTH('rescue_operations', 'checklist') IS NULL ALTER TABLE rescue_operations ADD checklist NVARCHAR(MAX) NULL")
                     cursor.execute("UPDATE alerts SET status = 'Active' WHERE status IS NULL OR LTRIM(RTRIM(status)) = ''")
                     # Seed fixed Government Official account if not already present
                     cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(CAST(email AS VARCHAR(MAX))) = 'govofficial@gmail.com'")
@@ -1729,7 +1739,7 @@ def get_predictions():
     return jsonify(data)
 
 # ---------------- ALERTS (FR-03) ----------------
-from notifications import register as register_notifications, create as create_notification
+from notifications import register as register_notifications, create as create_notification, db as notification_db
 register_notifications(app)
 from map_support import register as register_map_support
 register_map_support(app)
@@ -1765,6 +1775,7 @@ if DB_AVAILABLE:
 # ---------------- RESCUE OPERATIONS (FR-05) ----------------
 MEMORY_RESCUE_OPS = []
 RISK_PRIORITY = {"High": 1, "Medium": 2, "Low": 3}
+BUSY_OPERATION_STATUSES = ("Assigned", "In Progress")
 
 def _get_all_rescue_operations():
     """Merges in-memory operations (this session's) with everything in the
@@ -1872,6 +1883,20 @@ def _db_insert_get_id(insert_query_with_qmarks, params):
         return row.new_id if hasattr(row, "new_id") else row[0]
 
 
+def _worker_has_active_operation(worker_name, exclude_operation_id=None):
+    """Return the active operation currently assigned to a worker, if any."""
+    if not worker_name or worker_name == "Unassigned":
+        return None
+    for operation in _get_all_rescue_operations():
+        if (
+            operation.get("id") != exclude_operation_id
+            and operation.get("assigned_team") == worker_name
+            and operation.get("status") in BUSY_OPERATION_STATUSES
+        ):
+            return operation
+    return None
+
+
 DEFAULT_OP_CHECKLIST = [
     {"label": "Evacuation started", "done": False},
     {"label": "Medical check", "done": False},
@@ -1879,9 +1904,65 @@ DEFAULT_OP_CHECKLIST = [
     {"label": "Reached shelter", "done": False},
 ]
 
-def _create_rescue_op_internal(location, description="", risk_level="Medium", assigned_team="Unassigned", latitude=None, longitude=None):
+def _get_alert_for_link(alert_id):
+    """Validate and return an active notification alert by its exact ID."""
+    try:
+        normalized_id = int(alert_id)
+    except (TypeError, ValueError):
+        raise ValueError("alert_id must be an integer")
+    with notification_db() as notification_connection:
+        row = notification_connection.execute(
+            "SELECT payload FROM alerts WHERE id = ?", (normalized_id,)
+        ).fetchone()
+    if not row:
+        raise LookupError("Related flood alert was not found")
+    alert = json.loads(row["payload"])
+    if alert.get("status") == "Cancelled":
+        raise ValueError("Related flood alert is cancelled")
+    linked_operation_id = alert.get("linked_rescue_op_id")
+    if linked_operation_id is not None:
+        try:
+            linked_operation_id = int(linked_operation_id)
+        except (TypeError, ValueError):
+            raise ValueError("Related flood alert has an invalid operation link")
+        if any(operation["id"] == linked_operation_id for operation in MEMORY_RESCUE_OPS):
+            raise ValueError(f"Related flood alert is already linked to rescue operation {linked_operation_id}")
+        if DB_AVAILABLE:
+            cursor.execute("SELECT id FROM rescue_operations WHERE id = ?", (linked_operation_id,))
+            if cursor.fetchone():
+                raise ValueError(f"Related flood alert is already linked to rescue operation {linked_operation_id}")
+    return normalized_id, alert
+
+
+def _link_alert_to_operation(alert_id, operation_id, assigned_worker):
+    """Link one exact alert to one operation in the existing notification store."""
+    with notification_db() as notification_connection:
+        row = notification_connection.execute(
+            "SELECT payload FROM alerts WHERE id = ?", (int(alert_id),)
+        ).fetchone()
+        if not row:
+            raise LookupError("Related flood alert was not found")
+        alert = json.loads(row["payload"])
+        existing_link = alert.get("linked_rescue_op_id")
+        if existing_link is not None and str(existing_link) != str(operation_id):
+            raise ValueError("Related flood alert is already linked to another rescue operation")
+        alert["linked_rescue_op_id"] = int(operation_id)
+        alert["assigned_worker"] = (
+            assigned_worker if assigned_worker and assigned_worker != "Unassigned" else None
+        )
+        alert["updated_at"] = datetime.now().isoformat()
+        notification_connection.execute(
+            "UPDATE alerts SET payload = ? WHERE id = ?",
+            (json.dumps(alert), int(alert_id)),
+        )
+    return alert
+
+
+def _create_rescue_op_internal(location, description="", risk_level="Medium", assigned_team="Unassigned", latitude=None, longitude=None, create_dispatch_alert=True):
     """Shared by the manual '+ New Operation' form and the automatic
     community-report -> rescue-operation link (see update_community_report_status)."""
+    created_at = datetime.now()
+    updated_at = datetime.now()
     op = {
         "id": (max([o["id"] for o in MEMORY_RESCUE_OPS], default=0) + 1),
         "location": location,
@@ -1890,8 +1971,8 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
         "risk_level": risk_level,
         "assigned_team": assigned_team or "Unassigned",
         "status": "Assigned",
-        "created_at": str(datetime.now()),
-        "updated_at": str(datetime.now()),
+        "created_at": str(created_at),
+        "updated_at": str(updated_at),
         "completed_at": None,
         "needs_backup": False,
         "update_log": [],
@@ -1904,10 +1985,15 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
             op["id"] = _db_insert_get_id(
                 "INSERT INTO rescue_operations (location, description, risk_level, assigned_team, status, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], op["created_at"], op["updated_at"])
+                (op["location"], op["description"], op["risk_level"], op["assigned_team"], op["status"], created_at, updated_at)
             )
             cursor.execute("UPDATE rescue_operations SET checklist = ?, latitude = ?, longitude = ? WHERE id = ?", (json.dumps(op["checklist"]), latitude, longitude, op["id"]))
-            create_notification(f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}", op["risk_level"], op["location"], source="dispatch")
+            if create_dispatch_alert:
+                dispatch_alert = create_notification(
+                    f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}",
+                    op["risk_level"], op["location"], source="dispatch"
+                )
+                _link_alert_to_operation(dispatch_alert["id"], op["id"], op["assigned_team"])
             conn.commit()
         except Exception as db_error:
             # If we couldn't confirm the real database id, don't silently
@@ -1928,13 +2014,44 @@ def create_rescue_operation():
     if not location:
         return jsonify({"message": "Location is required"}), 400
 
+    alert_id = data.get("alert_id")
+    selected_alert = None
+    if alert_id is not None and alert_id != "":
+        try:
+            alert_id, selected_alert = _get_alert_for_link(alert_id)
+        except (LookupError, ValueError) as error:
+            return jsonify({"message": str(error)}), 409
+
+    assigned_team = data.get("assigned_team", "Unassigned") or "Unassigned"
+    busy_operation = _worker_has_active_operation(assigned_team)
+    if busy_operation:
+        return jsonify({
+            "message": f"{assigned_team} is already assigned to active operation {busy_operation['id']}."
+        }), 409
+
+    created_operation_id = None
     try:
         op = _create_rescue_op_internal(
             location=location, description=data.get("description", ""),
-            risk_level=data.get("risk_level", "High"), assigned_team=data.get("assigned_team", "Unassigned"),
+            risk_level=data.get("risk_level", "High"), assigned_team=assigned_team,
             latitude=data.get("latitude"), longitude=data.get("longitude"),
+            create_dispatch_alert=False,
         )
-    except Exception:
+        created_operation_id = op["id"]
+        if selected_alert is not None:
+            _link_alert_to_operation(alert_id, op["id"], op["assigned_team"])
+    except Exception as error:
+        if created_operation_id is not None:
+            try:
+                MEMORY_RESCUE_OPS[:] = [
+                    item for item in MEMORY_RESCUE_OPS if item["id"] != created_operation_id
+                ]
+                if DB_AVAILABLE:
+                    cursor.execute("DELETE FROM rescue_operations WHERE id = ?", (created_operation_id,))
+                    conn.commit()
+            except Exception as cleanup_error:
+                log_event("error", f"Failed to roll back rescue operation {created_operation_id}: {cleanup_error}")
+        log_event("error", f"Failed to create/link rescue operation: {error}")
         return jsonify({"message": "Could not save the operation to the database — please try again."}), 503
     # FR05-03: notify relevant rescue teams when a new operation is created.
     return jsonify(op), 201
@@ -1950,13 +2067,21 @@ def update_rescue_operation_status(op_id):
     if risk_level and risk_level not in ("High", "Medium", "Low"):
         return jsonify({"message": "Invalid risk level"}), 400
 
-    updated_at = str(datetime.now())
-    completed_at = updated_at if new_status == "Completed" else None
+    updated_at_value = datetime.now()
+    updated_at = str(updated_at_value)
+    completed_at_value = updated_at_value if new_status == "Completed" else None
+    completed_at = str(completed_at_value) if completed_at_value else None
     people_rescued = data.get("people_rescued") if new_status == "Completed" else None
     resources_used = data.get("resources_used", "") if new_status == "Completed" else None
     completion_notes = data.get("completion_notes", "") if new_status == "Completed" else None
     assigned_team = data.get("assigned_team")
     needs_backup = data.get("needs_backup")  # True/False/None (None = leave unchanged)
+
+    busy_operation = _worker_has_active_operation(assigned_team, exclude_operation_id=op_id)
+    if busy_operation:
+        return jsonify({
+            "message": f"{assigned_team} is already assigned to active operation {busy_operation['id']}."
+        }), 409
 
     result = None
     for op in MEMORY_RESCUE_OPS:
@@ -1988,7 +2113,7 @@ def update_rescue_operation_status(op_id):
                 "assigned_team = COALESCE(?, assigned_team), completed_at = COALESCE(?, completed_at), "
                 "people_rescued = COALESCE(?, people_rescued), resources_used = COALESCE(?, resources_used), "
                 "completion_notes = COALESCE(?, completion_notes), needs_backup = COALESCE(?, needs_backup) WHERE id = ?",
-                (new_status, updated_at, risk_level, assigned_team, completed_at, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
+                (new_status, updated_at_value, risk_level, assigned_team, completed_at_value, people_rescued, resources_used, completion_notes, needs_backup_db, op_id)
             )
             conn.commit()
             if result is None:

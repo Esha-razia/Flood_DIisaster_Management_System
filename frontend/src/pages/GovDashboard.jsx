@@ -23,10 +23,16 @@ export default function GovDashboard() {
   const [compareCities, setCompareCities] = useState(["", ""]);
   const [reportCity, setReportCity] = useState("");
   const [rescueWorkers, setRescueWorkers] = useState([]);
-  const [assigningAlertId, setAssigningAlertId] = useState(null);
-  const [assignForm, setAssignForm] = useState({ worker: "", description: "" });
-  const [govFeedback, setGovFeedback] = useState("");
   const [allRescueOps, setAllRescueOps] = useState([]);
+  const [assigningAlertId, setAssigningAlertId] = useState(null);
+  const [assignmentSubmittingId, setAssignmentSubmittingId] = useState(null);
+  const [assignForm, setAssignForm] = useState({ worker: "", description: "" });
+  const [showOperationForm, setShowOperationForm] = useState(false);
+  const [selectedOperationId, setSelectedOperationId] = useState(null);
+  const [operationFeedback, setOperationFeedback] = useState("");
+  const [operationForm, setOperationForm] = useState({
+    location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", alert_id: ""
+  });
   const [seasonalTrend, setSeasonalTrend] = useState([]);
   const [activeTab, setActiveTab] = useState("analytics");
 
@@ -52,32 +58,6 @@ export default function GovDashboard() {
     } catch (err) { console.error(err); }
   };
 
-  const handleAssignRescueWorker = async (alertItem) => {
-    try {
-      const opRes = await axios.post(`${API_BASE}/rescue-operations`, {
-        location: alertItem.location,
-        description: assignForm.description || `Response to alert: ${alertItem.message}`,
-        risk_level: alertItem.risk_level || alertItem.risk || "Medium",
-        assigned_team: assignForm.worker || "Unassigned",
-      });
-      // Mark the alert itself as assigned so the UI knows not to offer this
-      // action again — without this, re-opening the dashboard (or another
-      // official viewing it) would show the same alert as still unassigned.
-      await axios.put(`${API_BASE}/alerts/${alertItem.id}`, {
-        assigned_worker: assignForm.worker || "Unassigned",
-        linked_rescue_op_id: opRes.data.id,
-      });
-      setAssigningAlertId(null);
-      setAssignForm({ worker: "", description: "" });
-      setGovFeedback(t("operationAssignedMsg"));
-      setTimeout(() => setGovFeedback(""), 4000);
-      fetchAlerts();
-      fetchAllRescueOps();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleUpdateWorkerStatus = async (workerId, newStatus) => {
     try {
       const endpoint = newStatus === "Active" ? "activate" : "deactivate";
@@ -85,6 +65,121 @@ export default function GovDashboard() {
       fetchRescueWorkers();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const refreshRescueData = async () => {
+    await Promise.all([fetchRescueWorkers(), fetchAllRescueOps(), fetchAlerts()]);
+  };
+
+  const showOperationFeedback = (message) => {
+    setOperationFeedback(message);
+    setTimeout(() => setOperationFeedback(""), 4000);
+  };
+
+  const handleCreateOperation = async (e) => {
+    e.preventDefault();
+    if (!operationForm.location.trim()) return;
+    const selectedAlert = operationForm.alert_id
+      ? pendingAlerts.find((alert) => String(alert.id) === String(operationForm.alert_id))
+      : null;
+    const existingLinkedOperation = selectedAlert?.linked_rescue_op_id !== undefined &&
+      selectedAlert?.linked_rescue_op_id !== null
+      ? allRescueOps.find((operation) => String(operation.id) === String(selectedAlert.linked_rescue_op_id))
+      : null;
+    if (selectedAlert && existingLinkedOperation) {
+      showOperationFeedback(`Alert #${selectedAlert.id} is already linked to operation #${existingLinkedOperation.id}. Manage or reassign that operation below.`);
+      return;
+    }
+    let operationCreated = false;
+    try {
+      const operationRes = await axios.post(`${API_BASE}/rescue-operations`, {
+        location: operationForm.location.trim(),
+        description: operationForm.description.trim(),
+        risk_level: operationForm.risk_level,
+        assigned_team: operationForm.assigned_team,
+        ...(selectedAlert ? { alert_id: selectedAlert.id } : {}),
+      });
+      operationCreated = operationRes.status === 201;
+      setOperationForm({ location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", alert_id: "" });
+      setShowOperationForm(false);
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not create the rescue operation.");
+      return;
+    }
+
+    if (operationCreated) {
+      try {
+        await refreshRescueData();
+        showOperationFeedback("Rescue operation created successfully.");
+      } catch (refreshError) {
+        console.error("Rescue operation was saved, but dashboard refresh failed:", refreshError);
+        showOperationFeedback("Rescue operation created successfully. Refresh the page to see the latest data.");
+      }
+    }
+  };
+
+  const handleAssignRescueWorker = async (alertItem) => {
+    if (assignmentSubmittingId === alertItem.id || !assignForm.worker) return;
+    setAssignmentSubmittingId(alertItem.id);
+    try {
+      const linkedOperation = getAlertOperation(alertItem);
+      if (linkedOperation) {
+        await axios.put(`${API_BASE}/rescue-operations/${linkedOperation.id}/status`, {
+          assigned_team: assignForm.worker,
+        });
+      } else {
+        await axios.post(`${API_BASE}/rescue-operations`, {
+          location: alertItem.location,
+          description: assignForm.description.trim() || `Response to alert: ${alertItem.message}`,
+          risk_level: alertItem.risk_level || alertItem.risk || "Medium",
+          assigned_team: assignForm.worker,
+          alert_id: alertItem.id,
+        });
+      }
+      setAssigningAlertId(null);
+      setAssignForm({ worker: "", description: "" });
+      await refreshRescueData();
+      showOperationFeedback("Rescue worker assigned successfully.");
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not assign the rescue worker.");
+    } finally {
+      setAssignmentSubmittingId(null);
+    }
+  };
+
+  const handleUpdateOperation = async (operation, changes) => {
+    const nextWorker = changes.assigned_team;
+    if (nextWorker && nextWorker !== "Unassigned") {
+      const conflictingOperation = allRescueOps.find((item) =>
+        item.id !== operation.id &&
+        item.status !== "Completed" &&
+        item.assigned_team === nextWorker
+      );
+      if (conflictingOperation) {
+        showOperationFeedback(`${nextWorker} is already assigned to another active operation.`);
+        return;
+      }
+    }
+
+    try {
+      await axios.put(`${API_BASE}/rescue-operations/${operation.id}/status`, changes);
+      await refreshRescueData();
+      showOperationFeedback("Rescue operation updated successfully.");
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not update the rescue operation.");
+    }
+  };
+
+  const handleChecklistUpdate = async (operation, itemIndex, done) => {
+    try {
+      await axios.put(`${API_BASE}/rescue-operations/${operation.id}/checklist`, {
+        item_index: itemIndex,
+        done,
+      });
+      await fetchAllRescueOps();
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not update operation progress.");
     }
   };
 
@@ -201,6 +296,35 @@ export default function GovDashboard() {
       console.error(err);
     }
   };
+
+  const uniqueAlerts = useMemo(() => {
+    const seenIds = new Set();
+    return alerts.filter((alert) => {
+      const alertId = alert.id;
+      if (alertId === undefined || alertId === null) return true;
+      const normalizedId = String(alertId);
+      if (seenIds.has(normalizedId)) return false;
+      seenIds.add(normalizedId);
+      return true;
+    });
+  }, [alerts]);
+
+  const getAlertOperation = (alert) => allRescueOps.find((operation) =>
+      alert.linked_rescue_op_id !== undefined &&
+      alert.linked_rescue_op_id !== null &&
+      String(operation.id) === String(alert.linked_rescue_op_id)
+  );
+
+  const activeWorkerNames = useMemo(() => new Set(
+    allRescueOps
+      .filter((operation) => operation.status === "Assigned" || operation.status === "In Progress")
+      .map((operation) => operation.assigned_team)
+      .filter((worker) => worker && worker !== "Unassigned")
+  ), [allRescueOps]);
+
+  const pendingAlerts = useMemo(() => uniqueAlerts.filter((alert) =>
+    alert.status !== "Cancelled" && !getAlertOperation(alert)
+  ), [uniqueAlerts, allRescueOps]);
 
   // Filter predictions based on selected filters
   const filteredPredictions = useMemo(() => {
@@ -698,15 +822,27 @@ export default function GovDashboard() {
             <p className="eyebrow text-red-400 mb-2">{t("emergencyResponse")}</p>
             <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
             <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
-            {govFeedback && <p className="text-sm text-emerald-400 mb-3">✓ {govFeedback}</p>}
-            {alerts.filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")).length === 0 ? (
+            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")).length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
               <div className="space-y-3">
-                {alerts
+                {uniqueAlerts
                   .filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium"))
                   .slice(0, 10)
-                  .map((a) => (
+                  .map((a) => {
+                    const linkedOperation = getAlertOperation(a);
+                    const assignedWorker = linkedOperation?.assigned_team && linkedOperation.assigned_team !== "Unassigned"
+                      ? linkedOperation.assigned_team
+                      : null;
+                    const alertStatus = linkedOperation?.status === "Completed"
+                      ? "Completed"
+                      : linkedOperation?.status === "In Progress"
+                        ? "In Progress"
+                        : assignedWorker
+                          ? `Assigned to ${assignedWorker}`
+                          : "Pending";
+                    const isAssigned = Boolean(assignedWorker);
+                    return (
                     <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
@@ -718,42 +854,53 @@ export default function GovDashboard() {
                           </div>
                           <p className="text-sm text-muted">{a.message}</p>
                         </div>
-                        <button
-                          onClick={() => { setAssigningAlertId(assigningAlertId === a.id ? null : a.id); setAssignForm({ worker: "", description: "" }); }}
-                          disabled={!!a.assigned_worker}
-                          className="btn-secondary text-xs py-2 px-3 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {a.assigned_worker
-                            ? `✓ ${t("assignedTo")} ${a.assigned_worker}`
-                            : assigningAlertId === a.id ? t("cancel") : t("assignRescueWorker")}
-                        </button>
+                        {isAssigned ? (
+                          <span className="text-xs text-white bg-[#0b1f3a] border border-white/20 rounded-full px-3 py-2 shrink-0">
+                            {linkedOperation?.status === "Assigned" ? `✓ ${t("assignedTo")} ${assignedWorker}` : alertStatus}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setAssigningAlertId(assigningAlertId === a.id ? null : a.id);
+                              setAssignForm({ worker: "", description: "" });
+                            }}
+                            disabled={assignmentSubmittingId === a.id}
+                            className="btn-secondary text-xs py-2 px-3 shrink-0 disabled:opacity-50"
+                          >
+                            {assignmentSubmittingId === a.id ? "Saving..." : assigningAlertId === a.id ? t("cancel") : t("assignRescueWorker")}
+                          </button>
+                        )}
                       </div>
-
-                      {!a.assigned_worker && assigningAlertId === a.id && (
+                      {!isAssigned && assigningAlertId === a.id && (
                         <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
                           <select
                             value={assignForm.worker}
-                            onChange={(e) => setAssignForm((p) => ({ ...p, worker: e.target.value }))}
+                            onChange={(e) => setAssignForm((form) => ({ ...form, worker: e.target.value }))}
                             className="field-input text-sm"
                           >
                             <option value="">{t("selectRescueWorker")}</option>
-                            {rescueWorkers.map((w) => (
-                              <option key={w.id} value={w.name}>{w.name} ({w.email})</option>
+                            {rescueWorkers.filter((worker) => worker.status === "Active" && !activeWorkerNames.has(worker.name)).map((worker) => (
+                              <option key={worker.id} value={worker.name}>{worker.name} ({worker.email})</option>
                             ))}
                           </select>
                           <input
                             placeholder={t("operationNotesPh")}
                             value={assignForm.description}
-                            onChange={(e) => setAssignForm((p) => ({ ...p, description: e.target.value }))}
+                            onChange={(e) => setAssignForm((form) => ({ ...form, description: e.target.value }))}
                             className="field-input text-sm"
                           />
-                          <button onClick={() => handleAssignRescueWorker(a)} className="btn-primary text-sm w-full">
+                          <button
+                            onClick={() => handleAssignRescueWorker(a)}
+                            disabled={!assignForm.worker || assignmentSubmittingId === a.id}
+                            className="btn-primary text-sm w-full disabled:opacity-50"
+                          >
                             {t("confirmAssignment")}
                           </button>
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -773,6 +920,7 @@ export default function GovDashboard() {
                       <th className="pb-2">{t("name")}</th>
                       <th className="pb-2">{t("email")}</th>
                       <th className="pb-2">{t("status")}</th>
+                      <th className="pb-2">Availability</th>
                       <th className="pb-2">{t("actions")}</th>
                     </tr>
                   </thead>
@@ -783,6 +931,11 @@ export default function GovDashboard() {
                         <td className="py-2 text-muted">{w.email}</td>
                         <td className="py-2">
                           <span className={w.status === "Active" ? "text-teal-300" : "text-muted"}>{w.status === "Active" ? t("active") : t("inactive")}</span>
+                        </td>
+                        <td className="py-2">
+                          <span className={activeWorkerNames.has(w.name) ? "text-amber-300" : "text-emerald-300"}>
+                            {activeWorkerNames.has(w.name) ? "Busy" : "Available"}
+                          </span>
                         </td>
                         <td className="py-2">
                           <button
@@ -800,11 +953,76 @@ export default function GovDashboard() {
             )}
           </div>
 
-          {/* Rescue Operations Overview (monitoring) */}
+          {/* Rescue Operations Management */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-marigold-400 mb-2">{t("operationsMonitoring")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-2">{t("rescueOperationsOverview")}</h2>
-            <p className="text-sm text-muted mb-4">{t("rescueOperationsOverviewDesc")}</p>
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+              <div>
+                <h2 className="font-display text-2xl text-parchment">{t("rescueOperationsOverview")}</h2>
+                <p className="text-sm text-muted mt-2">{t("rescueOperationsOverviewDesc")}</p>
+              </div>
+              <button onClick={() => setShowOperationForm((value) => !value)} className="btn-secondary text-sm py-2.5">
+                {showOperationForm ? t("cancel") : "+ New Operation"}
+              </button>
+            </div>
+            {operationFeedback && <p className="text-sm text-emerald-400 mb-4">✓ {operationFeedback}</p>}
+            {showOperationForm && (
+              <form onSubmit={handleCreateOperation} className="space-y-3 mb-6 bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <input
+                    required
+                    placeholder="Affected location"
+                    value={operationForm.location}
+                    onChange={(e) => setOperationForm((form) => ({ ...form, location: e.target.value }))}
+                    className="field-input"
+                  />
+                  <select
+                    value={operationForm.risk_level}
+                    onChange={(e) => setOperationForm((form) => ({ ...form, risk_level: e.target.value }))}
+                    className="field-input"
+                  >
+                    <option value="High">High priority</option>
+                    <option value="Medium">Medium priority</option>
+                    <option value="Low">Low priority</option>
+                  </select>
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="Operation description"
+                  value={operationForm.description}
+                  onChange={(e) => setOperationForm((form) => ({ ...form, description: e.target.value }))}
+                  className="field-input resize-none"
+                />
+                <select
+                  value={operationForm.assigned_team}
+                  onChange={(e) => setOperationForm((form) => ({ ...form, assigned_team: e.target.value }))}
+                  className="field-input"
+                >
+                  <option value="Unassigned">Leave unassigned</option>
+                  {rescueWorkers.filter((worker) => worker.status === "Active").map((worker) => {
+                    const busy = activeWorkerNames.has(worker.name);
+                    return (
+                    <option key={worker.id} value={worker.name} disabled={busy}>
+                      {worker.name} {busy ? "(Busy)" : "(Available)"}
+                    </option>
+                    );
+                  })}
+                </select>
+                <select
+                  value={operationForm.alert_id}
+                  onChange={(e) => setOperationForm((form) => ({ ...form, alert_id: e.target.value }))}
+                  className="field-input"
+                >
+                  <option value="">No related flood alert (standalone operation)</option>
+                  {pendingAlerts.map((alert) => (
+                    <option key={alert.id} value={alert.id}>
+                        #{alert.id} — {alert.location} ({alert.risk_level || alert.risk})
+                      </option>
+                    ))}
+                </select>
+                <button type="submit" className="btn-primary w-full">Create Rescue Operation</button>
+              </form>
+            )}
             {allRescueOps.length === 0 ? (
               <p className="text-sm text-muted">{t("noOperationsFound")}</p>
             ) : (
@@ -817,26 +1035,104 @@ export default function GovDashboard() {
                       <th className="pb-2">{t("riskLabel")}</th>
                       <th className="pb-2">{t("teamLabel")}</th>
                       <th className="pb-2">{t("updatedLabel")}</th>
+                      <th className="pb-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {allRescueOps.slice(0, 15).map((op) => (
-                      <tr key={op.id}>
+                    {allRescueOps.map((op) => (
+                      <tr key={op.id} className="align-top">
                         <td className="py-2 text-white">{op.location}</td>
                         <td className="py-2">
-                          <span className={op.status === "Completed" ? "text-emerald-300" : op.status === "In Progress" ? "text-teal-300" : "text-marigold-300"}>
-                            {t(OP_STATUS_KEY_MAP[op.status] || op.status)}
-                          </span>
+                          <select
+                            value={op.status}
+                            onChange={(e) => handleUpdateOperation(op, { status: e.target.value })}
+                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white"
+                          >
+                            <option className="bg-[#0b1f3a] text-white" value="Assigned">Assigned</option>
+                            <option className="bg-[#0b1f3a] text-white" value="In Progress">In Progress</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Completed">Completed</option>
+                          </select>
                         </td>
-                        <td className="py-2 text-muted">{t(SEVERITY_KEY_MAP[op.risk_level] || op.risk_level)}</td>
-                        <td className="py-2 text-muted">{op.assigned_team || t("unassigned")}</td>
+                        <td className="py-2">
+                          <select
+                            value={op.risk_level || "Medium"}
+                            onChange={(e) => handleUpdateOperation(op, { risk_level: e.target.value })}
+                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white"
+                          >
+                            <option className="bg-[#0b1f3a] text-white" value="High">High</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Medium">Medium</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Low">Low</option>
+                          </select>
+                        </td>
+                        <td className="py-2">
+                          <select
+                            value={op.assigned_team || "Unassigned"}
+                            onChange={(e) => handleUpdateOperation(op, { assigned_team: e.target.value })}
+                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white max-w-40"
+                          >
+                            <option className="bg-[#0b1f3a] text-white" value="Unassigned">Unassigned</option>
+                            {rescueWorkers.map((worker) => (
+                              <option className="bg-[#0b1f3a] text-white" key={worker.id} value={worker.name}>{worker.name}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td className="py-2 text-muted">{new Date(op.updated_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
+                        <td className="py-2">
+                          <button
+                            onClick={() => setSelectedOperationId(selectedOperationId === op.id ? null : op.id)}
+                            className="text-xs text-teal-300 hover:text-teal-200"
+                          >
+                            {selectedOperationId === op.id ? "Hide details" : "View details"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+            {selectedOperationId && (() => {
+              const operation = allRescueOps.find((item) => item.id === selectedOperationId);
+              if (!operation) return null;
+              return (
+                <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <h3 className="font-display text-xl text-parchment mb-2">Operation #{operation.id} details</h3>
+                  <p className="text-sm text-muted mb-4">{operation.description || "No description provided."}</p>
+                  <div className="grid md:grid-cols-2 gap-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted mb-2">Progress checklist</p>
+                      <div className="space-y-2">
+                        {(operation.checklist || []).map((item, index) => (
+                          <label key={`${operation.id}-${index}`} className="flex items-center gap-2 text-sm text-white">
+                            <input
+                              type="checkbox"
+                              checked={!!item.done}
+                              onChange={(e) => handleChecklistUpdate(operation, index, e.target.checked)}
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted mb-2">Worker updates</p>
+                      {(operation.update_log || []).length === 0 ? (
+                        <p className="text-sm text-muted">No worker updates yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {operation.update_log.map((entry, index) => (
+                            <div key={`${operation.id}-update-${index}`} className="text-sm text-muted border-l-2 border-teal-400/50 pl-3">
+                              <p className="text-white">{entry.note}</p>
+                              <p className="text-xs mt-1">{new Date(entry.timestamp).toLocaleString()}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           </>)}
           {/* ============ END TAB: EMERGENCY RESPONSE ============ */}
