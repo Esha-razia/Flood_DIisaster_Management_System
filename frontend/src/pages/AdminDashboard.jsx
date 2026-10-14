@@ -940,7 +940,6 @@ export default function AdminDashboard() {
     { id: 'alerts',       label: 'Alerts & Advisories',  icon: '🚨',  badge: activeAlertsCount },
     { id: 'rescue',       label: 'Ground Operations',    icon: '⚡',  badge: activeOpsCount },
     { id: 'predictions',  label: 'AI Model & Analytics', icon: '🌧️',  badge: predictions.length || null },
-    { id: 'aimodel',      label: 'System & Retrain',     icon: '🤖',  badge: null },
   ];
 
   // For backward compat keep these (used elsewhere in component)
@@ -1083,23 +1082,192 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Interactive Operations Map */}
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-white">Disaster Operations & GIS Map</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Real-time map showing relief shelters, trauma hospitals, road blockages, active rescue teams, and flood risk zones.
-                  </p>
+            {/* Comprehensive Operational Command Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Critical Alerts Widget */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🚨</span>
+                    <div>
+                      <h2 className="text-base font-bold text-white">Live Emergency Broadcasts</h2>
+                      <p className="text-xs text-slate-400">High priority alerts requiring emergency coordination</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveSection('alerts')}
+                    className="text-xs text-red-400 hover:text-red-300 font-semibold transition-colors"
+                  >
+                    View All ({activeAlertsCount}) →
+                  </button>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">● Shelters</span>
-                  <span className="px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-300 border border-orange-500/30">● Hospitals</span>
-                  <span className="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">● Rescue Ops</span>
-                  <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-300 border border-red-500/30">● Blocked Roads</span>
+                {activeAlertsList.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-xl border border-slate-800/60">
+                    No active emergency alerts right now.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto custom-scroll pr-1">
+                    {activeAlertsList.slice(0, 5).map((alert, i) => (
+                      <div key={alert.id || i} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-white truncate">📍 {alert.location || 'General'}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              alert.risk_level === 'High' ? 'bg-red-500/20 text-red-300 border border-red-500/40' :
+                              alert.risk_level === 'Medium' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                            }`}>
+                              {alert.risk_level} Risk
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-300 line-clamp-2">{alert.message}</p>
+                        </div>
+                        <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                          {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Ground Rescue Missions */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚡</span>
+                    <div>
+                      <h2 className="text-base font-bold text-white">Active Rescue Missions</h2>
+                      <p className="text-xs text-slate-400">Deployed rescue workers & emergency response teams</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveSection('rescue')}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold transition-colors"
+                  >
+                    Manage Ops ({activeOpsCount}) →
+                  </button>
+                </div>
+                {rescueOps.filter(o => o.status !== "Completed").length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-xl border border-slate-800/60">
+                    All operations completed. No pending rescue deployments.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto custom-scroll pr-1">
+                    {rescueOps.filter(o => o.status !== "Completed").slice(0, 5).map((op, i) => (
+                      <div key={op.id || i} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-white truncate">🚨 #{op.id} {op.location}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                              op.status === 'In Progress' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40' :
+                              'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            }`}>
+                              {op.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            Assigned to: <strong className="text-slate-200">{op.assigned_team || "Unassigned"}</strong>
+                          </p>
+                        </div>
+                        <span className={`text-xs font-bold ${getRiskColor(op.risk_level)} shrink-0`}>
+                          {op.risk_level}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Second Row: Critical Facilities Status & Quick System Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Relief Shelters Capacity */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🏢</span>
+                    <h3 className="text-sm font-bold text-white">Relief Shelters</h3>
+                  </div>
+                  <button onClick={() => setActiveSection('shelters')} className="text-xs text-emerald-400 hover:text-emerald-300">
+                    View ({shelters.length}) →
+                  </button>
+                </div>
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Total Shelters Active:</span>
+                    <span className="font-bold text-white">{shelters.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Total Bed Capacity:</span>
+                    <span className="font-bold text-emerald-400">{shelters.reduce((acc, s) => acc + (parseInt(s.capacity) || 0), 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5">
+                    <span className="text-slate-400">Avg. Capacity per Shelter:</span>
+                    <span className="font-bold text-white">
+                      {shelters.length > 0 ? Math.round(shelters.reduce((acc, s) => acc + (parseInt(s.capacity) || 0), 0) / shelters.length) : 0}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <FloodMap height={480} canEdit={true} />
+
+              {/* Trauma Hospitals Readiness */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🏥</span>
+                    <h3 className="text-sm font-bold text-white">Emergency Hospitals</h3>
+                  </div>
+                  <button onClick={() => setActiveSection('hospitals')} className="text-xs text-orange-400 hover:text-orange-300">
+                    View ({hospitals.length}) →
+                  </button>
+                </div>
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Total Registered Hospitals:</span>
+                    <span className="font-bold text-white">{hospitals.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Designated Trauma Centers:</span>
+                    <span className="font-bold text-orange-400">
+                      {hospitals.filter(h => (h.services || '').toLowerCase().includes('trauma') || (h.services || '').toLowerCase().includes('emergency')).length || hospitals.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5">
+                    <span className="text-slate-400">Emergency 24/7 Coverage:</span>
+                    <span className="font-bold text-emerald-400">Active</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Citizen Reporting & Moderation */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📢</span>
+                    <h3 className="text-sm font-bold text-white">Citizen Reports</h3>
+                  </div>
+                  <button onClick={() => setActiveSection('reports')} className="text-xs text-blue-400 hover:text-blue-300">
+                    Review ({communityReports.length}) →
+                  </button>
+                </div>
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Pending Review:</span>
+                    <span className="font-bold text-amber-400">{pendingReportsCount}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Verified / Dispatched:</span>
+                    <span className="font-bold text-emerald-400">
+                      {communityReports.filter(r => r.status === 'Verified' || r.status === 'Dispatched' || r.status === 'Resolved').length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs py-1.5">
+                    <span className="text-slate-400">Total Submissions:</span>
+                    <span className="font-bold text-white">{communityReports.length}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2081,9 +2249,9 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-800 custom-scroll">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto rounded-xl border border-slate-800 custom-scroll">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-800/60 text-slate-400 border-b border-slate-800">
+                  <thead className="bg-slate-800 sticky top-0 z-10 text-slate-400 border-b border-slate-800 shadow-sm">
                     <tr>
                       <th className="py-2.5 px-3">Location</th>
                       <th className="py-2.5 px-3">Risk Level</th>
@@ -2129,64 +2297,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* 9. AI MODEL RETRAINING                                                    */}
-        {/* ========================================================================= */}
-        {activeSection === 'aimodel' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-              <h2 className="text-lg font-bold text-white mb-1">Retrain Prediction Model</h2>
-              <p className="text-xs text-slate-400 mb-4 max-w-2xl">
-                Upload newly collected historical flood datasets in CSV format to retrain the machine learning model.
-                The model automatically verifies a minimum classification accuracy threshold &gt;= 80%.
-              </p>
 
-              <form onSubmit={handleRetrainModel} className="flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => setRetrainFile(e.target.files[0])}
-                  className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
-                />
-                <button
-                  type="submit"
-                  disabled={!retrainFile || retraining}
-                  className="btn-primary text-xs py-2 px-3.5 disabled:opacity-50 cursor-pointer"
-                >
-                  {retraining ? "Retraining Model..." : "Deploy Retrain Job"}
-                </button>
-              </form>
-
-              {retrainResult && (
-                <div className={`mt-3 rounded-xl p-3 text-xs ${
-                  retrainResult.ok ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300" : "bg-amber-500/15 border border-amber-500/30 text-amber-300"
-                }`}>
-                  {retrainResult.message}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-white mb-1">📈 Model Accuracy Milestones</h3>
-              <p className="text-xs text-slate-400 mb-3">Verification progression against minimum classification accuracy threshold</p>
-              <div className="h-56 w-full">
-                {accuracyHistory.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-500">Retrain model with historical dataset to log accuracy milestones.</div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={accuracyHistory.map(d => ({ ...d, accuracy_pct: d.accuracy <= 1 ? parseFloat((d.accuracy * 100).toFixed(1)) : parseFloat(d.accuracy.toFixed(1)), label: d.timestamp ? d.timestamp.slice(0, 10) : '' }))}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                      <XAxis dataKey="label" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} />
-                      <YAxis domain={[0, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
-                      <Tooltip contentStyle={{ backgroundColor: "#0f172a", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }} formatter={(value) => [`${value}%`, "Accuracy"]} />
-                      <Line type="monotone" dataKey="accuracy_pct" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981" }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
       </main>
 

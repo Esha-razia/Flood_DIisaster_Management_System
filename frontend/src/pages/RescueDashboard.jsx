@@ -41,14 +41,7 @@ export default function RescueDashboard() {
   const initialFetchDone = useRef(false);
   const opsFetchSeq = useRef(0);
 
-  // Create & assign operation state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    location: "",
-    description: "",
-    risk_level: "High",
-    assigned_team: "Rescue Team Alpha",
-  });
+
 
   // Status & notes update state
   const [noteInputs, setNoteInputs] = useState({});
@@ -116,26 +109,7 @@ export default function RescueDashboard() {
     setRefreshing(false);
   };
 
-  // Create and assign rescue operations
-  const handleCreateOperation = async (e) => {
-    e.preventDefault();
-    if (!createForm.location.trim()) return;
-    try {
-      const res = await axios.post(`${API_BASE}/rescue-operations`, createForm);
-      setCreateForm({
-        location: "",
-        description: "",
-        risk_level: "High",
-        assigned_team: "Rescue Team Alpha",
-      });
-      setShowCreateModal(false);
-      setActionFeedback(`Rescue operation at ${res.data.location} created and assigned to ${res.data.assigned_team}.`);
-      fetchOperations();
-    } catch (err) {
-      console.error("Failed to create rescue operation:", err);
-      setActionFeedback("Could not create rescue operation. Please try again.");
-    }
-  };
+
 
   // Update status of an ongoing rescue operation
   const handleUpdateStatus = async (opId, newStatus) => {
@@ -377,12 +351,6 @@ export default function RescueDashboard() {
               >
                 {refreshing ? "Syncing..." : "🔄 Refresh"}
               </button>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="btn-primary text-xs sm:text-sm py-2 px-4 shadow-lg shadow-teal-500/20 flex items-center gap-1.5"
-              >
-                + Create & Assign Operation
-              </button>
             </div>
           </div>
 
@@ -559,10 +527,7 @@ export default function RescueDashboard() {
               ) : activeOperations.length === 0 ? (
                 <div className="dashboard-card p-12 text-center text-muted">
                   <p className="text-base text-parchment mb-2">No active rescue operations matching current filters.</p>
-                  <p className="text-xs max-w-md mx-auto mb-4">Click below to create a new operation and assign a rescue team to the affected area.</p>
-                  <button onClick={() => setShowCreateModal(true)} className="btn-primary text-xs py-2 px-4">
-                    + Create & Assign Operation
-                  </button>
+                  <p className="text-xs max-w-md mx-auto">Rescue operations are created and assigned by the Government Official or Admin from their respective dashboards.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -654,22 +619,6 @@ export default function RescueDashboard() {
 
                         {/* Status Action Buttons */}
                         <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
-                          {op.status === "Assigned" ? (
-                            <button
-                              onClick={() => handleUpdateStatus(op.id, "In Progress")}
-                              className="bg-teal-600/90 hover:bg-teal-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 w-full justify-center"
-                            >
-                              ▶️ Start Operation
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleUpdateStatus(op.id, "Assigned")}
-                              className="bg-amber-600/70 hover:bg-amber-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition-colors w-full justify-center text-center"
-                            >
-                              ⏸️ Put on Hold
-                            </button>
-                          )}
-
                           {/* Mark Completed */}
                           <button
                             onClick={() => handleUpdateStatus(op.id, "Completed")}
@@ -838,81 +787,7 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* ============================================================== */}
-          {/* MODAL: CREATE & ASSIGN RESCUE OPERATION                        */}
-          {/* ============================================================== */}
-          {showCreateModal && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-              <form onSubmit={handleCreateOperation} className="dashboard-card p-6 max-w-lg w-full border border-teal-500/40">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <span className="eyebrow text-teal-400 text-xs font-semibold">New Rescue Mission</span>
-                    <h2 className="font-display text-2xl text-parchment">Create & Assign Operation</h2>
-                  </div>
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="text-muted hover:text-white text-lg">✕</button>
-                </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="field-label text-xs">Affected Area / City Location *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Sukkur, Nowshera, Larkana, Karachi..."
-                      value={createForm.location}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, location: e.target.value }))}
-                      className="field-input text-sm py-2"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="field-label text-xs">Risk Level of Affected Area *</label>
-                    <select
-                      value={createForm.risk_level}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, risk_level: e.target.value }))}
-                      className="field-input text-sm py-2"
-                    >
-                      <option value="High" className="bg-ink text-red-300">🔴 High Risk (Immediate Danger / Urgent)</option>
-                      <option value="Medium" className="bg-ink text-yellow-300">🟡 Medium Risk (Elevated Threat / Watch)</option>
-                      <option value="Low" className="bg-ink text-green-300">🟢 Low Risk (Precautionary / Monitoring)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="field-label text-xs">Assign Rescue Team / Worker *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Rescue Team Alpha, Team Bravo, Quick Response Unit..."
-                      value={createForm.assigned_team}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, assigned_team: e.target.value }))}
-                      className="field-input text-sm py-2"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="field-label text-xs">Incident & Operation Description</label>
-                    <textarea
-                      rows={3}
-                      placeholder="Detail situation on ground: water depth, trapped citizens, required equipment..."
-                      value={createForm.description}
-                      onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
-                      className="field-input text-sm py-2 resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 mt-6">
-                  <button type="submit" className="btn-primary flex-1 py-2 text-sm font-semibold">
-                    Create & Notify Team
-                  </button>
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary py-2 text-sm">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
 
           {/* ============================================================== */}
           {/* MODAL: MARK OPERATION AS COMPLETED                             */}
