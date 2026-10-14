@@ -59,10 +59,27 @@ export default function Profile() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     setSuccess('');
 
+    const trimmedName = formData.name.trim();
+    const trimmedEmail = formData.email.trim();
+
+    if (!trimmedName || trimmedName.length < 3) {
+      setError('Full name must be at least 3 characters long.');
+      return;
+    }
+    if (!/^[a-zA-Z\s'-]{2,}$/.test(trimmedName)) {
+      setError('Full name should contain only letters, spaces, hyphens, or apostrophes.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    setLoading(true);
     const userId = localStorage.getItem('userId');
 
     try {

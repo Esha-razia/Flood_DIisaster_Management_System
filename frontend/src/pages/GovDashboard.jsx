@@ -81,12 +81,16 @@ export default function GovDashboard() {
     e.preventDefault();
     const loc = operationForm.location.trim();
     const desc = operationForm.description.trim();
-    if (!loc) {
-      showOperationFeedback("Please provide the affected location.");
+    if (!loc || loc.length < 3) {
+      showOperationFeedback("Please provide a valid affected location (at least 3 characters).");
       return;
     }
-    if (loc.length < 3) {
-      showOperationFeedback("Location name must be at least 3 characters.");
+    if (!desc || desc.length < 5) {
+      showOperationFeedback("Please provide an operation description (at least 5 characters).");
+      return;
+    }
+    if (!operationForm.assigned_team || operationForm.assigned_team === "Unassigned") {
+      showOperationFeedback("Please select and assign a rescue worker or team.");
       return;
     }
     const selectedAlert = operationForm.alert_id
@@ -1010,18 +1014,20 @@ export default function GovDashboard() {
                   </select>
                 </div>
                 <textarea
+                  required
                   rows={3}
-                  placeholder="Operation description"
+                  placeholder="Operation description *"
                   value={operationForm.description}
                   onChange={(e) => setOperationForm((form) => ({ ...form, description: e.target.value }))}
                   className="field-input resize-none"
                 />
                 <select
+                  required
                   value={operationForm.assigned_team}
                   onChange={(e) => setOperationForm((form) => ({ ...form, assigned_team: e.target.value }))}
                   className="field-input"
                 >
-                  <option value="Unassigned">Leave unassigned</option>
+                  <option value="">Select Rescue Worker / Team *</option>
                   {rescueWorkers.filter((worker) => worker.status === "Active").map((worker) => {
                     const busy = activeWorkerNames.has(worker.name);
                     return (

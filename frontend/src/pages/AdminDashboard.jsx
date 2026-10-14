@@ -404,12 +404,20 @@ export default function AdminDashboard() {
       alert("Location name must be at least 3 characters.");
       return;
     }
+    if (!createRescueForm.assigned_team) {
+      alert("Please assign a rescue worker or team.");
+      return;
+    }
+    if (!desc || desc.length < 5) {
+      alert("Please provide an operation description (at least 5 characters).");
+      return;
+    }
     try {
       const res = await axios.post(`${API_BASE}/rescue-operations`, {
         location: loc,
         description: desc,
         risk_level: createRescueForm.risk_level,
-        assigned_team: createRescueForm.assigned_team || "Rescue Team Alpha",
+        assigned_team: createRescueForm.assigned_team,
       });
       setCreateRescueForm({ location: "", description: "", risk_level: "High", assigned_team: "" });
       setShowCreateRescueModal(false);
@@ -467,12 +475,27 @@ export default function AdminDashboard() {
   const handleCompleteRescueOperation = async (e) => {
     e.preventDefault();
     if (!completionModal) return;
+    const rescued = parseInt(completionForm.people_rescued, 10);
+    if (isNaN(rescued) || rescued < 0) {
+      alert("Please enter a valid non-negative number of people rescued.");
+      return;
+    }
+    const resources = (completionForm.resources_used || "").trim();
+    if (!resources || resources.length < 3) {
+      alert("Please detail resources deployed/used (at least 3 characters).");
+      return;
+    }
+    const notes = (completionForm.completion_notes || "").trim();
+    if (!notes || notes.length < 5) {
+      alert("Please provide completion notes and SITREP report (at least 5 characters).");
+      return;
+    }
     try {
       await axios.put(`${API_BASE}/rescue-operations/${completionModal.opId}/status`, {
         status: "Completed",
-        people_rescued: completionForm.people_rescued ? parseInt(completionForm.people_rescued, 10) || 0 : 0,
-        resources_used: completionForm.resources_used,
-        completion_notes: completionForm.completion_notes,
+        people_rescued: rescued,
+        resources_used: resources,
+        completion_notes: notes,
       });
       showNotification(`Operation at ${completionModal.location} officially marked as Completed!`);
       setCompletionModal(null);
@@ -679,22 +702,48 @@ export default function AdminDashboard() {
   // =========================================================================
   const handleCreateShelter = async (e) => {
     e.preventDefault();
+    const name = (newShelter.name || "").trim();
+    const address = (newShelter.address || "").trim();
+    const capacity = parseInt(newShelter.capacity, 10);
+    const contact = (newShelter.contact || "").trim();
+
+    if (!name || name.length < 3) {
+      alert("Please enter a valid Shelter Name (at least 3 characters).");
+      return;
+    }
+    if (!address || address.length < 3) {
+      alert("Please enter a valid Shelter Address / Location (at least 3 characters).");
+      return;
+    }
+    if (isNaN(capacity) || capacity < 1) {
+      alert("Please enter a valid maximum capacity (at least 1 person).");
+      return;
+    }
+    if (!contact) {
+      alert("Please enter an emergency contact phone number.");
+      return;
+    }
     const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (newShelter.contact && !phoneRegex.test(newShelter.contact.trim().replace(/[\s-]/g, ""))) {
-      alert("Please provide a valid Pakistani contact phone number.");
+    if (!phoneRegex.test(contact.replace(/[\s-]/g, ""))) {
+      alert("Please provide a valid Pakistani contact phone number (e.g. 03001234567 or +923001234567).");
       return;
     }
     // Validate duplicate name and address
     const isDup = shelters.some(
-      s => (s.name || "").trim().toLowerCase() === newShelter.name.trim().toLowerCase() &&
-           (s.address || "").trim().toLowerCase() === newShelter.address.trim().toLowerCase()
+      s => (s.name || "").trim().toLowerCase() === name.toLowerCase() &&
+           (s.address || "").trim().toLowerCase() === address.toLowerCase()
     );
     if (isDup) {
       alert("Validation Error: A shelter with this name and address already exists.");
       return;
     }
     try {
-      await axios.post(`${API_BASE}/shelters`, newShelter);
+      await axios.post(`${API_BASE}/shelters`, {
+        name,
+        address,
+        capacity,
+        contact
+      });
       setShowShelterForm(false);
       setNewShelter({ name: "", address: "", capacity: "", contact: "" });
       fetchShelters();
@@ -707,22 +756,49 @@ export default function AdminDashboard() {
   const handleUpdateShelter = async (e) => {
     e.preventDefault();
     if (!editingShelter) return;
+    const name = (editingShelter.name || "").trim();
+    const address = (editingShelter.address || "").trim();
+    const capacity = parseInt(editingShelter.capacity, 10);
+    const contact = (editingShelter.contact || "").trim();
+
+    if (!name || name.length < 3) {
+      alert("Please enter a valid Shelter Name (at least 3 characters).");
+      return;
+    }
+    if (!address || address.length < 3) {
+      alert("Please enter a valid Shelter Address / Location (at least 3 characters).");
+      return;
+    }
+    if (isNaN(capacity) || capacity < 1) {
+      alert("Please enter a valid maximum capacity (at least 1 person).");
+      return;
+    }
+    if (!contact) {
+      alert("Please enter an emergency contact phone number.");
+      return;
+    }
     const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (editingShelter.contact && !phoneRegex.test(editingShelter.contact.trim().replace(/[\s-]/g, ""))) {
-      alert("Please provide a valid Pakistani contact phone number.");
+    if (!phoneRegex.test(contact.replace(/[\s-]/g, ""))) {
+      alert("Please provide a valid Pakistani contact phone number (e.g. 03001234567 or +923001234567).");
       return;
     }
     const isDup = shelters.some(
       s => s.id !== editingShelter.id &&
-           (s.name || "").trim().toLowerCase() === editingShelter.name.trim().toLowerCase() &&
-           (s.address || "").trim().toLowerCase() === editingShelter.address.trim().toLowerCase()
+           (s.name || "").trim().toLowerCase() === name.toLowerCase() &&
+           (s.address || "").trim().toLowerCase() === address.toLowerCase()
     );
     if (isDup) {
       alert("Validation Error: Another shelter with this name and address already exists.");
       return;
     }
     try {
-      await axios.put(`${API_BASE}/shelters/${editingShelter.id}`, editingShelter);
+      await axios.put(`${API_BASE}/shelters/${editingShelter.id}`, {
+        ...editingShelter,
+        name,
+        address,
+        capacity,
+        contact
+      });
       setEditingShelter(null);
       fetchShelters();
       showNotification("Shelter updated successfully!");
@@ -756,21 +832,47 @@ export default function AdminDashboard() {
   // =========================================================================
   const handleCreateHospital = async (e) => {
     e.preventDefault();
+    const name = (newHospital.name || "").trim();
+    const address = (newHospital.address || "").trim();
+    const contact = (newHospital.contact || "").trim();
+    const services = (newHospital.services || "").trim();
+
+    if (!name || name.length < 3) {
+      alert("Please enter a valid Hospital Name (at least 3 characters).");
+      return;
+    }
+    if (!address || address.length < 3) {
+      alert("Please enter a valid Hospital Address / City (at least 3 characters).");
+      return;
+    }
+    if (!contact) {
+      alert("Please enter an emergency contact phone number.");
+      return;
+    }
     const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (newHospital.contact && !phoneRegex.test(newHospital.contact.trim().replace(/[\s-]/g, ""))) {
-      alert("Please provide a valid Pakistani contact phone number.");
+    if (!phoneRegex.test(contact.replace(/[\s-]/g, ""))) {
+      alert("Please provide a valid Pakistani contact phone number (e.g. 03001234567 or +923001234567).");
+      return;
+    }
+    if (!services || services.length < 3) {
+      alert("Please list available medical services (e.g. Emergency, Trauma Care, ICU).");
       return;
     }
     const isDup = hospitals.some(
-      h => (h.name || "").trim().toLowerCase() === newHospital.name.trim().toLowerCase() &&
-           (h.address || "").trim().toLowerCase() === newHospital.address.trim().toLowerCase()
+      h => (h.name || "").trim().toLowerCase() === name.toLowerCase() &&
+           (h.address || "").trim().toLowerCase() === address.toLowerCase()
     );
     if (isDup) {
       alert("Validation Error: A hospital with this name and address already exists.");
       return;
     }
     try {
-      await axios.post(`${API_BASE}/hospitals`, newHospital);
+      await axios.post(`${API_BASE}/hospitals`, {
+        name,
+        address,
+        contact,
+        services
+      });
       setShowHospitalForm(false);
       setNewHospital({ name: "", address: "", contact: "", services: "" });
       fetchHospitals();
@@ -783,9 +885,30 @@ export default function AdminDashboard() {
   const handleUpdateHospital = async (e) => {
     e.preventDefault();
     if (!editingHospital) return;
+    const name = (editingHospital.name || "").trim();
+    const address = (editingHospital.address || "").trim();
+    const contact = (editingHospital.contact || "").trim();
+    const services = (editingHospital.services || "").trim();
+
+    if (!name || name.length < 3) {
+      alert("Please enter a valid Hospital Name (at least 3 characters).");
+      return;
+    }
+    if (!address || address.length < 3) {
+      alert("Please enter a valid Hospital Address / City (at least 3 characters).");
+      return;
+    }
+    if (!contact) {
+      alert("Please enter an emergency contact phone number.");
+      return;
+    }
     const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (editingHospital.contact && !phoneRegex.test(editingHospital.contact.trim().replace(/[\s-]/g, ""))) {
-      alert("Please provide a valid Pakistani contact phone number.");
+    if (!phoneRegex.test(contact.replace(/[\s-]/g, ""))) {
+      alert("Please provide a valid Pakistani contact phone number (e.g. 03001234567 or +923001234567).");
+      return;
+    }
+    if (!services || services.length < 3) {
+      alert("Please list available medical services (e.g. Emergency, Trauma Care, ICU).");
       return;
     }
     const isDup = hospitals.some(
@@ -2474,11 +2597,12 @@ export default function AdminDashboard() {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Assign Rescue Worker / Team *</label>
                 <select
+                  required
                   value={createRescueForm.assigned_team}
                   onChange={(e) => setCreateRescueForm(p => ({ ...p, assigned_team: e.target.value }))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
                 >
-                  <option value="">Select registered rescue worker / team</option>
+                  <option value="">Select registered rescue worker / team *</option>
                   {rescueWorkersList.map(w => (
                     <option key={w.id} value={w.name}>{w.name} ({w.email})</option>
                   ))}
@@ -2488,10 +2612,11 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Incident & Operation Description</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Incident & Operation Description *</label>
                 <textarea
+                  required
                   rows={3}
-                  placeholder="Detail situation on ground: water depth, trapped citizens, required equipment..."
+                  placeholder="Detail situation on ground: water depth, trapped citizens, required equipment... *"
                   value={createRescueForm.description}
                   onChange={(e) => setCreateRescueForm(p => ({ ...p, description: e.target.value }))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500 resize-none"
@@ -2540,10 +2665,11 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Resources Deployed / Used</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Resources Deployed / Used *</label>
                 <input
+                  required
                   type="text"
-                  placeholder="e.g. 2 Rescue Boats, 3 Ambulances, 40 Lifejackets"
+                  placeholder="e.g. 2 Rescue Boats, 3 Ambulances, 40 Lifejackets *"
                   value={completionForm.resources_used}
                   onChange={(e) => setCompletionForm(p => ({ ...p, resources_used: e.target.value }))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
@@ -2551,10 +2677,11 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Final Completion Report & Notes</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Final Completion Report & Notes *</label>
                 <textarea
+                  required
                   rows={3}
-                  placeholder="Summarize mission outcomes, relief shelter transfers, medical triage..."
+                  placeholder="Summarize mission outcomes, relief shelter transfers, medical triage... *"
                   value={completionForm.completion_notes}
                   onChange={(e) => setCompletionForm(p => ({ ...p, completion_notes: e.target.value }))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500 resize-none"

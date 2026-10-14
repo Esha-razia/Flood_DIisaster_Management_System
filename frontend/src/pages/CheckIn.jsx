@@ -29,7 +29,7 @@ export default function CheckIn() {
     e.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName || trimmedName.length < 3) {
-      setStatus("error");
+      setStatus("error-name");
       return;
     }
     setStatus("loading");
@@ -91,6 +91,11 @@ export default function CheckIn() {
                 <button type="submit" disabled={status === "loading"} className="btn-primary w-full py-3 disabled:opacity-50 font-semibold">
                   {status === "loading" ? "Registering Arrival..." : (t("checkInBtn") || "Confirm Check-In 📍")}
                 </button>
+                {status === "error-name" && (
+                  <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
+                    Please enter your full name (at least 3 characters) to check in.
+                  </p>
+                )}
                 {status === "error" && (
                   <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
                     Failed to check in. Please try again.
