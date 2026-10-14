@@ -44,6 +44,7 @@ export default function Community() {
   const locationEdited = useRef(false);
   const [loadingReports, setLoadingReports] = useState(true);
   const [formState, setFormState] = useState({ location: "", type: "Flooding", description: "", severity: "High", contact: "", imageFile: null, imagePreview: "" });
+  const [formFieldErrors, setFormFieldErrors] = useState({});
   const [activeReportId, setActiveReportId] = useState(() => Number(new URLSearchParams(window.location.search).get('report')) || null);
   const [toast, setToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -111,6 +112,7 @@ export default function Community() {
   }, [activeReportId, reports, isCitizen, visibleReports]);
   const handleFormChange = (field, value) => {
     if (field === 'location') { locationEdited.current = true; setLocationStatus(''); }
+    if (formFieldErrors[field]) setFormFieldErrors(prev => ({ ...prev, [field]: '' }));
     setFormState(prev => ({ ...prev, [field]:value, ...(field === 'location' ? { latitude:null, longitude:null } : {}) }));
   };
   const handleFileSelect = (file) => {
@@ -119,7 +121,10 @@ export default function Community() {
       setToast({ type:'error', message:'Upload a JPG, PNG, WebP or GIF image up to 5 MB.' }); return;
     }
     const reader = new FileReader();
-    reader.onload = () => setFormState((prev) => ({ ...prev, imageFile: file, imagePreview: reader.result }));
+    reader.onload = () => {
+      setFormFieldErrors(prev => ({ ...prev, image: '' }));
+      setFormState((prev) => ({ ...prev, imageFile: file, imagePreview: reader.result }));
+    };
     reader.readAsDataURL(file);
   };
   const handleDrop = (event) => {
@@ -133,25 +138,39 @@ export default function Community() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const { location, description, contact, type, severity } = formState;
-    if (!formState.imagePreview) { setToast({ type:'error', message:'Please upload an incident photo before submitting.' }); return; }
-    if (location.includes('(address unavailable)')) { setToast({ type:'error', message:'Address lookup failed. Enter the incident address before submitting.' }); return; }
-    if (!location.trim() || !description.trim() || !contact.trim()) {
+
+    const errors = {};
+    if (!location.trim()) {
+      errors.location = 'Please fill out this field';
+    } else if (location.includes('(address unavailable)')) {
+      errors.location = 'Address lookup failed. Enter the incident address.';
+    } else if (location.trim().length < 3) {
+      errors.location = t("locationTooShort");
+    }
+
+    if (!description.trim()) {
+      errors.description = 'Please fill out this field';
+    } else if (description.trim().length < 10) {
+      errors.description = t("descriptionTooShort");
+    }
+
+    const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
+    if (!contact.trim()) {
+      errors.contact = 'Please fill out this field';
+    } else if (!phoneRegex.test(contact.trim().replace(/[\s-]/g, ""))) {
+      errors.contact = t("invalidPhoneFormat");
+    }
+
+    if (!formState.imagePreview) {
+      errors.image = 'Please upload an incident photo';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormFieldErrors(errors);
       setToast({ type: "error", message: t("fillRequiredFields"), time: new Date().toLocaleTimeString() });
       return;
     }
-    if (location.trim().length < 3) {
-      setToast({ type: "error", message: t("locationTooShort"), time: new Date().toLocaleTimeString() });
-      return;
-    }
-    if (description.trim().length < 10) {
-      setToast({ type: "error", message: t("descriptionTooShort"), time: new Date().toLocaleTimeString() });
-      return;
-    }
-    const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (!phoneRegex.test(contact.trim().replace(/[\s-]/g, ""))) {
-      setToast({ type: "error", message: t("invalidPhoneFormat"), time: new Date().toLocaleTimeString() });
-      return;
-    }
+    setFormFieldErrors({});
 
     const region = location.includes("Sindh") ? "Sindh" : location.includes("Punjab") ? "Punjab" : location.includes("KPK") ? "KPK" : location.includes("Balochistan") ? "Balochistan" : location.includes("Gilgit") ? "Gilgit-Baltistan" : "Punjab";
 
@@ -287,37 +306,123 @@ export default function Community() {
                 )}
 
                 {isCitizen ? (
-                  <form onSubmit={handleSubmit} className="space-y-7">
+                  <form onSubmit={handleSubmit} className="space-y-7" noValidate>
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("locationAndType")}</p>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <label className="block"><span className="text-sm text-muted font-medium">{t("location")}</span><input value={formState.location} onChange={(e) => handleFormChange("location", e.target.value)} placeholder={t("cityRegionNeighbourhood")} className="field-input mt-2 rounded-2xl" required />{locationStatus && <span className="block text-xs text-muted mt-1">{locationStatus}</span>}</label>
-                        <label className="block"><span className="text-sm text-muted font-medium">{t("incidentType")}</span><select value={formState.type} onChange={(e) => handleFormChange("type", e.target.value)} className="field-input mt-2 rounded-2xl">{INCIDENT_TYPES.map((type) => <option key={type} value={type}>{t(INCIDENT_TYPE_KEY_MAP[type])}</option>)}</select></label>
+                        <label className="block">
+                          <span className="text-sm text-muted font-medium">
+                            {t("location")} <span className="text-red-400">*</span>
+                          </span>
+                          <input
+                            value={formState.location}
+                            onChange={(e) => handleFormChange("location", e.target.value)}
+                            placeholder={t("cityRegionNeighbourhood")}
+                            className={`field-input mt-2 rounded-2xl transition-colors ${
+                              formFieldErrors.location ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                            }`}
+                            required
+                          />
+                          {formFieldErrors.location && (
+                            <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                              <span>⚠️</span> {formFieldErrors.location}
+                            </p>
+                          )}
+                          {locationStatus && <span className="block text-xs text-muted mt-1">{locationStatus}</span>}
+                        </label>
+                        <label className="block">
+                          <span className="text-sm text-muted font-medium">
+                            {t("incidentType")} <span className="text-red-400">*</span>
+                          </span>
+                          <select value={formState.type} onChange={(e) => handleFormChange("type", e.target.value)} className="field-input mt-2 rounded-2xl">
+                            {INCIDENT_TYPES.map((type) => <option key={type} value={type}>{t(INCIDENT_TYPE_KEY_MAP[type])}</option>)}
+                          </select>
+                        </label>
                       </div>
                     </div>
 
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("details")}</p>
-                      <label className="block"><span className="text-sm text-muted font-medium">{t("description")}</span><textarea value={formState.description} onChange={(e) => handleFormChange("description", e.target.value)} placeholder="What is happening? Describe water levels, damage, affected areas, and immediate dangers." rows={5} className="field-input mt-2 rounded-2xl" required /></label>
+                      <label className="block">
+                        <span className="text-sm text-muted font-medium">
+                          {t("description")} <span className="text-red-400">*</span>
+                        </span>
+                        <textarea
+                          value={formState.description}
+                          onChange={(e) => handleFormChange("description", e.target.value)}
+                          placeholder="What is happening? Describe water levels, damage, affected areas, and immediate dangers."
+                          rows={5}
+                          className={`field-input mt-2 rounded-2xl transition-colors ${
+                            formFieldErrors.description ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                          }`}
+                          required
+                        />
+                        {formFieldErrors.description && (
+                          <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                            <span>⚠️</span> {formFieldErrors.description}
+                          </p>
+                        )}
+                      </label>
                     </div>
 
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("assessmentContact")}</p>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <label className="block"><span className="text-sm text-muted font-medium">{t("severityLevel")}</span><select value={formState.severity} onChange={(e) => handleFormChange("severity", e.target.value)} className="field-input mt-2 rounded-2xl">{SEVERITY_OPTIONS.map((item) => <option key={item} value={item}>{t(SEVERITY_KEY_MAP[item])}</option>)}</select></label>
-                        <label className="block"><span className="text-sm text-muted font-medium">{t("contactInfo")}</span><input value={formState.contact} onChange={(e) => handleFormChange("contact", e.target.value)} placeholder="+92 XXX XXX XXXX" className="field-input mt-2 rounded-2xl" required /></label>
+                        <label className="block">
+                          <span className="text-sm text-muted font-medium">
+                            {t("severityLevel")} <span className="text-red-400">*</span>
+                          </span>
+                          <select value={formState.severity} onChange={(e) => handleFormChange("severity", e.target.value)} className="field-input mt-2 rounded-2xl">
+                            {SEVERITY_OPTIONS.map((item) => <option key={item} value={item}>{t(SEVERITY_KEY_MAP[item])}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="text-sm text-muted font-medium">
+                            {t("contactInfo")} <span className="text-red-400">*</span>
+                          </span>
+                          <input
+                            value={formState.contact}
+                            onChange={(e) => handleFormChange("contact", e.target.value)}
+                            placeholder="+92 XXX XXX XXXX"
+                            className={`field-input mt-2 rounded-2xl transition-colors ${
+                              formFieldErrors.contact ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                            }`}
+                            required
+                          />
+                          {formFieldErrors.contact && (
+                            <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                              <span>⚠️</span> {formFieldErrors.contact}
+                            </p>
+                          )}
+                        </label>
                       </div>
                     </div>
 
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} <span className="text-red-400">*</span></p>
-                      <div onDragOver={(e) => { e.preventDefault(); setDragActive(true); }} onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }} onDrop={handleDrop} className={`rounded-2xl border-2 ${dragActive ? "border-teal-500 bg-teal-500/10" : "border-dashed border-white/10 bg-ink/60"} p-8 text-center transition-all duration-200`}>
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                        onDrop={handleDrop}
+                        className={`rounded-2xl border-2 transition-all duration-200 p-8 text-center ${
+                          formFieldErrors.image
+                            ? "border-red-500 bg-red-950/20 ring-1 ring-red-500"
+                            : dragActive
+                            ? "border-teal-500 bg-teal-500/10"
+                            : "border-dashed border-white/10 bg-ink/60"
+                        }`}
+                      >
                         <label className="flex cursor-pointer flex-col items-center justify-center gap-3 text-muted">
                           <span className="text-4xl">📷</span>
                           <div><span className="font-semibold text-white">{t("dragDropImage")}</span><p className="text-sm text-slate-500">{t("orClickToBrowse")}</p></div>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e.target.files?.[0])} />
                         </label>
                       </div>
+                      {formFieldErrors.image && (
+                        <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                          <span>⚠️</span> {formFieldErrors.image}
+                        </p>
+                      )}
                       {formState.imagePreview && (
                         <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-ink-soft/90">
                           <img src={formState.imagePreview} alt="Preview" className="w-full object-cover max-h-64" />

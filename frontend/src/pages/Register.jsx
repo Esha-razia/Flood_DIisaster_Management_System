@@ -72,7 +72,7 @@ export default function Register() {
 
     // Name validation
     if (!formData.name.trim()) {
-      errors.name = 'Name is required';
+      errors.name = 'Please fill out this field';
       isValid = false;
     } else if (!validateName(formData.name)) {
       errors.name = 'Name must be at least 3 characters and contain only letters';
@@ -81,7 +81,7 @@ export default function Register() {
 
     // Email validation
     if (!formData.email.trim()) {
-      errors.email = 'Email is required';
+      errors.email = 'Please fill out this field';
       isValid = false;
     } else if (!validateEmail(formData.email)) {
       errors.email = 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)';
@@ -90,7 +90,7 @@ export default function Register() {
 
     // Password validation
     if (!formData.password) {
-      errors.password = 'Password is required';
+      errors.password = 'Please fill out this field';
       isValid = false;
     } else if (!validatePassword(formData.password)) {
       errors.password = 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
@@ -99,7 +99,7 @@ export default function Register() {
 
     // Confirm password validation
     if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Please confirm your password';
+      errors.confirmPassword = 'Please fill out this field';
       isValid = false;
     } else if (formData.password !== formData.confirmPassword) {
       errors.confirmPassword = 'Passwords do not match';
@@ -191,52 +191,62 @@ export default function Register() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("fullName")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("fullName")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                       formErrors.name 
-                        ? 'bg-red-950/20 border border-red-500/50' 
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
                         : 'bg-white/10 border border-white/20'
                     }`}
                     placeholder={t("enterYourFullName")}
                   />
                   {formErrors.name && (
-                    <p className="mt-1 text-xs text-red-400">{formErrors.name}</p>
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {formErrors.name}
+                    </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("email")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("email")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                       formErrors.email 
-                        ? 'bg-red-950/20 border border-red-500/50' 
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
                         : 'bg-white/10 border border-white/20'
                     }`}
                     placeholder={t("enterYourEmail")}
                   />
                   {formErrors.email && (
-                    <p className="mt-1 text-xs text-red-400">{formErrors.email}</p>
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {formErrors.email}
+                    </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("passwordLabel")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("passwordLabel")} <span className="text-red-400">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
                       name="password"
                       value={formData.password}
                       onChange={handleInputChange}
-                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${
+                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                         formErrors.password 
-                          ? 'bg-red-950/20 border border-red-500/50' 
+                          ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
                           : 'bg-white/10 border border-white/20'
                       }`}
                       placeholder={t("createPasswordPh")}
@@ -262,23 +272,27 @@ export default function Register() {
                     </button>
                   </div>
                   {formErrors.password && (
-                    <p className="mt-1 text-xs text-red-400">{formErrors.password}</p>
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {formErrors.password}
+                    </p>
                   )}
                   <p className="mt-2 text-xs text-muted">
                     Must be at least 8 characters with uppercase, lowercase, number, and special character
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("confirmPasswordLabel")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("confirmPasswordLabel")} <span className="text-red-400">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showConfirmPassword ? "text" : "password"}
                       name="confirmPassword"
                       value={formData.confirmPassword}
                       onChange={handleInputChange}
-                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${
+                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                         formErrors.confirmPassword 
-                          ? 'bg-red-950/20 border border-red-500/50' 
+                          ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
                           : 'bg-white/10 border border-white/20'
                       }`}
                       placeholder={t("confirmYourPassword")}
@@ -304,11 +318,15 @@ export default function Register() {
                     </button>
                   </div>
                   {formErrors.confirmPassword && (
-                    <p className="mt-1 text-xs text-red-400">{formErrors.confirmPassword}</p>
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {formErrors.confirmPassword}
+                    </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("whoAreYou")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("whoAreYou")} <span className="text-red-400">*</span>
+                  </label>
                   <select
                     name="role"
                     value={formData.role}

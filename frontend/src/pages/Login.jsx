@@ -10,6 +10,7 @@ export default function Login() {
   const { t, lang } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -34,19 +35,27 @@ export default function Login() {
     setError('');
     setSuccess('');
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    const errors = { email: '', password: '' };
+    let hasError = false;
+
     if (!email.trim()) {
-      setError(t('enterEmail'));
-      return;
+      errors.email = 'Please fill out this field';
+      hasError = true;
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!emailRegex.test(email.trim())) {
+        errors.email = t('invalidEmailFormat');
+        hasError = true;
+      }
     }
-    if (!emailRegex.test(email.trim())) {
-      setError(t('invalidEmailFormat'));
-      return;
-    }
+
     if (!password) {
-      setError(t('enterPassword'));
-      return;
+      errors.password = 'Please fill out this field';
+      hasError = true;
     }
+
+    setFieldErrors(errors);
+    if (hasError) return;
 
     setLoading(true);
 
@@ -57,7 +66,7 @@ export default function Login() {
       });
 
       if (response.data.role === 'admin') {
-        setError('Admin accounts cannot sign in here. Please use the dedicated Administrator Portal below.');
+        setError('Access Denied: Administrator sign-in is restricted to the private administrator route.');
         setLoading(false);
         return;
       }
@@ -109,7 +118,7 @@ export default function Login() {
                 <h1 className="font-display text-3xl text-parchment mb-2">{t("welcomeBack")}</h1>
                 <p className="text-muted">{t("signIn")}</p>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                 {error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
                     <p className="text-red-400 text-sm">{error}</p>
@@ -121,24 +130,47 @@ export default function Login() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("emailAddress")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("emailAddress")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                      fieldErrors.email
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                        : 'bg-white/10 border border-white/20'
+                    }`}
                     placeholder={t("enterYourEmail")}
                     required
                   />
+                  {fieldErrors.email && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.email}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("password")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("password")} <span className="text-red-400">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 pr-12 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: '' }));
+                      }}
+                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                        fieldErrors.password
+                          ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                          : 'bg-white/10 border border-white/20'
+                      }`}
                       placeholder={t("enterYourPassword")}
                       required
                     />
@@ -162,6 +194,11 @@ export default function Login() {
                       )}
                     </button>
                   </div>
+                  {fieldErrors.password && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.password}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <label className="flex items-center">
@@ -183,14 +220,7 @@ export default function Login() {
                   {loading ? t('analysing') : t('signIn')}
                 </button>
 
-                <div className="pt-4 mt-2 border-t border-white/10 text-center flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-muted">
-                  <Link
-                    to="/admin-login"
-                    className="text-amber-400 hover:text-amber-300 font-semibold transition-colors inline-flex items-center gap-1"
-                  >
-                    🛡️ Administrator Portal →
-                  </Link>
-                  <span className="hidden sm:inline text-white/30">|</span>
+                <div className="pt-4 mt-2 border-t border-white/10 text-center text-xs text-muted">
                   <Link
                     to="/government-login"
                     className="text-teal-400 hover:text-teal-300 font-semibold transition-colors inline-flex items-center gap-1"

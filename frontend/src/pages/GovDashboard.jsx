@@ -998,7 +998,7 @@ export default function GovDashboard() {
                 <div className="grid md:grid-cols-2 gap-3">
                   <input
                     required
-                    placeholder="Affected location"
+                    placeholder="Affected location *"
                     value={operationForm.location}
                     onChange={(e) => setOperationForm((form) => ({ ...form, location: e.target.value }))}
                     className="field-input"
@@ -1218,7 +1218,7 @@ export default function GovDashboard() {
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, title: e.target.value }))} className="field-input" />
                 <textarea required rows={3} placeholder={t("advisoryMessagePh")} value={advisoryForm.message}
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, message: e.target.value }))} className="field-input resize-none" />
-                <input placeholder={t("advisoryRegionPh")} value={advisoryForm.region}
+                <input required placeholder={t("advisoryRegionPh")} value={advisoryForm.region}
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, region: e.target.value }))} className="field-input" />
                 <button type="submit" className="btn-primary w-full">{t("issueAdvisory")}</button>
               </form>

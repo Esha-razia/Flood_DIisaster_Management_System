@@ -77,25 +77,32 @@ export default function CheckIn() {
                 </Link>
               </div>
             ) : (
-              <form onSubmit={handleCheckIn} className="space-y-4 text-left">
+              <form onSubmit={handleCheckIn} className="space-y-4 text-left" noValidate>
                 <div>
-                  <label className="block text-xs font-medium text-muted mb-2">{t("tellUsName") || "Enter Your Full Name"}</label>
+                  <label className="block text-xs font-medium text-muted mb-2">
+                    {t("tellUsName") || "Enter Your Full Name"} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (status === "error-name") setStatus(null);
+                    }}
                     placeholder={t("yourNamePh") || "e.g. Ali Ahmed"}
-                    className="field-input text-left"
+                    className={`field-input text-left transition-colors ${
+                      status === "error-name" ? "border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500" : ""
+                    }`}
                     required
                   />
+                  {status === "error-name" && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> Please fill out this field (enter full name, at least 3 characters)
+                    </p>
+                  )}
                 </div>
                 <button type="submit" disabled={status === "loading"} className="btn-primary w-full py-3 disabled:opacity-50 font-semibold">
                   {status === "loading" ? "Registering Arrival..." : (t("checkInBtn") || "Confirm Check-In 📍")}
                 </button>
-                {status === "error-name" && (
-                  <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
-                    Please enter your full name (at least 3 characters) to check in.
-                  </p>
-                )}
                 {status === "error" && (
                   <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
                     Failed to check in. Please try again.

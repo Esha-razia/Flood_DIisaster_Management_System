@@ -41,10 +41,13 @@ export default function Profile() {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
+  const [fieldErrors, setFieldErrors] = useState({ name: '', email: '' });
+
   const handleEdit = () => {
     setEditMode(true);
     setError('');
     setSuccess('');
+    setFieldErrors({ name: '', email: '' });
   };
 
   const handleCancel = () => {
@@ -55,6 +58,7 @@ export default function Profile() {
     });
     setError('');
     setSuccess('');
+    setFieldErrors({ name: '', email: '' });
   };
 
   const handleSave = async (e) => {
@@ -64,20 +68,34 @@ export default function Profile() {
 
     const trimmedName = formData.name.trim();
     const trimmedEmail = formData.email.trim();
+    const errors = { name: '', email: '' };
+    let hasError = false;
 
-    if (!trimmedName || trimmedName.length < 3) {
-      setError('Full name must be at least 3 characters long.');
-      return;
+    if (!trimmedName) {
+      errors.name = 'Please fill out this field';
+      hasError = true;
+    } else if (trimmedName.length < 3) {
+      errors.name = 'Full name must be at least 3 characters long.';
+      hasError = true;
+    } else if (!/^[a-zA-Z\s'-]{2,}$/.test(trimmedName)) {
+      errors.name = 'Full name should contain only letters, spaces, hyphens, or apostrophes.';
+      hasError = true;
     }
-    if (!/^[a-zA-Z\s'-]{2,}$/.test(trimmedName)) {
-      setError('Full name should contain only letters, spaces, hyphens, or apostrophes.');
-      return;
-    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
-      setError('Please enter a valid email address.');
+    if (!trimmedEmail) {
+      errors.email = 'Please fill out this field';
+      hasError = true;
+    } else if (!emailRegex.test(trimmedEmail)) {
+      errors.email = 'Please enter a valid email address.';
+      hasError = true;
+    }
+
+    if (hasError) {
+      setFieldErrors(errors);
       return;
     }
+    setFieldErrors({ name: '', email: '' });
 
     setLoading(true);
     const userId = localStorage.getItem('userId');
@@ -202,30 +220,58 @@ export default function Profile() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSave} className="space-y-6">
+              <form onSubmit={handleSave} className="space-y-6" noValidate>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("fullName2")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("fullName2")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    onChange={(e) => {
+                      handleInputChange(e);
+                      if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: '' }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                      fieldErrors.name
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                        : 'bg-white/10 border border-white/20'
+                    }`}
                     placeholder={t("enterFullNamePh")}
                     required
                   />
+                  {fieldErrors.name && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.name}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">{t("emailAddress2")}</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    {t("emailAddress2")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    onChange={(e) => {
+                      handleInputChange(e);
+                      if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                      fieldErrors.email
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                        : 'bg-white/10 border border-white/20'
+                    }`}
                     placeholder={t("enterEmailAddressPh")}
                     required
                   />
+                  {fieldErrors.email && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.email}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">{t("role")}</label>

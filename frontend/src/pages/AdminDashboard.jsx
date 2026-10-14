@@ -2171,13 +2171,15 @@ export default function AdminDashboard() {
                   />
                   <input
                     type="number"
-                    placeholder="Max Capacity (e.g. 250)"
+                    required
+                    placeholder="Max Capacity (e.g. 250) *"
                     value={newShelter.capacity}
                     onChange={(e) => setNewShelter(p => ({ ...p, capacity: e.target.value }))}
                     className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
                   />
                   <input
-                    placeholder="Contact Phone (+92...)"
+                    required
+                    placeholder="Contact Phone (+92...) *"
                     value={newShelter.contact}
                     onChange={(e) => setNewShelter(p => ({ ...p, contact: e.target.value }))}
                     className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
@@ -2277,13 +2279,15 @@ export default function AdminDashboard() {
                     className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
                   />
                   <input
-                    placeholder="Emergency Contact Phone"
+                    required
+                    placeholder="Emergency Contact Phone (+92...) *"
                     value={newHospital.contact}
                     onChange={(e) => setNewHospital(p => ({ ...p, contact: e.target.value }))}
                     className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
                   />
                   <input
-                    placeholder="Available Services (e.g. Emergency, ICU, Trauma)"
+                    required
+                    placeholder="Available Services (e.g. Emergency, ICU, Trauma) *"
                     value={newHospital.services}
                     onChange={(e) => setNewHospital(p => ({ ...p, services: e.target.value }))}
                     className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"

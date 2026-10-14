@@ -13,6 +13,7 @@ export default function ForgotPassword() {
   const [token, setToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -20,9 +21,21 @@ export default function ForgotPassword() {
 
   const handleRequestCode = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     setSuccess('');
+    
+    if (!email.trim()) {
+      setFieldErrors({ email: 'Please fill out this field' });
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(email.trim())) {
+      setFieldErrors({ email: 'Please enter a valid email address' });
+      return;
+    }
+    setFieldErrors({});
+
+    setLoading(true);
     try {
       const res = await axios.post(`${API_BASE}/forgot-password`, { email });
       setSuccess(res.data.message || 'Verification code generated.');
@@ -42,10 +55,21 @@ export default function ForgotPassword() {
     e.preventDefault();
     setError('');
     setSuccess('');
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.');
+
+    const errors = {};
+    if (!token.trim()) errors.token = 'Please fill out this field';
+    if (!newPassword) errors.newPassword = 'Please fill out this field';
+    if (!confirmPassword) errors.confirmPassword = 'Please fill out this field';
+    else if (newPassword !== confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
+    setFieldErrors({});
+
     setLoading(true);
     try {
       const res = await axios.post(`${API_BASE}/reset-password`, {
@@ -87,17 +111,29 @@ export default function ForgotPassword() {
             )}
 
             {step === 1 ? (
-              <form onSubmit={handleRequestCode} className="space-y-6">
+              <form onSubmit={handleRequestCode} className="space-y-6" noValidate>
                 <div>
-                  <label className="field-label">{t("emailAddress2")}</label>
+                  <label className="field-label">
+                    {t("emailAddress2")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="field-input"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
+                    }}
+                    className={`field-input transition-colors ${
+                      fieldErrors.email ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                    }`}
                     placeholder={t("enterRegisteredEmail")}
                     required
                   />
+                  {fieldErrors.email && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.email}
+                    </p>
+                  )}
                 </div>
                 <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50">
                   {loading ? t('sending') : t('sendCode')}
@@ -107,39 +143,75 @@ export default function ForgotPassword() {
                 </p>
               </form>
             ) : (
-              <form onSubmit={handleResetPassword} className="space-y-6">
+              <form onSubmit={handleResetPassword} className="space-y-6" noValidate>
                 <div>
-                  <label className="field-label">{t("verificationCode")}</label>
+                  <label className="field-label">
+                    {t("verificationCode")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    className="field-input font-mono-data tracking-widest"
+                    onChange={(e) => {
+                      setToken(e.target.value);
+                      if (fieldErrors.token) setFieldErrors(prev => ({ ...prev, token: '' }));
+                    }}
+                    className={`field-input font-mono-data tracking-widest transition-colors ${
+                      fieldErrors.token ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                    }`}
                     placeholder={t("checkBackendTerminal")}
                     required
                   />
+                  {fieldErrors.token && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.token}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="field-label">{t("newPassword")}</label>
+                  <label className="field-label">
+                    {t("newPassword")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="field-input"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (fieldErrors.newPassword) setFieldErrors(prev => ({ ...prev, newPassword: '' }));
+                    }}
+                    className={`field-input transition-colors ${
+                      fieldErrors.newPassword ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                    }`}
                     placeholder={t("createNewPasswordPh")}
                     required
                   />
+                  {fieldErrors.newPassword && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.newPassword}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="field-label">{t("confirmNewPassword")}</label>
+                  <label className="field-label">
+                    {t("confirmNewPassword")} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="field-input"
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (fieldErrors.confirmPassword) setFieldErrors(prev => ({ ...prev, confirmPassword: '' }));
+                    }}
+                    className={`field-input transition-colors ${
+                      fieldErrors.confirmPassword ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                    }`}
                     placeholder={t("repeatNewPassword")}
                     required
                   />
+                  {fieldErrors.confirmPassword && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.confirmPassword}
+                    </p>
+                  )}
                 </div>
                 <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50">
                   {loading ? t('resettingPassword') : t('resetPassword')}

@@ -8,6 +8,7 @@ import { API_BASE } from "../config";
 export default function GovOfficialLogin() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,15 +26,21 @@ export default function GovOfficialLogin() {
     setError('');
     setSuccess('');
 
+    const errors = { username: '', password: '' };
+    let hasError = false;
+
     const cleanUser = username.trim();
     if (!cleanUser) {
-      setError('Please enter your Government Official username or email.');
-      return;
+      errors.username = 'Please fill out this field';
+      hasError = true;
     }
     if (!password) {
-      setError('Please enter your password.');
-      return;
+      errors.password = 'Please fill out this field';
+      hasError = true;
     }
+
+    setFieldErrors(errors);
+    if (hasError) return;
 
     setLoading(true);
     try {
@@ -77,30 +84,53 @@ export default function GovOfficialLogin() {
                 <p className="text-muted">Sign in with your government credentials</p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                 {error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3"><p className="text-red-400 text-sm">{error}</p></div>}
                 {success && <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3"><p className="text-green-400 text-sm">{success}</p></div>}
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Government Official Username</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    Government Official Username <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      if (fieldErrors.username) setFieldErrors(prev => ({ ...prev, username: '' }));
+                    }}
+                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                      fieldErrors.username
+                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                        : 'bg-white/10 border border-white/20'
+                    }`}
                     placeholder="Enter username or email"
                     required
                   />
+                  {fieldErrors.username && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.username}
+                    </p>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Password</label>
+                  <label className="block text-sm font-medium text-muted mb-2">
+                    Password <span className="text-red-400">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 pr-12 bg-white/10 border border-white/20 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: '' }));
+                      }}
+                      className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
+                        fieldErrors.password
+                          ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
+                          : 'bg-white/10 border border-white/20'
+                      }`}
                       placeholder="Enter government password"
                       required
                     />
@@ -124,6 +154,11 @@ export default function GovOfficialLogin() {
                       )}
                     </button>
                   </div>
+                  {fieldErrors.password && (
+                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                      <span>⚠️</span> {fieldErrors.password}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
