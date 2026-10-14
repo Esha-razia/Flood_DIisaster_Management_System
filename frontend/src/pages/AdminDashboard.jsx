@@ -304,19 +304,33 @@ export default function AdminDashboard() {
   const handleCreateAlert = async (e) => {
     e.preventDefault();
     if (savingAlert) return;
+    const msg = (newAlert.message || "").trim();
+    const loc = (newAlert.location || "").trim();
+    if (!msg || !loc) {
+      alert("Please fill in both the alert message and target location.");
+      return;
+    }
+    if (loc.length < 2) {
+      alert("Location name must be at least 2 characters.");
+      return;
+    }
+    if (msg.length < 5) {
+      alert("Alert message must be at least 5 characters long.");
+      return;
+    }
     setSavingAlert(true);
     try {
       if (editingAlertId !== null) {
         await axios.put(`${API_BASE}/alerts/${editingAlertId}`, {
-          message: newAlert.message.trim(),
-          location: newAlert.location.trim(),
+          message: msg,
+          location: loc,
           risk_level: newAlert.risk,
         });
         showNotification("Active Alert updated successfully!");
       } else {
         await axios.post(`${API_BASE}/alerts`, {
-          message: newAlert.message.trim(),
-          location: newAlert.location.trim(),
+          message: msg,
+          location: loc,
           risk: newAlert.risk,
           risk_level: newAlert.risk,
           status: "Active"
@@ -380,11 +394,20 @@ export default function AdminDashboard() {
   // =========================================================================
   const handleCreateRescueOperation = async (e) => {
     e.preventDefault();
-    if (!createRescueForm.location.trim()) return;
+    const loc = (createRescueForm.location || "").trim();
+    const desc = (createRescueForm.description || "").trim();
+    if (!loc) {
+      alert("Please specify the mission location.");
+      return;
+    }
+    if (loc.length < 3) {
+      alert("Location name must be at least 3 characters.");
+      return;
+    }
     try {
       const res = await axios.post(`${API_BASE}/rescue-operations`, {
-        location: createRescueForm.location.trim(),
-        description: createRescueForm.description.trim(),
+        location: loc,
+        description: desc,
         risk_level: createRescueForm.risk_level,
         assigned_team: createRescueForm.assigned_team || "Rescue Team Alpha",
       });
@@ -1082,101 +1105,143 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Comprehensive Operational Command Overview */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Critical Alerts Widget */}
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🚨</span>
-                    <div>
-                      <h2 className="text-base font-bold text-white">Live Emergency Broadcasts</h2>
-                      <p className="text-xs text-slate-400">High priority alerts requiring emergency coordination</p>
+            {/* Operational Command Overview - Clean & Concise Status Center */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Emergency Alerts Feed */}
+              <div className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 text-sm">
+                        🚨
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Emergency Broadcasts</h2>
+                        <span className="text-[11px] text-slate-400">Live public hazard warnings</span>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => setActiveSection('alerts')}
+                      className="text-xs text-red-400 hover:text-red-300 font-medium px-2.5 py-1 rounded-lg hover:bg-red-500/10 transition-colors"
+                    >
+                      View All ({activeAlertsCount}) →
+                    </button>
                   </div>
+
+                  {activeAlertsList.length === 0 ? (
+                    <div className="py-10 text-center text-xs text-slate-500">
+                      ✨ No active emergency alerts currently broadcasted.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[260px] overflow-y-auto custom-scroll pr-1">
+                      {activeAlertsList.slice(0, 4).map((alert, i) => (
+                        <div
+                          key={alert.id || i}
+                          className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-950/80 border border-slate-800/60 transition-colors gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-xs font-semibold text-white truncate">
+                                📍 {alert.location || 'Nationwide / General'}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full border ${
+                                alert.risk_level === 'High' ? 'bg-red-500/15 text-red-300 border-red-500/40' :
+                                alert.risk_level === 'Medium' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' :
+                                'bg-teal-500/15 text-teal-300 border-teal-500/40'
+                              }`}>
+                                {alert.risk_level}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 truncate" title={alert.message}>
+                              {alert.message}
+                            </p>
+                          </div>
+                          <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                            {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+                  <span>Priority Status: <strong className="text-white">{activeAlertsCount > 0 ? `${activeAlertsCount} Broadcasted` : 'All Clear'}</strong></span>
                   <button
-                    onClick={() => setActiveSection('alerts')}
-                    className="text-xs text-red-400 hover:text-red-300 font-semibold transition-colors"
+                    onClick={() => { setEditingAlertId(null); setNewAlert({ message: "", location: "", risk: "High" }); setShowAlertModal(true); }}
+                    className="text-xs text-teal-400 hover:text-teal-300 font-semibold"
                   >
-                    View All ({activeAlertsCount}) →
+                    + Trigger Alert
                   </button>
                 </div>
-                {activeAlertsList.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-xl border border-slate-800/60">
-                    No active emergency alerts right now.
-                  </div>
-                ) : (
-                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto custom-scroll pr-1">
-                    {activeAlertsList.slice(0, 5).map((alert, i) => (
-                      <div key={alert.id || i} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-bold text-white truncate">📍 {alert.location || 'General'}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                              alert.risk_level === 'High' ? 'bg-red-500/20 text-red-300 border border-red-500/40' :
-                              alert.risk_level === 'Medium' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-                              'bg-teal-500/20 text-teal-300 border border-teal-500/40'
-                            }`}>
-                              {alert.risk_level} Risk
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-300 line-clamp-2">{alert.message}</p>
-                        </div>
-                        <span className="text-[10px] text-slate-500 shrink-0 font-mono">
-                          {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              {/* Active Ground Rescue Missions */}
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">⚡</span>
-                    <div>
-                      <h2 className="text-base font-bold text-white">Active Rescue Missions</h2>
-                      <p className="text-xs text-slate-400">Deployed rescue workers & emergency response teams</p>
+              {/* Active Rescue Operations */}
+              <div className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-sm">
+                        ⚡
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Active Field Missions</h2>
+                        <span className="text-[11px] text-slate-400">Ground rescue & evacuation response</span>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => setActiveSection('rescue')}
+                      className="text-xs text-amber-400 hover:text-amber-300 font-medium px-2.5 py-1 rounded-lg hover:bg-amber-500/10 transition-colors"
+                    >
+                      View All ({activeOpsCount}) →
+                    </button>
                   </div>
+
+                  {rescueOps.filter(o => o.status !== "Completed").length === 0 ? (
+                    <div className="py-10 text-center text-xs text-slate-500">
+                      ✓ No pending operations. All ground teams are currently on standby.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[260px] overflow-y-auto custom-scroll pr-1">
+                      {rescueOps.filter(o => o.status !== "Completed").slice(0, 4).map((op, i) => (
+                        <div
+                          key={op.id || i}
+                          className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-950/80 border border-slate-800/60 transition-colors gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-xs font-semibold text-white truncate">
+                                #{op.id} {op.location}
+                              </span>
+                              <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${
+                                op.status === 'In Progress' ? 'bg-teal-500/15 text-teal-300 border-teal-500/40' :
+                                'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                              }`}>
+                                {op.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 truncate">
+                              Team: <strong className="text-slate-200">{op.assigned_team || "Unassigned"}</strong>
+                            </p>
+                          </div>
+                          <span className={`text-xs font-bold shrink-0 ${getRiskColor(op.risk_level)}`}>
+                            {op.risk_level} Risk
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+                  <span>Field Deployment: <strong className="text-white">{activeOpsCount} Active</strong></span>
                   <button
-                    onClick={() => setActiveSection('rescue')}
-                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold transition-colors"
+                    onClick={() => { setCreateRescueForm({ location: "", description: "", risk_level: "High", assigned_team: "" }); setShowCreateRescueModal(true); }}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
                   >
-                    Manage Ops ({activeOpsCount}) →
+                    + Dispatch Team
                   </button>
                 </div>
-                {rescueOps.filter(o => o.status !== "Completed").length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/40 rounded-xl border border-slate-800/60">
-                    All operations completed. No pending rescue deployments.
-                  </div>
-                ) : (
-                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto custom-scroll pr-1">
-                    {rescueOps.filter(o => o.status !== "Completed").slice(0, 5).map((op, i) => (
-                      <div key={op.id || i} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-bold text-white truncate">🚨 #{op.id} {op.location}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                              op.status === 'In Progress' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40' :
-                              'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            }`}>
-                              {op.status}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-400">
-                            Assigned to: <strong className="text-slate-200">{op.assigned_team || "Unassigned"}</strong>
-                          </p>
-                        </div>
-                        <span className={`text-xs font-bold ${getRiskColor(op.risk_level)} shrink-0`}>
-                          {op.risk_level}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
 

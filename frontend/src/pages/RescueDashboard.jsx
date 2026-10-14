@@ -143,16 +143,25 @@ export default function RescueDashboard() {
     }
   };
 
-  // Mark a rescue operation as completed
   const handleCompleteOperation = async (e) => {
     e.preventDefault();
     if (!completionModal) return;
+    const rescued = parseInt(completionForm.people_rescued, 10);
+    if (isNaN(rescued) || rescued < 0) {
+      setActionFeedback("Please provide a valid non-negative number of people rescued.");
+      return;
+    }
+    const notes = (completionForm.completion_notes || "").trim();
+    if (!notes || notes.length < 5) {
+      setActionFeedback("Please enter a brief completion report note (minimum 5 characters).");
+      return;
+    }
     try {
       await axios.put(`${API_BASE}/rescue-operations/${completionModal.opId}/status`, {
         status: "Completed",
-        people_rescued: completionForm.people_rescued ? parseInt(completionForm.people_rescued, 10) || 0 : 0,
-        resources_used: completionForm.resources_used,
-        completion_notes: completionForm.completion_notes,
+        people_rescued: rescued,
+        resources_used: (completionForm.resources_used || "").trim(),
+        completion_notes: notes,
       });
       setActionFeedback(`Operation at ${completionModal.location} successfully marked as Completed.`);
       setCompletionModal(null);

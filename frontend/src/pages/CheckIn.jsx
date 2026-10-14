@@ -27,9 +27,14 @@ export default function CheckIn() {
 
   const handleCheckIn = async (e) => {
     e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName || trimmedName.length < 3) {
+      setStatus("error");
+      return;
+    }
     setStatus("loading");
     try {
-      await axios.post(`${API_BASE}/shelters/${shelterId}/checkin`, { name: name || "Anonymous" });
+      await axios.post(`${API_BASE}/shelters/${shelterId}/checkin`, { name: trimmedName });
       setStatus("done");
     } catch (err) {
       console.error(err);

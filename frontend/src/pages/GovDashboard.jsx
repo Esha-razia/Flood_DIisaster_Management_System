@@ -79,7 +79,16 @@ export default function GovDashboard() {
 
   const handleCreateOperation = async (e) => {
     e.preventDefault();
-    if (!operationForm.location.trim()) return;
+    const loc = operationForm.location.trim();
+    const desc = operationForm.description.trim();
+    if (!loc) {
+      showOperationFeedback("Please provide the affected location.");
+      return;
+    }
+    if (loc.length < 3) {
+      showOperationFeedback("Location name must be at least 3 characters.");
+      return;
+    }
     const selectedAlert = operationForm.alert_id
       ? pendingAlerts.find((alert) => String(alert.id) === String(operationForm.alert_id))
       : null;
@@ -200,8 +209,22 @@ export default function GovDashboard() {
 
   const handleCreateAdvisory = async (e) => {
     e.preventDefault();
+    const title = (advisoryForm.title || "").trim();
+    const message = (advisoryForm.message || "").trim();
+    if (!title || !message) {
+      alert("Please fill in both the advisory title and message before submitting.");
+      return;
+    }
+    if (title.length < 3) {
+      alert("Advisory title must be at least 3 characters.");
+      return;
+    }
+    if (message.length < 10) {
+      alert("Advisory message must be at least 10 characters.");
+      return;
+    }
     try {
-      await axios.post(`${API_BASE}/advisories`, { ...advisoryForm, issued_by: localStorage.getItem("userName") || "Government Official" });
+      await axios.post(`${API_BASE}/advisories`, { ...advisoryForm, title, message, issued_by: localStorage.getItem("userName") || "Government Official" });
       setAdvisoryForm({ title: "", message: "", region: "All regions" });
       setShowAdvisoryForm(false);
       fetchAdvisories();
