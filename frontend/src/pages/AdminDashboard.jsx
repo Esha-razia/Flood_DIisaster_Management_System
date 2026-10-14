@@ -171,7 +171,12 @@ export default function AdminDashboard() {
 
   const fetchAlerts = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/alerts`);
+      const res = await axios.get(`${API_BASE}/alerts`, {
+        headers: {
+          'X-FMS-Actor-Role': 'admin',
+          'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
+        }
+      });
       setAlerts(res.data || []);
     } catch (err) { console.error(err); }
   };
@@ -320,12 +325,16 @@ export default function AdminDashboard() {
     }
     setSavingAlert(true);
     try {
+      const adminHeaders = {
+        'X-FMS-Actor-Role': 'admin',
+        'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
+      };
       if (editingAlertId !== null) {
         await axios.put(`${API_BASE}/alerts/${editingAlertId}`, {
           message: msg,
           location: loc,
           risk_level: newAlert.risk,
-        });
+        }, { headers: adminHeaders });
         showNotification("Active Alert updated successfully!");
       } else {
         await axios.post(`${API_BASE}/alerts`, {
@@ -334,7 +343,7 @@ export default function AdminDashboard() {
           risk: newAlert.risk,
           risk_level: newAlert.risk,
           status: "Active"
-        });
+        }, { headers: adminHeaders });
         showNotification("Emergency Alert manually triggered & broadcast!");
       }
       setShowAlertModal(false);
@@ -361,7 +370,12 @@ export default function AdminDashboard() {
   const handleCancelAlert = async (id) => {
     if (!confirm("Are you sure you want to cancel this active alert?")) return;
     try {
-      await axios.put(`${API_BASE}/alerts/${id}`, { status: "Cancelled" });
+      await axios.put(`${API_BASE}/alerts/${id}`, { status: "Cancelled" }, {
+        headers: {
+          'X-FMS-Actor-Role': 'admin',
+          'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
+        }
+      });
       showNotification("Active alert marked as Cancelled.");
       fetchAlerts();
     } catch (err) {
@@ -372,7 +386,12 @@ export default function AdminDashboard() {
   const handleDeleteAlert = async (id) => {
     if (!confirm("Are you sure you want to remove this alert record?")) return;
     try {
-      await axios.delete(`${API_BASE}/alerts/${id}`);
+      await axios.delete(`${API_BASE}/alerts/${id}`, {
+        headers: {
+          'X-FMS-Actor-Role': 'admin',
+          'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
+        }
+      });
       showNotification("Alert record removed.");
       fetchAlerts();
     } catch (err) {
@@ -382,7 +401,10 @@ export default function AdminDashboard() {
 
   // Active Alerts vs Alert History
   const activeAlertsList = useMemo(() => {
-    return alerts.filter(a => a.status !== "Cancelled" && a.status !== "Resolved");
+    return alerts.filter(a => {
+      const st = (a.status || 'Active').toLowerCase();
+      return st !== "cancelled" && st !== "resolved";
+    });
   }, [alerts]);
 
   const alertHistoryList = useMemo(() => {
@@ -1083,7 +1105,7 @@ export default function AdminDashboard() {
     { id: 'reports',      label: 'Citizen Reports',      icon: '📢',  badge: pendingReportsCount },
     { id: 'shelters',     label: 'Relief Shelters',      icon: '🏢',  badge: shelters.length },
     { id: 'hospitals',    label: 'Emergency Hospitals',  icon: '🏥',  badge: hospitals.length },
-    { id: 'alerts',       label: 'Alerts & Advisories',  icon: '🚨',  badge: activeAlertsCount },
+    { id: 'alerts',       label: 'Emergency Flood Alerts', icon: '🚨', badge: activeAlertsCount },
     { id: 'rescue',       label: 'Ground Operations',    icon: '⚡',  badge: activeOpsCount },
     { id: 'predictions',  label: 'AI Model & Analytics', icon: '🌧️',  badge: predictions.length || null },
   ];
@@ -1239,7 +1261,7 @@ export default function AdminDashboard() {
                         🚨
                       </div>
                       <div>
-                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Emergency Broadcasts</h2>
+                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Emergency Flood Alerts</h2>
                         <span className="text-[11px] text-slate-400">Live public hazard warnings</span>
                       </div>
                     </div>
@@ -1268,11 +1290,11 @@ export default function AdminDashboard() {
                                 📍 {alert.location || 'Nationwide / General'}
                               </span>
                               <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full border ${
-                                alert.risk_level === 'High' ? 'bg-red-500/15 text-red-300 border-red-500/40' :
-                                alert.risk_level === 'Medium' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' :
+                                (alert.risk_level || alert.risk) === 'High' ? 'bg-red-500/15 text-red-300 border-red-500/40' :
+                                (alert.risk_level || alert.risk) === 'Medium' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' :
                                 'bg-teal-500/15 text-teal-300 border-teal-500/40'
                               }`}>
-                                {alert.risk_level}
+                                {alert.risk_level || alert.risk || 'High'} Risk
                               </span>
                             </div>
                             <p className="text-xs text-slate-300 truncate" title={alert.message}>

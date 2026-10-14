@@ -21,6 +21,11 @@ export default function GovOfficialLogin() {
     }
   }, [navigate]);
 
+  const validatePassword = (pwd) => {
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    return passwordRegex.test(pwd);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -36,6 +41,9 @@ export default function GovOfficialLogin() {
     }
     if (!password) {
       errors.password = 'Please fill out this field';
+      hasError = true;
+    } else if (!validatePassword(password)) {
+      errors.password = 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
       hasError = true;
     }
 
@@ -159,6 +167,9 @@ export default function GovOfficialLogin() {
                       <span>⚠️</span> {fieldErrors.password}
                     </p>
                   )}
+                  <p className="mt-2 text-xs text-muted">
+                    Must be at least 8 characters with uppercase, lowercase, number, and special character
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between">

@@ -41,6 +41,24 @@ def db():
     connection.execute('CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)')
     connection.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER NOT NULL, action TEXT NOT NULL, timestamp TEXT NOT NULL, actor TEXT NOT NULL, payload TEXT NOT NULL)')
     try:
+        count = connection.execute('SELECT COUNT(*) FROM alerts').fetchone()[0]
+        if count < 2:
+            defaults = [
+                ("High flood risk detected in Karachi Eastern District. Heavy monsoon rainfall causing localized urban flooding. Immediate evacuation recommended.", "High", "Karachi"),
+                ("Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.", "Medium", "Hyderabad"),
+                ("Flash flood advisory active for Sukkur Barrage catchment area. Continuous monitoring and emergency response teams deployed.", "High", "Sukkur")
+            ]
+            stamp = datetime.now(timezone.utc).isoformat()
+            for msg, rsk, loc in defaults:
+                rec = dict(message=msg, risk=rsk, risk_level=rsk, location=loc, status='Active', assigned_worker=None, linked_rescue_op_id=None, created_at=stamp, updated_at=stamp, source='automatic')
+                aid = connection.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',)).lastrowid
+                rec['id'] = aid
+                connection.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(rec), aid))
+                connection.execute('INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)', (aid, 'created', stamp, 'System', json.dumps(rec)))
+            connection.commit()
+    except Exception:
+        pass
+    try:
         with connection:
             yield connection
     finally:
