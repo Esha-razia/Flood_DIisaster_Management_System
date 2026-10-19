@@ -1,0 +1,36 @@
+Map and report-form update (continues notification-final baseline)
+
+Retained FR04 implementation:
+- Shelters, hospitals, blocked roads, active rescue operations, community incidents.
+- Category colors and type/search filters; nearest-first directory when device location is available.
+- Authorized facility/road marker edits and map-revision refresh every 1 second.
+- Latest city prediction risk circles: Low/Medium/High colors.
+  These circles are indicative city risk overlays, not surveyed flood boundaries.
+- Shelter changes use the same revision feed for other map viewers.
+
+Changes:
+- Removed Reports heatmap control and its density-layer logic; risk overlays retained.
+- Device location requests high accuracy with fresh position on initial map load.
+- User marker shows measured coordinates and reported accuracy.
+- Clicking/focusing report location requests device location + address lookup in both forms.
+  Map submission retains clicked coordinates unless current location replaces them;
+  manually editing an address clears old coordinates.
+- Description >=10 trimmed characters; first letter capitalized while typing.
+- Pakistan mobile number exactly 11 digits, format 03XXXXXXXXX.
+- Images: JPG/PNG/WebP/GIF only, maximum 50 MiB (52,428,800 bytes).
+- Actual image content and size verified on server. PDF is not accepted.
+- Both forms show field errors, red highlighting, and reject invalid submission.
+- Backend sends field-specific errors so direct API calls cannot bypass validation.
+- Notification source files are byte-identical to previous final ZIP.
+
+Validation:
+Production frontend build, Python compile, frontend shared validation tests,
+actual image size boundary tests, isolated Flask report endpoint tests,
+Community DOM with mocked GPS (focus/autofill/invalid submission/red errors),
+isolated map feed categories and risk-data checks,
+authorization/revision tests and notification DOM regression tests passed.
+
+Limits:
+Live device GPS, map/address-provider access, and multi-device deployment not tested.
+Permission and device/network location accuracy determine the position available.
+Run commands remain in NOTIFICATION_UPDATE.txt. Install dependencies before running.

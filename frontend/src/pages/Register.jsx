@@ -25,6 +25,8 @@ export default function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationStep, setVerificationStep] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
@@ -110,10 +112,46 @@ export default function Register() {
     return isValid;
   };
 
+  const handleBlur = (field) => {
+    if (field === 'name') {
+      if (!formData.name.trim()) {
+        setFormErrors(prev => ({ ...prev, name: 'Please fill out this field' }));
+      } else if (!validateName(formData.name)) {
+        setFormErrors(prev => ({ ...prev, name: 'Name must be at least 3 characters and contain only letters' }));
+      }
+    } else if (field === 'email') {
+      if (!formData.email.trim()) {
+        setFormErrors(prev => ({ ...prev, email: 'Please fill out this field' }));
+      } else if (!validateEmail(formData.email)) {
+        setFormErrors(prev => ({ ...prev, email: 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)' }));
+      }
+    } else if (field === 'password') {
+      if (!formData.password) {
+        setFormErrors(prev => ({ ...prev, password: 'Please fill out this field' }));
+      } else if (!validatePassword(formData.password)) {
+        setFormErrors(prev => ({ ...prev, password: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character' }));
+      }
+    } else if (field === 'confirmPassword') {
+      if (!formData.confirmPassword) {
+        setFormErrors(prev => ({ ...prev, confirmPassword: 'Please fill out this field' }));
+      } else if (formData.password !== formData.confirmPassword) {
+        setFormErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }));
+      }
+    }
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
+
+    // A code was sent to the old address; changing the email must restart verification.
+    if (name === 'email' && verificationStep && value.trim().toLowerCase() !== formData.email.trim().toLowerCase()) {
+      setVerificationStep(false);
+      setEmailVerificationSent(false);
+      setVerificationCode('');
+      setSuccess('');
+      setError('');
+    }
     // Clear error for this field when user starts typing
     if (formErrors[name]) {
       setFormErrors(prev => ({ ...prev, [name]: '' }));
@@ -127,17 +165,24 @@ export default function Register() {
     if (!validateForm()) {
       return;
     }
+
+    if (verificationStep && (!verificationCode.trim() || verificationCode.trim().length < 6)) {
+      setError('Please enter the complete 6-digit verification code');
+      return;
+    }
     
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      const response = await axios.post(`${API_BASE}/register`, {
+      const endpoint = verificationStep ? '/register' : '/register/request-verification';
+      const response = await axios.post(`${API_BASE}${endpoint}`, {
         name: formData.name.trim(),
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        role: formData.role
+        role: formData.role,
+        ...(verificationStep ? { verification_token: verificationCode.trim() } : {})
       });
 
       // Check if backend returned an error
@@ -146,11 +191,14 @@ export default function Register() {
         return;
       }
 
-      setSuccess('Successfully signed up! Redirecting to login...');
-      setEmailVerificationSent(true);
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      if (verificationStep) {
+        setSuccess('Email verified and account created. Redirecting to login...');
+        setTimeout(() => navigate('/login'), 1800);
+      } else {
+        setSuccess('A verification code has been sent to your email.');
+        setEmailVerificationSent(true);
+        setVerificationStep(true);
+      }
     } catch (err) {
       if (err.response && err.response.data && err.response.data.message) {
         setError(err.response.data.message);
@@ -158,6 +206,26 @@ export default function Register() {
         setError('Registration failed. Please make sure the backend server is running.');
       }
       console.error('Register error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await axios.post(`${API_BASE}/register/request-verification`, {
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+        role: formData.role
+      });
+      setSuccess(response.data.message || 'A new verification code was sent to your email.');
+      setVerificationCode('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not resend the verification code.');
     } finally {
       setLoading(false);
     }
@@ -174,7 +242,7 @@ export default function Register() {
                 <h1 className="font-display text-3xl text-parchment mb-2">{t("createYourAccount")}</h1>
                 <p className="text-muted">{t("joinPlatform")}</p>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                 {error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
                     <p className="text-red-400 text-sm">{error}</p>
@@ -185,20 +253,21 @@ export default function Register() {
                     <p className="text-green-400 text-sm">{success}</p>
                     {emailVerificationSent && (
                       <p className="text-green-400 text-xs mt-1">
-                        ✓ Verification email sent (simulated)
+                        ✓ Verification email sent
                       </p>
                     )}
                   </div>
                 )}
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("fullName")} <span className="text-red-400">*</span>
+                    {t("fullName")}
                   </label>
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleInputChange}
+                    onBlur={() => handleBlur('name')}
                     className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                       formErrors.name 
                         ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
@@ -214,13 +283,14 @@ export default function Register() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("email")} <span className="text-red-400">*</span>
+                    {t("email")}
                   </label>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
+                    onBlur={() => handleBlur('email')}
                     className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                       formErrors.email 
                         ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
@@ -236,7 +306,7 @@ export default function Register() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("passwordLabel")} <span className="text-red-400">*</span>
+                    {t("passwordLabel")}
                   </label>
                   <div className="relative">
                     <input
@@ -244,6 +314,7 @@ export default function Register() {
                       name="password"
                       value={formData.password}
                       onChange={handleInputChange}
+                      onBlur={() => handleBlur('password')}
                       className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                         formErrors.password 
                           ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
@@ -282,7 +353,7 @@ export default function Register() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("confirmPasswordLabel")} <span className="text-red-400">*</span>
+                    {t("confirmPasswordLabel")}
                   </label>
                   <div className="relative">
                     <input
@@ -290,6 +361,7 @@ export default function Register() {
                       name="confirmPassword"
                       value={formData.confirmPassword}
                       onChange={handleInputChange}
+                      onBlur={() => handleBlur('confirmPassword')}
                       className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                         formErrors.confirmPassword 
                           ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500' 
@@ -325,7 +397,7 @@ export default function Register() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("whoAreYou")} <span className="text-red-400">*</span>
+                    {t("whoAreYou")}
                   </label>
                   <select
                     name="role"
@@ -340,12 +412,37 @@ export default function Register() {
                     Select your role to access appropriate dashboard features
                   </p>
                 </div>
+                {verificationStep && (
+                  <div>
+                    <label className="block text-sm font-medium text-muted mb-2">
+                      Email verification code
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-4 py-3 rounded-lg text-white placeholder-muted bg-white/10 border border-white/20 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      placeholder="Enter the 6-digit code sent to your email"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={loading}
+                      className="mt-2 text-sm text-teal-400 hover:text-teal-300 disabled:opacity-50"
+                    >
+                      Resend verification code
+                    </button>
+                  </div>
+                )}
                 <button
                   type="submit"
                   disabled={loading || Object.values(formErrors).some(error => error !== "")}
                   className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
-                  {loading ? t('analysing') : t('createAccount')}
+                  {loading ? (verificationStep ? 'Verifying email...' : 'Sending verification code...') : (verificationStep ? 'Verify email & create account' : t('createAccount'))}
                 </button>
               </form>
             </div>

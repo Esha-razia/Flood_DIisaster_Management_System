@@ -13,7 +13,11 @@ import numpy as np
 import os
 import uuid
 import pandas as pd
-from datetime import datetime, timedelta
+import secrets
+import re
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime, timedelta, timezone
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
@@ -21,6 +25,28 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from feature_engineering import build_feature_vector, SUPPORTED_CITIES
 from city_coordinates import resolve_coordinates, MAP_CITIES
+
+
+def _load_local_env():
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if not os.path.isfile(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+    except OSError as error:
+        print(f"Could not load local environment file: {error}")
+
+
+_load_local_env()
 
 try:
     import shap
@@ -38,14 +64,14 @@ def handle_options_preflight():
         response = app.make_default_options_response()
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role, X-FMS-Actor-Email"
         return response, 200
 
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-FMS-Actor-Name, X-FMS-Actor-Role, X-FMS-Actor-Email"
     if response.status_code < 400 and request.method in ("POST", "PUT", "DELETE"):
         record_api_activity(response)
     return response
@@ -734,6 +760,26 @@ if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# On local Windows runs, keep using the stable SQLite store when it already
+# contains application data. This prevents an empty local SQL Server database
+# from hiding data saved by earlier copies of the project.
+local_sqlite_dir = os.path.join(os.path.expanduser("~"), ".flood_dms")
+local_sqlite_path = os.path.join(local_sqlite_dir, "database.db")
+prefer_local_sqlite = False
+if not DATABASE_URL and os.path.exists(local_sqlite_path):
+    try:
+        local_probe = sqlite3.connect(local_sqlite_path)
+        local_tables = {
+            row[0] for row in local_probe.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        prefer_local_sqlite = any(
+            table in local_tables and local_probe.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            for table in ("users", "predictions", "community_reports", "rescue_operations")
+        )
+        local_probe.close()
+    except Exception as local_probe_error:
+        print(f"Could not inspect local SQLite data: {local_probe_error}")
+
 # 1. Try PostgreSQL if DATABASE_URL is provided (production cloud database)
 if DATABASE_URL:
     import time
@@ -763,6 +809,8 @@ if DATABASE_URL:
 
 if not DB_AVAILABLE and pyodbc is not None:
     try:
+        if prefer_local_sqlite:
+            raise RuntimeError("Existing local SQLite data should be used before SQL Server")
         raw_conn = pyodbc.connect(
             "DRIVER={ODBC Driver 17 for SQL Server};"
             "SERVER=localhost;"
@@ -790,17 +838,15 @@ if not DB_AVAILABLE and pyodbc is not None:
             # even though nothing was actually wrong with them. Keeping it
             # in one stable OS-level location means every copy of the app
             # on this machine always shares the same real data.
-            app_data_dir = os.path.join(os.path.expanduser("~"), ".flood_dms")
-            os.makedirs(app_data_dir, exist_ok=True)
-            db_path = os.path.join(app_data_dir, "database.db")
-            raw_conn = sqlite3.connect(db_path, check_same_thread=False)
+            os.makedirs(local_sqlite_dir, exist_ok=True)
+            raw_conn = sqlite3.connect(local_sqlite_path, check_same_thread=False)
             raw_conn.row_factory = lambda raw_cursor, row: SQLiteRowObject(raw_cursor.description, row)
             conn = CompatibleConnection(raw_conn, "sqlite")
             cursor = conn.cursor()
             DB_AVAILABLE = True
             DB_TYPE = "sqlite"
             initialize_sqlite_db(cursor, conn)
-            print(f"Database (SQLite) connected successfully at {db_path}")
+            print(f"Database (SQLite) connected successfully at {local_sqlite_path}")
         except Exception as sqlite_err:
             print(f"SQLite connection failed: {sqlite_err}")
             print("Running without database - predictions will work but data won't be saved")
@@ -942,6 +988,45 @@ MEMORY_PREDICTIONS = []
 MEMORY_USERS = []
 MEMORY_ALERTS = []
 PASSWORD_RESET_TOKENS = {}  # email -> {"token": ..., "expires": ...}
+REGISTRATION_VERIFICATIONS = {}  # email -> {"token": ..., "expires": ..., "user": {...}}
+
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+
+
+def _send_verification_email(recipient, subject, body):
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "").replace(" ", "")
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user).strip()
+    try:
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    except ValueError as error:
+        raise RuntimeError("SMTP_PORT must be a valid port number.") from error
+    if not smtp_host or not smtp_user or not smtp_password or not smtp_from:
+        raise RuntimeError(
+            "Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, "
+            "SMTP_PASSWORD and SMTP_FROM before using verification."
+        )
+    if smtp_port != 587:
+        raise RuntimeError("SMTP_PORT must be 587 when using Brevo STARTTLS.")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = smtp_from
+    message["To"] = recipient
+    message["Reply-To"] = smtp_from
+    message["X-Mailer"] = "Flood Disaster Management System"
+    message.set_content(body)
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        refused_recipients = server.send_message(message)
+        if refused_recipients:
+            raise smtplib.SMTPRecipientsRefused(refused_recipients)
+
+
+def _new_otp():
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 # ---------------- SYSTEM EVENT LOG (NFR06-02) ----------------
 MEMORY_LOGS = []
@@ -1004,6 +1089,22 @@ def register():
     password = data.get("password", "")
     name = (data.get("name") or "").strip()
     role = data.get("role", "citizen")
+    verification_token = (data.get("verification_token") or "").strip()
+
+    if not EMAIL_PATTERN.fullmatch(email):
+        return jsonify({"message": "Please enter a valid email address."}), 400
+    if not verification_token:
+        return jsonify({"message": "Please verify your email with the OTP before registering."}), 400
+    verification = REGISTRATION_VERIFICATIONS.get(email)
+    if not verification or not secrets.compare_digest(verification["token"], verification_token):
+        return jsonify({"message": "Invalid email verification code."}), 400
+    if datetime.now() > verification["expires"]:
+        REGISTRATION_VERIFICATIONS.pop(email, None)
+        return jsonify({"message": "Email verification code has expired. Please request a new one."}), 400
+    pending_user = verification["user"]
+    name = pending_user["name"]
+    password = pending_user["password"]
+    role = pending_user["role"]
 
     # Privileged roles cannot be self-registered — they are pre-seeded accounts only.
     # This prevents anyone from creating an admin or government_official via the public API.
@@ -1063,7 +1164,54 @@ def register():
         except Exception as db_error:
             log_event("error", f"Failed to save new user to database: {db_error}")
 
+    REGISTRATION_VERIFICATIONS.pop(email, None)
     return jsonify({"message": "User registered successfully"})
+
+
+@app.route("/register/request-verification", methods=["POST"])
+def request_registration_verification():
+    data = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    name = (data.get("name") or "").strip()
+    password = data.get("password") or ""
+    role = data.get("role", "citizen")
+    if not EMAIL_PATTERN.fullmatch(email):
+        return jsonify({"message": "Please enter a valid email address."}), 400
+    if not name or not password:
+        return jsonify({"message": "Name and password are required."}), 400
+    if role in ("admin", "government_official"):
+        return jsonify({"message": "Registration is not allowed for this role."}), 403
+
+    existing_memory = next((u for u in MEMORY_USERS if u.get("email", "").lower() == email), None)
+    existing_db = None
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT email FROM users WHERE LOWER(email) = ?", (email,))
+            existing_db = cursor.fetchone()
+        except Exception as error:
+            log_event("error", f"Duplicate-email check failed for verification {email}: {error}")
+            return jsonify({"message": "Could not verify email availability. Please try again."}), 503
+    if existing_memory or existing_db:
+        return jsonify({"message": "User already exists."}), 400
+
+    token = _new_otp()
+    REGISTRATION_VERIFICATIONS[email] = {
+        "token": token,
+        "expires": datetime.now() + timedelta(minutes=10),
+        "user": {"name": name, "password": password, "role": role},
+    }
+    try:
+        _send_verification_email(
+            email,
+            "Flood Disaster Management System email verification",
+            f"Your Flood Disaster Management System verification code is {token}.\n\n"
+            "This code expires in 10 minutes. If you did not request this, ignore this email.",
+        )
+    except (ValueError, OSError, smtplib.SMTPException, RuntimeError) as error:
+        REGISTRATION_VERIFICATIONS.pop(email, None)
+        log_event("error", f"Registration verification email failed for {email}: {error}")
+        return jsonify({"message": "We could not send the verification email. Please try again later."}), 503
+    return jsonify({"message": "A verification code was sent to your email."})
 
 # ---------------- LOGIN ----------------
 @app.route("/login", methods=["POST"])
@@ -1073,7 +1221,7 @@ def login():
     identifier = (data.get("username") or data.get("email") or "").strip().lower()
     password = (data.get("password") or "").strip()
 
-    print(f"[LOGIN ATTEMPT] Identifier: '{identifier}', password: '{password}'")
+    print(f"[LOGIN ATTEMPT] Identifier: '{identifier}'")
 
     if not identifier or not password:
         return jsonify({"message": "Username/Email and password are required"}), 400
@@ -1374,12 +1522,19 @@ def forgot_password():
         "expires": datetime.now() + timedelta(minutes=15),
     }
 
-    # No SMTP service is configured for this deployment, so the "email" is
-    # simulated by logging it to the backend console — the code/token itself
-    # is real and the reset below actually updates the password.
-    print(f"\n[PASSWORD RESET] Verification code for {email}: {token} (expires in 15 min)\n")
+    try:
+        _send_verification_email(
+            email,
+            "Flood Disaster Management System password reset",
+            f"Your password reset verification code is {token}.\n\n"
+            "This code expires in 15 minutes. If you did not request this, ignore this email.",
+        )
+    except (ValueError, OSError, smtplib.SMTPException, RuntimeError) as error:
+        PASSWORD_RESET_TOKENS.pop(email, None)
+        log_event("error", f"Password reset email failed for {email}: {error}")
+        return jsonify({"message": "We could not send the verification email. Please try again later."}), 503
 
-    return jsonify({"message": "A verification code has been generated. Check the backend console (email sending is simulated in this deployment)."})
+    return jsonify({"message": "A password reset code was sent to your email."})
 
 @app.route("/reset-password", methods=["POST"])
 def reset_password():
@@ -1393,7 +1548,7 @@ def reset_password():
         return jsonify({"message": "Email, verification code and new password are required"}), 400
 
     record = PASSWORD_RESET_TOKENS.get(email)
-    if not record or record["token"] != token:
+    if not record or not secrets.compare_digest(record["token"], token):
         return jsonify({"message": "Invalid verification code"}), 400
     if datetime.now() > record["expires"]:
         del PASSWORD_RESET_TOKENS[email]
@@ -1749,7 +1904,15 @@ def get_predictions():
     return jsonify(data)
 
 # ---------------- ALERTS (FR-03) ----------------
-from notifications import register as register_notifications, create as create_notification, db as notification_db
+from notifications import register as register_notifications, create as create_notification, db as notification_db, bind_main_db as bind_advisory_db, ensure_advisory_tables
+bind_advisory_db(lambda: (conn, DB_TYPE) if DB_AVAILABLE else None)
+if os.environ.get("FMS_CREATE_ADVISORY_TABLES") == "1":
+    # Explicit opt-in only: additive, guarded CREATE of the two advisory notification tables.
+    try:
+        ensure_advisory_tables()
+        print("Advisory notification tables are ready")
+    except Exception as advisory_table_error:
+        print(f"Advisory notification tables could not be created: {advisory_table_error}")
 register_notifications(app)
 from map_support import register as register_map_support
 register_map_support(app)
@@ -1834,7 +1997,60 @@ def get_rescue_operations():
     # FR05-07: prioritize by risk level, most urgent first; then newest first
     ops = sorted(all_ops, key=lambda o: o["created_at"], reverse=True)
     ops = sorted(ops, key=lambda o: RISK_PRIORITY.get(o["risk_level"], 9))
-    return jsonify(ops)
+    return jsonify(_decorate_operations(ops))
+
+
+def _require_assigner():
+    from notifications import identity
+    if identity().get("role") not in ("admin", "government_official"):
+        return jsonify({"message": "Only administrators and government officials can change worker assignments."}), 403
+    return None
+
+
+@app.route("/rescue-operations/workers", methods=["GET"])
+def get_rescue_worker_availability():
+    busy = _busy_map()
+    workers = []
+    for user in (get_users().get_json() or []):
+        if user.get("role") != "rescue_worker":
+            continue
+        operation = busy.get(ra.worker_key(user.get("name")))
+        workers.append({
+            "id": user.get("id"), "name": user.get("name"), "email": user.get("email"),
+            "status": "Busy" if operation else "Available",
+            "operation_id": operation["id"] if operation else None,
+        })
+    return jsonify({"multi_worker_enabled": _assignments_ready(), "workers": workers})
+
+
+@app.route("/rescue-operations/<int:op_id>/workers", methods=["POST"])
+def add_rescue_operation_workers(op_id):
+    denied = _require_assigner()
+    if denied:
+        return denied
+    names = ra.clean_names((request.json or {}).get("worker_names"))
+    if not names:
+        return jsonify({"message": "Select at least one rescue worker."}), 400
+    try:
+        final = _apply_assignment(op_id, add=names)
+    except AssignmentError as error:
+        return jsonify({"message": str(error)}), error.status
+    return jsonify({"message": "Workers assigned", "worker_names": final})
+
+
+@app.route("/rescue-operations/<int:op_id>/workers", methods=["DELETE"])
+def remove_rescue_operation_worker(op_id):
+    denied = _require_assigner()
+    if denied:
+        return denied
+    names = ra.clean_names([request.args.get("name", "")])
+    if not names:
+        return jsonify({"message": "Worker name is required."}), 400
+    try:
+        final = _apply_assignment(op_id, remove=names)
+    except AssignmentError as error:
+        return jsonify({"message": str(error)}), error.status
+    return jsonify({"message": "Worker removed", "worker_names": final})
 
 def _db_insert_get_id(insert_query_with_qmarks, params):
     """Runs an INSERT and returns the new row's real database id, reliably —
@@ -1893,18 +2109,172 @@ def _db_insert_get_id(insert_query_with_qmarks, params):
         return row.new_id if hasattr(row, "new_id") else row[0]
 
 
+import rescue_assignments as ra
+
+if DB_AVAILABLE and os.environ.get("FMS_CREATE_ASSIGNMENT_TABLES") == "1":
+    # Explicit opt-in only: additive, guarded CREATE of rescue_operation_workers.
+    try:
+        ra.ensure_tables(conn, cursor, DB_TYPE)
+        print("Rescue assignment table is ready")
+    except Exception as assignment_table_error:
+        print(f"Rescue assignment table could not be created: {assignment_table_error}")
+
+
+def _assignments_ready():
+    return bool(DB_AVAILABLE) and ra.ready(conn, cursor)
+
+
+def _active_assignments():
+    if not _assignments_ready():
+        return {}
+    try:
+        return ra.active_rows(cursor)
+    except Exception as error:
+        log_event("error", f"Failed to read rescue assignments: {error}")
+        return {}
+
+
+def _op_worker_names(operation, rows):
+    names = rows.get(operation.get("id"))
+    if names:
+        return list(names)
+    team = (operation.get("assigned_team") or "").strip()
+    if not team or team.lower() == "unassigned":
+        return []
+    return [part.strip() for part in team.split(", ") if part.strip()]
+
+
+def _busy_map(exclude_operation_id=None):
+    """{worker_key: active operation} using assignment rows, falling back to the legacy column."""
+    rows = _active_assignments()
+    busy = {}
+    for operation in _get_all_rescue_operations():
+        if operation.get("id") == exclude_operation_id or operation.get("status") not in BUSY_OPERATION_STATUSES:
+            continue
+        for name in _op_worker_names(operation, rows):
+            busy.setdefault(ra.worker_key(name), operation)
+    return busy
+
+
 def _worker_has_active_operation(worker_name, exclude_operation_id=None):
     """Return the active operation currently assigned to a worker, if any."""
     if not worker_name or worker_name == "Unassigned":
         return None
-    for operation in _get_all_rescue_operations():
-        if (
-            operation.get("id") != exclude_operation_id
-            and operation.get("assigned_team") == worker_name
-            and operation.get("status") in BUSY_OPERATION_STATUSES
-        ):
-            return operation
-    return None
+    return _busy_map(exclude_operation_id).get(ra.worker_key(worker_name))
+
+
+def _decorate_operations(operations):
+    rows = _active_assignments()
+    decorated = []
+    for operation in operations:
+        item = dict(operation)
+        active = item.get("status") in BUSY_OPERATION_STATUSES
+        names = _op_worker_names(item, rows)
+        item["workers"] = [{"name": n, "status": "Busy" if active else "Available"} for n in names]
+        item["worker_names"] = names
+        decorated.append(item)
+    return decorated
+
+
+def _set_operation_team(op_id, names):
+    team = ", ".join(names) if names else "Unassigned"
+    now = datetime.now()
+    for operation in MEMORY_RESCUE_OPS:
+        if operation["id"] == op_id:
+            operation["assigned_team"] = team
+            operation["updated_at"] = str(now)
+    if DB_AVAILABLE:
+        cursor.execute(
+            "UPDATE rescue_operations SET assigned_team = ?, updated_at = ? WHERE id = ?",
+            (team, now, op_id),
+        )
+
+
+def _known_rescue_worker_names():
+    return {
+        ra.worker_key(user.get("name"))
+        for user in (get_users().get_json() or [])
+        if user.get("role") == "rescue_worker"
+    }
+
+
+class AssignmentError(Exception):
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
+def _apply_assignment(op_id, add=None, remove=None, replace=None):
+    """Atomically change the active worker set of one active operation."""
+    if not _assignments_ready():
+        raise AssignmentError(
+            "Multi-worker assignment is pending database migration approval "
+            "(table rescue_operation_workers does not exist yet).", 503)
+    with ra.LOCK:
+        operation = next((o for o in _get_all_rescue_operations() if o["id"] == op_id), None)
+        if operation is None:
+            raise AssignmentError("Rescue operation not found", 404)
+        if operation.get("status") not in BUSY_OPERATION_STATUSES:
+            raise AssignmentError("Workers can only be changed on an active operation.", 409)
+
+        rows = _active_assignments()
+        current = _op_worker_names(operation, rows)
+        if replace is not None:
+            final = ra.clean_names(replace)
+        else:
+            removed = {ra.worker_key(n) for n in ra.clean_names(remove)}
+            final = [n for n in current if ra.worker_key(n) not in removed]
+            final += [n for n in ra.clean_names(add) if ra.worker_key(n) not in {ra.worker_key(x) for x in final}]
+        current_keys = {ra.worker_key(n) for n in current}
+        final_keys = {ra.worker_key(n) for n in final}
+        to_add = [n for n in final if ra.worker_key(n) not in current_keys]
+        to_remove = [n for n in current if ra.worker_key(n) not in final_keys]
+
+        if to_add:
+            known = _known_rescue_worker_names()
+            busy = _busy_map(op_id)
+            for name in to_add:
+                if ra.worker_key(name) not in known:
+                    raise AssignmentError(f"{name} is not a registered rescue worker.", 400)
+                other = busy.get(ra.worker_key(name))
+                if other:
+                    raise AssignmentError(f"{name} is already assigned to active operation {other['id']}.", 409)
+
+        try:
+            for name in to_remove:
+                ra.release(conn, cursor, op_id, name)
+            # Adopt a legacy single-worker assignment that has no row yet.
+            if not rows.get(op_id):
+                for name in current:
+                    if ra.worker_key(name) in final_keys:
+                        ra.insert_assignment(conn, cursor, op_id, name)
+            for name in to_add:
+                ra.insert_assignment(conn, cursor, op_id, name)
+            _set_operation_team(op_id, final)
+            conn.commit()
+        except ra.AssignmentConflict as error:
+            raise AssignmentError(str(error), 409)
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        return final
+
+
+def _release_operation_workers(op_id):
+    if not _assignments_ready():
+        return
+    try:
+        ra.release(conn, cursor, op_id)
+        conn.commit()
+    except Exception as error:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log_event("error", f"Failed to release workers for operation {op_id}: {error}")
 
 
 DEFAULT_OP_CHECKLIST = [
@@ -1944,6 +2314,20 @@ def _get_alert_for_link(alert_id):
     return normalized_id, alert
 
 
+def _operation_exists(operation_id):
+    """A link to a deleted/missing operation is stale and may be replaced."""
+    try:
+        operation_id = int(operation_id)
+    except (TypeError, ValueError):
+        return False
+    if any(operation["id"] == operation_id for operation in MEMORY_RESCUE_OPS):
+        return True
+    if DB_AVAILABLE:
+        cursor.execute("SELECT id FROM rescue_operations WHERE id = ?", (operation_id,))
+        return bool(cursor.fetchone())
+    return False
+
+
 def _link_alert_to_operation(alert_id, operation_id, assigned_worker):
     """Link one exact alert to one operation in the existing notification store."""
     with notification_db() as notification_connection:
@@ -1954,7 +2338,7 @@ def _link_alert_to_operation(alert_id, operation_id, assigned_worker):
             raise LookupError("Related flood alert was not found")
         alert = json.loads(row["payload"])
         existing_link = alert.get("linked_rescue_op_id")
-        if existing_link is not None and str(existing_link) != str(operation_id):
+        if existing_link is not None and str(existing_link) != str(operation_id) and _operation_exists(existing_link):
             raise ValueError("Related flood alert is already linked to another rescue operation")
         alert["linked_rescue_op_id"] = int(operation_id)
         alert["assigned_worker"] = (
@@ -2005,6 +2389,13 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
                 )
                 _link_alert_to_operation(dispatch_alert["id"], op["id"], op["assigned_team"])
             conn.commit()
+            if create_dispatch_alert and _assignments_ready():
+                for _name in ra.clean_names([op["assigned_team"]]):
+                    try:
+                        ra.insert_assignment(conn, cursor, op["id"], _name)
+                        conn.commit()
+                    except ra.AssignmentConflict:
+                        log_event("warning", f"{_name} already has an active assignment; not recorded for operation {op['id']}")
         except Exception as db_error:
             # If we couldn't confirm the real database id, don't silently
             # keep a memory-only id that will 404 on every future action —
@@ -2032,39 +2423,69 @@ def create_rescue_operation():
         except (LookupError, ValueError) as error:
             return jsonify({"message": str(error)}), 409
 
-    assigned_team = data.get("assigned_team", "Unassigned") or "Unassigned"
-    busy_operation = _worker_has_active_operation(assigned_team)
-    if busy_operation:
+    worker_names = ra.clean_names(data.get("worker_names") or [])
+    if not worker_names:
+        legacy_name = data.get("assigned_team", "Unassigned") or "Unassigned"
+        worker_names = ra.clean_names([legacy_name])
+    use_rows = _assignments_ready()
+    if len(worker_names) > 1 and not use_rows:
         return jsonify({
-            "message": f"{assigned_team} is already assigned to active operation {busy_operation['id']}."
-        }), 409
+            "message": "Assigning multiple workers is pending database migration approval."
+        }), 503
+    assigned_team = ", ".join(worker_names) if worker_names else "Unassigned"
+    busy = _busy_map()
+    for name in worker_names:
+        busy_operation = busy.get(ra.worker_key(name))
+        if busy_operation:
+            return jsonify({
+                "message": f"{name} is already assigned to active operation {busy_operation['id']}."
+            }), 409
+    if use_rows and data.get("worker_names"):
+        known = _known_rescue_worker_names()
+        unknown = [n for n in worker_names if ra.worker_key(n) not in known]
+        if unknown:
+            return jsonify({"message": f"{unknown[0]} is not a registered rescue worker."}), 400
 
     created_operation_id = None
     try:
-        op = _create_rescue_op_internal(
-            location=location, description=data.get("description", ""),
-            risk_level=data.get("risk_level", "High"), assigned_team=assigned_team,
-            latitude=data.get("latitude"), longitude=data.get("longitude"),
-            create_dispatch_alert=False,
-        )
-        created_operation_id = op["id"]
+        with ra.LOCK:
+            op = _create_rescue_op_internal(
+                location=location, description=data.get("description", ""),
+                risk_level=data.get("risk_level", "High"), assigned_team=assigned_team,
+                latitude=data.get("latitude"), longitude=data.get("longitude"),
+                create_dispatch_alert=False,
+            )
+            created_operation_id = op["id"]
+            if use_rows and DB_AVAILABLE:
+                for name in worker_names:
+                    ra.insert_assignment(conn, cursor, op["id"], name)
+                conn.commit()
         if selected_alert is not None:
             _link_alert_to_operation(alert_id, op["id"], op["assigned_team"])
+    except ra.AssignmentConflict as error:
+        _rollback_created_operation(created_operation_id)
+        return jsonify({"message": str(error)}), 409
     except Exception as error:
-        if created_operation_id is not None:
-            try:
-                MEMORY_RESCUE_OPS[:] = [
-                    item for item in MEMORY_RESCUE_OPS if item["id"] != created_operation_id
-                ]
-                if DB_AVAILABLE:
-                    cursor.execute("DELETE FROM rescue_operations WHERE id = ?", (created_operation_id,))
-                    conn.commit()
-            except Exception as cleanup_error:
-                log_event("error", f"Failed to roll back rescue operation {created_operation_id}: {cleanup_error}")
+        _rollback_created_operation(created_operation_id)
         log_event("error", f"Failed to create/link rescue operation: {error}")
         return jsonify({"message": "Could not save the operation to the database — please try again."}), 503
     # FR05-03: notify relevant rescue teams when a new operation is created.
-    return jsonify(op), 201
+    return jsonify(_decorate_operations([op])[0]), 201
+
+
+def _rollback_created_operation(created_operation_id):
+    if created_operation_id is None:
+        return
+    try:
+        MEMORY_RESCUE_OPS[:] = [item for item in MEMORY_RESCUE_OPS if item["id"] != created_operation_id]
+        if DB_AVAILABLE:
+            if _assignments_ready():
+                ra.release(conn, cursor, created_operation_id)
+            cursor.execute("DELETE FROM rescue_operations WHERE id = ?", (created_operation_id,))
+            conn.commit()
+    except Exception as cleanup_error:
+        log_event("error", f"Failed to roll back rescue operation {created_operation_id}: {cleanup_error}")
+
 
 @app.route("/rescue-operations/<int:op_id>/status", methods=["PUT"])
 def update_rescue_operation_status(op_id):
@@ -2087,11 +2508,25 @@ def update_rescue_operation_status(op_id):
     assigned_team = data.get("assigned_team")
     needs_backup = data.get("needs_backup")  # True/False/None (None = leave unchanged)
 
-    busy_operation = _worker_has_active_operation(assigned_team, exclude_operation_id=op_id)
-    if busy_operation:
-        return jsonify({
-            "message": f"{assigned_team} is already assigned to active operation {busy_operation['id']}."
-        }), 409
+    if assigned_team is not None and _assignments_ready():
+        try:
+            # The legacy single-worker field must never overwrite an existing team.
+            requested = [] if assigned_team in ("", "Unassigned") else ra.clean_names([assigned_team])
+            existing_op = next((o for o in _get_all_rescue_operations() if o["id"] == op_id), None)
+            current_names = _op_worker_names(existing_op, _active_assignments()) if existing_op else []
+            current_keys = {ra.worker_key(n) for n in current_names}
+            if current_names and {ra.worker_key(n) for n in requested} != current_keys:
+                return jsonify({"message": "This operation already has a team. Use Manage Team to add or remove workers."}), 409
+            _apply_assignment(op_id, add=requested)
+        except AssignmentError as error:
+            return jsonify({"message": str(error)}), error.status
+        assigned_team = None
+    else:
+        busy_operation = _worker_has_active_operation(assigned_team, exclude_operation_id=op_id)
+        if busy_operation:
+            return jsonify({
+                "message": f"{assigned_team} is already assigned to active operation {busy_operation['id']}."
+            }), 409
 
     result = None
     for op in MEMORY_RESCUE_OPS:
@@ -2143,6 +2578,9 @@ def update_rescue_operation_status(op_id):
         except Exception as db_error:
             log_event("error", f"Failed to update rescue operation in database: {db_error}")
 
+    if new_status == "Completed":
+        _release_operation_workers(op_id)
+
     # Sync status back to linked community reports
     target_report_status = "Resolved" if new_status == "Completed" else ("Action Taken" if new_status == "In Progress" else "Under Review")
     if DB_AVAILABLE and new_status:
@@ -2167,6 +2605,7 @@ def delete_rescue_operation(op_id):
     (e.g. ones left over from an earlier id-mismatch bug) that a coordinator
     wants off the board rather than something to keep acting on."""
     global MEMORY_RESCUE_OPS
+    _release_operation_workers(op_id)
     before = len(MEMORY_RESCUE_OPS)
     MEMORY_RESCUE_OPS = [o for o in MEMORY_RESCUE_OPS if o["id"] != op_id]
     removed_from_memory = len(MEMORY_RESCUE_OPS) != before
@@ -2650,32 +3089,43 @@ def get_community_reports():
         data = [r for r in data if (r.get("authorEmail") or "").strip().lower() == email_filter]
     return jsonify(data)
 
+@app.route("/community-stats", methods=["GET"])
+def get_community_stats():
+    # Aggregate only; individual citizen reports remain private.
+    response = get_community_reports()
+    records = response.get_json()
+    active = [r for r in records if r.get("status") not in ("Resolved", "Rejected", "Spam")]
+    regions = {str(r.get("region") or "").strip().casefold() for r in active}
+    regions.discard("")
+    return jsonify(active_incidents=len(active), monitored_regions=len(regions))
+
 @app.route("/community-reports", methods=["POST"])
 def create_community_report():
     data = request.json or {}
     location = (data.get("location") or "").strip()
     description = (data.get("description") or "").strip()
     contact = (data.get("contact") or "").strip()
-    if not location or not description or not contact:
-        return jsonify({"message": "Location, description and contact are required"}), 400
-    import base64, io
-    from PIL import Image
+    from report_validation import validate_report
+    field_errors = validate_report(data)
+    if field_errors:
+        return jsonify(message='Please correct the highlighted fields.', errors=field_errors), 400
     image_url = data.get('imageUrl') or ''
-    try:
-        header, encoded = image_url.split(',', 1)
-        if header not in ('data:image/jpeg;base64','data:image/png;base64','data:image/webp;base64','data:image/gif;base64'): raise ValueError()
-        if len(encoded) > 7 * 1024 * 1024: raise ValueError()
-        raw = base64.b64decode(encoded, validate=True)
-        if len(raw) > 5 * 1024 * 1024: raise ValueError()
-        with Image.open(io.BytesIO(raw)) as image: image.verify()
-    except Exception:
-        return jsonify(message='An incident photo (JPG, PNG, WebP or GIF, up to 5 MB) is required'), 400
     latitude = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
     longitude = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
     if (latitude is None) != (longitude is None):
         return jsonify({"message": "Latitude and longitude must be provided together"}), 400
     if latitude is not None and not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
         return jsonify({"message": "Coordinates are outside valid latitude/longitude ranges"}), 400
+
+    if latitude is None and longitude is None:
+        from map_support import resolve_report_address
+        resolved = resolve_report_address(location)
+        if not resolved:
+            return jsonify(message='Please correct the highlighted field.',
+                           errors={'location':'Address could not be verified. Enter a complete address including city, or use your current location.'}), 400
+        latitude, longitude = resolved['latitude'], resolved['longitude']
+        if not data.get('region'):
+            data['region'] = resolved.get('region', '')
 
     from notifications import identity
     actor = identity()
@@ -2696,7 +3146,7 @@ def create_community_report():
         "longitude": longitude,
         "imageUrl": data.get("imageUrl", ""),  # FR06-05
         "notes": "Incident added to the community review queue.",
-        "createdAt": str(datetime.now()),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
         "confirmedBy": [],
     }
 
@@ -2712,11 +3162,11 @@ def create_community_report():
             # even though the person filling the form did nothing wrong.
             new_id = _db_insert_get_id(
                 "INSERT INTO community_reports (tracking_id, location, region, incident_type, severity, status, "
-                "author_name, author_email, description, contact, latitude, longitude, image_url, notes) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "author_name, author_email, description, contact, latitude, longitude, image_url, notes, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (None, location, report["region"], report["type"], report["severity"], report["status"],
                  report["authorName"], report["authorEmail"], description, contact, latitude, longitude,
-                 report["imageUrl"], report["notes"])
+                 report["imageUrl"], report["notes"], datetime.now(timezone.utc).replace(tzinfo=None))
             )
             tracking_id = f"FMS-{1000 + new_id}"
             cursor.execute("UPDATE community_reports SET tracking_id = ? WHERE id = ?", (tracking_id, new_id))
@@ -3646,6 +4096,7 @@ def create_advisory():
         "created_at": str(datetime.now()),
     }
     MEMORY_ADVISORIES.append(advisory)
+    saved_to_db = False
 
     if DB_AVAILABLE:
         try:
@@ -3658,11 +4109,27 @@ def create_advisory():
             row = cursor.fetchone()
             if row:
                 advisory["id"] = row.id if hasattr(row, "id") else row[0]
+                saved_to_db = True
         except Exception as db_error:
             log_event("error", f"Failed to save advisory to database: {db_error}")
 
+    notification_warning = None
+    if saved_to_db:
+        try:
+            from notifications import create_advisory_notification
+            create_advisory_notification(advisory)
+        except Exception as notify_error:
+            notification_warning = str(notify_error)
+            log_event("error", f"Failed to create advisory notification: {notify_error}")
+    else:
+        notification_warning = "Advisory was not saved to the main database, so no notification was stored."
+        log_event("error", notification_warning)
+
     log_event("info", f"Public advisory issued: {title} ({advisory['region']})")
-    return jsonify(advisory), 201
+    response_body = dict(advisory)
+    if notification_warning:
+        response_body["notification_warning"] = notification_warning
+    return jsonify(response_body), 201
 
 @app.route("/advisories/<int:advisory_id>", methods=["DELETE"])
 def delete_advisory(advisory_id):

@@ -1,0 +1,31 @@
+Continues Flood_Map_Reports_Updated.zip.
+Notification and map frontend source files unchanged.
+
+Community changes:
+- Manual location input stays editable; focus no longer triggers GPS.
+- Explicit Use my current location button fetches measured coordinates/address.
+- Typed addresses without coordinates are verified through Nominatim (Pakistan)
+  on submission to obtain a real map point. If unavailable/unmatched, the location
+  field shows an error; use a complete address or device location.
+- Retains shared >=10-character description, first-letter capitalization,
+  11-digit 03XXXXXXXXX phone, actual image validation and 50 MiB image limit.
+- No mandatory red stars. Invalid inputs have inline errors/red borders.
+- Status label and Track button adjacent for each citizen report.
+- Tracking ID, evidence image, status timeline and official notes appear only
+  after Track opens the dialog. Close, Escape and backdrop close the dialog.
+- Timeline remains Submitted -> Action Taken -> Resolved; refresh every 3 seconds.
+- Government officials join existing admin/rescue reviewers in the review UI.
+- Form/My Reports cards share aligned grid spacing; details no longer occupy
+  a separate permanent card.
+- /community-stats returns real aggregate active counts and unique nonempty
+  regions for all users. Individual report lists remain account-specific.
+- Active aggregate excludes Resolved/Rejected/Spam records.
+- Map counts already derive from actual marker feed categories; no fixed totals.
+- No historical user data removed or artificially seeded.
+
+Validation: production build, Python compile, DOM manual/GPS/validation/
+tracking/detail visibility/status refresh tests, isolated Flask cross-account
+aggregate/private lists/manual coordinate resolution tests passed.
+Manual geocoder and GPS were mocked in tests; live provider/device verification
+remains necessary. Exact location depends on browser/device accuracy.
+Existing run commands remain in NOTIFICATION_UPDATE.txt.

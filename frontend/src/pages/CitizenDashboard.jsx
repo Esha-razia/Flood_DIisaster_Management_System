@@ -952,14 +952,9 @@ export default function CitizenDashboard() {
                                 {s.capacity ? ` · 👥 ${s.current_occupancy || s.occupancy || 0} / ${s.capacity}` : ""}
                               </p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0 ml-2">
-                              <Link to={`/check-in/${s.id}`} className="text-xs font-semibold px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30">
-                                Check In 📍
-                              </Link>
-                              <Link to={`/map?lat=${s.latitude}&lng=${s.longitude}&name=${encodeURIComponent(s.name)}`} className="text-xs text-teal-400 hover:text-teal-300">
-                                {t("viewOnMap")}
-                              </Link>
-                            </div>
+                            <Link to={`/map?lat=${s.latitude}&lng=${s.longitude}&name=${encodeURIComponent(s.name)}`} className="text-xs text-teal-400 hover:text-teal-300 shrink-0 ml-2">
+                              {t("viewOnMap")}
+                            </Link>
                           </div>
                         ))}
                       </div>

@@ -11,6 +11,7 @@ export default function Navbar() {
   const [userName, setUserName] = useState(() => localStorage.getItem('userName'));
   const isAuthenticated = Boolean(userRole && userName);
   const [recentAlerts, setRecentAlerts] = useState([]);
+  const [advisoryNotes, setAdvisoryNotes] = useState([]);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState('');
@@ -19,6 +20,64 @@ export default function Navbar() {
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ message: '', location: '', risk_level: 'Medium' });
   const versions = useRef(new Map());
+  const alertsContainer = useRef(null);
+  const seenKey = `flood-alerts-seen:${localStorage.getItem('userEmail') || userRole || 'guest'}`;
+  const [seenVersions, setSeenVersions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(seenKey) || '{}'); }
+    catch { return {}; }
+  });
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const dismissedKey = `flood-alerts-dismissed:${localStorage.getItem('userEmail') || userRole || 'guest'}`;
+  const [dismissedVersions, setDismissedVersions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(dismissedKey) || '{}'); }
+    catch { return {}; }
+  });
+  const alertVersion = item => JSON.stringify([item.updated_at, item.created_at, item.status, item.message, item.risk_level, item.location]);
+  const noteVersion = item => JSON.stringify([item.created_at, item.title, item.message]);
+  const visibleAlerts = recentAlerts.filter(item => item.status === 'Active' &&
+    (userRole !== 'citizen' || dismissedVersions[`alert-${item.id}`] !== alertVersion(item)));
+  const visibleNotes = advisoryNotes.filter(item =>
+    userRole !== 'citizen' || dismissedVersions[`advisory-${item.advisory_id}`] !== noteVersion(item));
+  const displayedAlerts = showAllAlerts ? recentAlerts.filter(item => item.status === 'Active') : visibleAlerts;
+  const displayedNotes = showAllAlerts ? advisoryNotes : visibleNotes;
+  const dismissNotifications = (items, notes = []) => {
+    setDismissedVersions(previous => {
+      const next = { ...previous };
+      items.forEach(item => { next[`alert-${item.id}`] = alertVersion(item); });
+      notes.forEach(item => { next[`advisory-${item.advisory_id}`] = noteVersion(item); });
+      localStorage.setItem(dismissedKey, JSON.stringify(next));
+      return next;
+    });
+    setShowAllAlerts(false);
+  };
+  const hasUnread = visibleAlerts.some(item => seenVersions[`alert-${item.id}`] !== alertVersion(item))
+    || visibleNotes.some(item => !item.read && seenVersions[`advisory-${item.advisory_id}`] !== noteVersion(item));
+
+  useEffect(() => {
+    if (!showAlertsPanel) return;
+    setSeenVersions(previous => {
+      const next = { ...previous };
+      recentAlerts.forEach(item => { next[`alert-${item.id}`] = alertVersion(item); });
+      advisoryNotes.forEach(item => { next[`advisory-${item.advisory_id}`] = noteVersion(item); });
+      localStorage.setItem(seenKey, JSON.stringify(next));
+      return next;
+    });
+  }, [showAlertsPanel, recentAlerts, advisoryNotes, seenKey]);
+
+  useEffect(() => {
+    if (!showAlertsPanel) return;
+    const outside = event => {
+      if (!alertsContainer.current?.contains(event.target)) setShowAlertsPanel(false);
+    };
+    const escape = event => { if (event.key === 'Escape') setShowAlertsPanel(false); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [showAlertsPanel]);
+
   const navigate = useNavigate();
   const official = ['admin', 'government_official'].includes(userRole);
 
@@ -31,10 +90,14 @@ export default function Navbar() {
         setHistory(result.data);
       }
       setError('');
+      if (userRole === 'citizen') {
+        const notes = await axios.get(`${API_BASE}/advisory-notifications`).catch(() => ({ data: [] }));
+        setAdvisoryNotes(notes.data || []);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Could not load alerts.');
     }
-  }, [official]);
+  }, [official, userRole]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -47,7 +110,7 @@ export default function Navbar() {
 
   useEffect(() => {
     recentAlerts.forEach(item => {
-      if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at) {
+      if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at && seenVersions[`alert-${item.id}`] !== alertVersion(item)) {
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification(`${item.risk_level} flood risk — ${item.location}`, { body: item.message });
         }
@@ -156,18 +219,20 @@ export default function Navbar() {
 
         {isAuthenticated && userName && (
           <div className="flex items-center gap-3 ml-auto md:ml-4 md:pl-4 md:border-l md:border-white/10">
-            <div className="relative">
-              <button onClick={() => setShowAlertsPanel(v => !v)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5" title="Notifications" aria-label="Notifications">
+            <div className="relative" ref={alertsContainer}>
+              <button aria-expanded={showAlertsPanel} onClick={() => setShowAlertsPanel(v => !v)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5" title="Notifications" aria-label="Notifications">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                {recentAlerts.some(a => a.status === 'Active') && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
+                {(!showAlertsPanel && hasUnread) && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
               </button>
               {showAlertsPanel && (
                 <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/10">
-                    <p className="text-sm font-semibold text-parchment">Alerts and Notifications</p>
+                    <p className="text-sm font-semibold text-parchment">Alerts &amp; advisories</p>
                     <div className="flex gap-2 mt-2 text-xs">
-                      <button className="text-teal-300" onClick={() => setShowHistory(false)}>Active alerts</button>
+                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(false); }}>Current</button>
+                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(true); }}>View all</button>
                       {official && <button className="text-teal-300" onClick={() => setShowHistory(true)}>Alert history</button>}
+                      {!showAllAlerts && userRole === 'citizen' && (visibleAlerts.length > 0 || visibleNotes.length > 0) && <button className="text-muted ml-auto" onClick={() => dismissNotifications(visibleAlerts, visibleNotes)}>Clear all</button>}
                       {userRole === 'admin' && <button className="text-marigold-300" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>Create alert</button>}
                     </div>
                     {'Notification' in window && Notification.permission === 'default' && <button className="text-xs text-muted mt-2" onClick={() => Notification.requestPermission()}>Enable browser notifications</button>}
@@ -194,11 +259,22 @@ export default function Navbar() {
                       ))
                     ) : (
                       <>
-                        {!recentAlerts.some(a => a.status === 'Active') && <p className="text-xs text-muted px-4 py-4">No active alerts.</p>}
-                        {recentAlerts.filter(a => a.status === 'Active').map(item => (
+                        {displayedNotes.map(n => (
+                          <div key={`adv-${n.advisory_id}`}><Link to={`/community?advisory=${n.advisory_id}&n=${Date.now()}`} onClick={() => { setShowAlertsPanel(false); setAdvisoryNotes(list => list.map(x => x.advisory_id === n.advisory_id ? { ...x, read: true } : x)); }} className="block px-4 py-3 border-b border-white/5 hover:bg-white/5">
+                            <p className="text-xs text-marigold-300">Public advisory · {n.read ? 'Read' : 'Unread'}{!n.read && <span className="inline-block w-1.5 h-1.5 rounded-full bg-marigold-400 ml-1.5 align-middle"/>}</p>
+                            <p className="text-sm text-parchment font-medium mt-1">{n.title}</p>
+                            <p className="text-xs text-muted mt-1 line-clamp-2">{n.message}</p>
+                            <p className="text-xs text-muted mt-1">{formatAlertDateTime(n.created_at)}</p>
+                          </Link>
+                          {userRole === 'citizen' && (dismissedVersions[`advisory-${n.advisory_id}`] === noteVersion(n) ? <p className="text-xs text-muted px-4 pb-2">Dismissed</p> : <button type="button" className="text-xs text-muted px-4 pb-2" onClick={() => dismissNotifications([], [n])}>Dismiss advisory</button>)}
+                          </div>
+                        ))}
+                        {displayedAlerts.length === 0 && displayedNotes.length === 0 && <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? "No alerts or advisories." : "Nothing to show. Cleared items are available in View all."}</p>}
+                        {displayedAlerts.map(item => (
                           <div key={item.id} className="px-4 py-3 border-b border-white/5">
                             <p className="text-xs text-teal-300">{item.risk_level} risk · {item.location}</p>
                             <p className="text-sm text-parchment font-medium mt-1">{item.message}</p>
+                            {userRole === 'citizen' && (dismissedVersions[`alert-${item.id}`] === alertVersion(item) ? <p className="text-xs text-muted mt-2">Dismissed</p> : <button type="button" className="text-xs text-muted mt-2 px-2 py-1 border border-white/15 rounded-md" aria-label={`Dismiss alert: ${item.location}`} onClick={() => dismissNotifications([item])}>Dismiss</button>)}
                             <p className="text-xs text-muted mt-1">Created: {formatAlertDateTime(item.created_at)}</p>
                             {userRole === 'admin' && <div className="flex gap-3 mt-2 text-xs"><button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>Update</button><button className="text-red-300" onClick={() => cancelAlert(item.id)}>Cancel alert</button></div>}
                           </div>

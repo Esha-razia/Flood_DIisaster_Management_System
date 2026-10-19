@@ -1,0 +1,38 @@
+Notification-only update
+- FR03 automatic Medium/High prediction alerts retained.
+- Admin manual create, update and cancellation retained.
+- Timestamped alert log and authorized official history retained.
+- Dashboard notifications refresh every 3 seconds (polling).
+- Bell dot uses per-account unseen alert/advisory versions; opening clears it.
+- Outside click closes the panel.
+- Exact legacy demo alerts removed; demo reseeding removed.
+Only source changes: backend/notifications.py, frontend/src/components/Navbar.jsx.
+Frontend dist regenerated. Other project files preserved.
+
+Validation: frontend production build; isolated Flask notification API tests;
+DOM interaction tests with mocked API (new/update/read/remount/outside click).
+Full model prediction and live multi-device tests not run.
+
+Windows CMD: open this flood_disaster_website folder in VS Code.
+Backend terminal:
+cd backend
+"%USERPROFILE%\fyp-venv\Scripts\python.exe" -m pip install -r requirements.txt
+set PORT=5000
+"%USERPROFILE%\fyp-venv\Scripts\python.exe" app.py
+
+Second CMD terminal from flood_disaster_website:
+cd frontend
+npm install
+set VITE_API_URL=http://127.0.0.1:5000
+npm run dev
+
+Keep both terminals running and open the frontend Local URL.
+
+Final addition:
+- Click any flood alert to open its full details in the notification panel.
+- Open location on map uses the alert location text in Google Maps search.
+- Citizens can dismiss individual alerts/advisories or Clear all locally.
+- Dismissal persists per account in this browser. It does not cancel the shared alert.
+- An updated alert reappears so new information is not hidden.
+- DOM tests passed for details, map URL, dismiss/remount, update returning, Clear all.
+- No additional backend/source changes for this final addition.

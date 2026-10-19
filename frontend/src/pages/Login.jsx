@@ -30,6 +30,24 @@ export default function Login() {
     }
   }, [navigate]);
 
+  const handleBlur = (field) => {
+    if (field === 'email') {
+      if (!email.trim()) {
+        setFieldErrors(prev => ({ ...prev, email: 'Please fill out this field' }));
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+        if (!emailRegex.test(email.trim())) {
+          setFieldErrors(prev => ({ ...prev, email: t('invalidEmailFormat') }));
+        }
+      }
+    }
+    if (field === 'password') {
+      if (!password) {
+        setFieldErrors(prev => ({ ...prev, password: 'Please fill out this field' }));
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -131,7 +149,7 @@ export default function Login() {
                 )}
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("emailAddress")} <span className="text-red-400">*</span>
+                    {t("emailAddress")}
                   </label>
                   <input
                     type="email"
@@ -140,6 +158,7 @@ export default function Login() {
                       setEmail(e.target.value);
                       if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
                     }}
+                    onBlur={() => handleBlur('email')}
                     className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                       fieldErrors.email
                         ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
@@ -156,7 +175,7 @@ export default function Login() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("password")} <span className="text-red-400">*</span>
+                    {t("password")}
                   </label>
                   <div className="relative">
                     <input
@@ -166,6 +185,7 @@ export default function Login() {
                         setPassword(e.target.value);
                         if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: '' }));
                       }}
+                      onBlur={() => handleBlur('password')}
                       className={`w-full px-4 py-3 pr-12 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
                         fieldErrors.password
                           ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'

@@ -1,6 +1,8 @@
+import { formatAlertDateTime } from '../utils/alertDateTime';
+import { capitalizeDescription, validateReportFields, reportImageError, getReportImageSource } from '../utils/reportValidation';
 import { lookupLocation, getCurrentPosition, locationErrorMessage } from "../utils/mapLocation";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -16,12 +18,12 @@ const INCIDENT_TYPE_KEY_MAP = {
 };
 const SEVERITY_OPTIONS = ["Low", "Medium", "High"];
 const SEVERITY_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
-const STATUS_FLOW = ["Submitted", "Under Review", "Action Taken", "Resolved"];
-const STATUS_KEY_MAP = { "Submitted": "submitted", "Under Review": "underReview", "Action Taken": "actionTaken", "Resolved": "resolved" };
+const STATUS_FLOW = ["Submitted", "Action Taken", "Resolved"];
+const STATUS_KEY_MAP = { "Submitted": "submitted", "Action Taken": "actionTaken", "Resolved": "resolved" };
 
 
 function formatTimeStamp(value) {
-  return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return formatAlertDateTime(value);
 }
 
 function severityStyles(value) {
@@ -39,7 +41,13 @@ function statusStyles(value) {
 
 export default function Community() {
   const { t } = useLanguage();
+  const routerLocation = useLocation();
+  const [advisories, setAdvisories] = useState([]);
+  const [selectedAdvisory, setSelectedAdvisory] = useState(null);
+  const advisoryIdParam = new URLSearchParams(routerLocation.search).get("advisory");
   const [reports, setReports] = useState([]);
+  const [systemStats, setSystemStats] = useState(null);
+  const [trackingOpen, setTrackingOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const locationEdited = useRef(false);
   const [loadingReports, setLoadingReports] = useState(true);
@@ -57,18 +65,21 @@ export default function Community() {
   const userName = localStorage.getItem("userName");
   const userEmail = localStorage.getItem("userEmail");
   const isCitizen = userRole === "citizen";
-  const isReviewer = ["government_official", "admin", "rescue_worker"].includes(userRole);
-  const isLoggedIn = Boolean(userRole && userName && userEmail);
+  const isGovernmentOfficial = userRole === "government_official";
+  const isReviewer = ["admin", "rescue_worker", "government_official"].includes(userRole);
 
   const fetchReports = async () => {
     try {
       const res = await axios.get(`${API_BASE}/community-reports`, {
         params: isCitizen && userEmail ? { email: userEmail } : {},
       });
+      const totals = await axios.get(`${API_BASE}/community-stats`).then(r => r.data).catch(() => null);
+      setSystemStats(totals);
       const data = res.data || [];
       setReports(data);
       setActiveReportId((prev) => prev ?? data[0]?.id ?? null);
     } catch (err) {
+      setSystemStats(null);
       console.error("Failed to load community reports:", err);
     } finally {
       setLoadingReports(false);
@@ -90,19 +101,70 @@ export default function Community() {
 
   useEffect(() => {
     let active = true;
+    const loadAdvisories = async () => {
+      const [live, notified] = await Promise.all([
+        axios.get(`${API_BASE}/advisories`).then((r) => r.data || []).catch(() => []),
+        axios.get(`${API_BASE}/advisory-notifications`).then((r) => r.data || []).catch(() => []),
+      ]);
+      if (!active) return;
+      const liveIds = new Set(live.map((a) => String(a.id)));
+      const withdrawn = notified
+        .filter((n) => !liveIds.has(String(n.advisory_id)))
+        .map((n) => ({ id: n.advisory_id, title: n.title, message: n.message, region: n.region, issued_by: n.issued_by, created_at: n.created_at, withdrawn: true }));
+      const all = [...live.map((a) => ({ ...a, withdrawn: false })), ...withdrawn];
+      all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setAdvisories(all);
+    };
+    loadAdvisories();
+    const interval = setInterval(loadAdvisories, 10000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
+
+  const openAdvisory = (advisory) => {
+    setSelectedAdvisory(advisory);
+    axios.post(`${API_BASE}/advisory-notifications/${advisory.id}/read`).catch(() => {});
+  };
+
+  const handledAdvisoryParam = useRef(null);
+  useEffect(() => {
+    if (advisoryIdParam || routerLocation.hash !== "#public-advisories") return;
+    const timer = setTimeout(() => document.getElementById("public-advisories")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+    return () => clearTimeout(timer);
+  }, [advisoryIdParam, routerLocation.hash, routerLocation.key]);
+  useEffect(() => {
+    if (!advisoryIdParam || handledAdvisoryParam.current === routerLocation.key) return;
+    const match = advisories.find((a) => String(a.id) === advisoryIdParam);
+    if (match) {
+      handledAdvisoryParam.current = routerLocation.key;
+      setSelectedAdvisory(match);
+      axios.post(`${API_BASE}/advisory-notifications/${match.id}/read`).catch(() => {});
+      document.getElementById("public-advisories")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [advisoryIdParam, advisories, routerLocation.key]);
+  useEffect(() => {
+    if (!trackingOpen) return;
+    const close = event => { if (event.key === 'Escape') setTrackingOpen(false); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [trackingOpen]);
+  const locationBusy = useRef(false);
+  const fillCurrentLocation = async () => {
+    if (locationBusy.current) return;
+    locationBusy.current = true;
+    locationEdited.current = false;
     setLocationStatus('Finding your current location...');
-    getCurrentPosition().then(async position => {
+    try {
+      const position = await getCurrentPosition();
       const latitude = position.coords.latitude, longitude = position.coords.longitude;
       const location = await lookupLocation(latitude, longitude);
-      if (active && !locationEdited.current) {
+      if (!locationEdited.current) {
         setFormState(current => ({ ...current, location, latitude, longitude }));
-        setLocationStatus(location.includes('(address unavailable)') ? 'Address lookup unavailable. Your coordinates are filled; you can enter the address manually.' : '');
+        setFormFieldErrors(current => ({ ...current, location: '' }));
+        setLocationStatus(`Device location accuracy: approximately ${Math.round(position.coords.accuracy)} metres.`);
       }
-    }).catch(error => {
-      if (active) setLocationStatus(locationErrorMessage(error));
-    });
-    return () => { active = false; };
-  }, []);
+    } catch (error) { setLocationStatus(locationErrorMessage(error)); }
+    finally { locationBusy.current = false; }
+  };
 
   const filteredReports = useMemo(() => reports.filter((r) => (filters.severity === "All" || r.severity === filters.severity) && (filters.status === "All" || r.status === filters.status) && (filters.region === "All" || r.region === filters.region)), [filters, reports]);
   const visibleReports = useMemo(() => isCitizen ? reports.filter(r => (r.authorEmail || '').toLowerCase() === (userEmail || '').toLowerCase()) : filteredReports, [isCitizen, reports, userEmail, filteredReports]);
@@ -111,14 +173,18 @@ export default function Community() {
     return pool.find((r) => r.id === activeReportId) || pool[0] || null;
   }, [activeReportId, reports, isCitizen, visibleReports]);
   const handleFormChange = (field, value) => {
+    if (field === 'description') value = capitalizeDescription(value);
     if (field === 'location') { locationEdited.current = true; setLocationStatus(''); }
     if (formFieldErrors[field]) setFormFieldErrors(prev => ({ ...prev, [field]: '' }));
     setFormState(prev => ({ ...prev, [field]:value, ...(field === 'location' ? { latitude:null, longitude:null } : {}) }));
   };
   const handleFileSelect = (file) => {
     if (!file) return;
-    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setToast({ type:'error', message:'Upload a JPG, PNG, WebP or GIF image up to 5 MB.' }); return;
+    const imageError = reportImageError(file);
+    if (imageError) {
+      setFormFieldErrors(prev => ({ ...prev, image: imageError }));
+      setFormState(prev => ({ ...prev, imageFile:null, imagePreview:'' }));
+      return;
     }
     const reader = new FileReader();
     reader.onload = () => {
@@ -139,32 +205,7 @@ export default function Community() {
     event.preventDefault();
     const { location, description, contact, type, severity } = formState;
 
-    const errors = {};
-    if (!location.trim()) {
-      errors.location = 'Please fill out this field';
-    } else if (location.includes('(address unavailable)')) {
-      errors.location = 'Address lookup failed. Enter the incident address.';
-    } else if (location.trim().length < 3) {
-      errors.location = t("locationTooShort");
-    }
-
-    if (!description.trim()) {
-      errors.description = 'Please fill out this field';
-    } else if (description.trim().length < 10) {
-      errors.description = t("descriptionTooShort");
-    }
-
-    const phoneRegex = /^(\+92|0)[0-9]{9,10}$/;
-    if (!contact.trim()) {
-      errors.contact = 'Please fill out this field';
-    } else if (!phoneRegex.test(contact.trim().replace(/[\s-]/g, ""))) {
-      errors.contact = t("invalidPhoneFormat");
-    }
-
-    if (!formState.imagePreview) {
-      errors.image = 'Please upload an incident photo';
-    }
-
+    const errors = validateReportFields(formState);
     if (Object.keys(errors).length > 0) {
       setFormFieldErrors(errors);
       setToast({ type: "error", message: t("fillRequiredFields"), time: new Date().toLocaleTimeString() });
@@ -172,7 +213,7 @@ export default function Community() {
     }
     setFormFieldErrors({});
 
-    const region = location.includes("Sindh") ? "Sindh" : location.includes("Punjab") ? "Punjab" : location.includes("KPK") ? "KPK" : location.includes("Balochistan") ? "Balochistan" : location.includes("Gilgit") ? "Gilgit-Baltistan" : "Punjab";
+    const region = location.includes("Sindh") ? "Sindh" : location.includes("Punjab") ? "Punjab" : location.includes("KPK") ? "KPK" : location.includes("Balochistan") ? "Balochistan" : location.includes("Gilgit") ? "Gilgit-Baltistan" : "";
 
     try {
       const res = await axios.post(`${API_BASE}/community-reports`, {
@@ -189,6 +230,7 @@ export default function Community() {
       // FR06-03: acknowledgment notification on submission
       setToast({ type: "success", message: t("incidentReportSubmitted"), trackingId: newReport.trackingId, time: formatTimeStamp(newReport.createdAt) });
     } catch (err) {
+      setFormFieldErrors(err.response?.data?.errors || {});
       console.error("Failed to submit report:", err);
       setToast({ type: "error", message: t("couldNotSubmitReport"), time: new Date().toLocaleTimeString() });
     }
@@ -266,16 +308,16 @@ export default function Community() {
                 <div className="space-y-4">
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("activeIncidents")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{reports.filter((r) => r.status !== "Resolved").length}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.active_incidents ?? "—"}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("monitoredRegions")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{new Set(reports.filter((r) => r.status !== "Resolved").map((r) => r.region)).size}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.monitored_regions ?? "—"}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("statusLabel")}</p>
                     <p className="text-lg font-semibold text-emerald-400 mt-2 flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>{t("live")}
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>{systemStats ? t("live") : loadingReports ? t("loadingDots") : "Unavailable"}
                     </p>
                   </div>
                 </div>
@@ -283,9 +325,47 @@ export default function Community() {
             </div>
           </section>
 
+          {/* PUBLIC ADVISORIES */}
+          <section id="public-advisories" className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl scroll-mt-24">
+            <p className="eyebrow text-teal-400 mb-3">{t("officialCommunication")}</p>
+            <h2 className="font-display text-3xl text-parchment mb-6">{t("publicAdvisories")}</h2>
+            {advisories.length === 0 ? (
+              <p className="text-sm text-muted">{t("noAdvisoriesYet")}</p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {advisories.map((a) => (
+                  <button key={a.id} type="button" onClick={() => openAdvisory(a)} className="text-left dashboard-card p-6 hover:border-teal-500/40 transition-colors">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${a.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{a.withdrawn ? "Withdrawn" : "Active"}</span>
+                      <span className="text-xs text-muted">{formatTimeStamp(a.created_at)}</span>
+                    </div>
+                    <h3 className="font-display text-lg text-parchment mb-2">{a.title}</h3>
+                    <p className="text-sm text-muted leading-relaxed line-clamp-3">{a.message}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          {selectedAdvisory && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" onClick={() => setSelectedAdvisory(null)}>
+              <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-ink-soft p-7 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${selectedAdvisory.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{selectedAdvisory.withdrawn ? "Withdrawn" : "Active"}</span>
+                  <button type="button" className="text-muted hover:text-parchment text-sm" onClick={() => setSelectedAdvisory(null)}>Close</button>
+                </div>
+                <h3 className="font-display text-2xl text-parchment mb-3">{selectedAdvisory.title}</h3>
+                <p className="text-sm text-parchment/90 leading-relaxed whitespace-pre-wrap mb-5">{selectedAdvisory.message}</p>
+                <dl className="text-xs text-muted space-y-1">
+                  <div><dt className="inline text-teal-300">Region: </dt><dd className="inline">{selectedAdvisory.region || "All regions"}</dd></div>
+                  <div><dt className="inline text-teal-300">Issued by: </dt><dd className="inline">{selectedAdvisory.issued_by || "Government Official"}</dd></div>
+                  <div><dt className="inline text-teal-300">Published: </dt><dd className="inline">{formatTimeStamp(selectedAdvisory.created_at)}</dd></div>
+                </dl>
+              </div>
+            </div>
+          )}
 
-          {/* MAIN INCIDENT & TRACKING */}
-          <section className="grid items-stretch gap-6 lg:grid-cols-2">
+
+          <section className="grid items-start gap-6">
             {/* FORM */}
             <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl">
               <div className="space-y-8">
@@ -297,25 +377,18 @@ export default function Community() {
                   <p className="text-lg text-muted max-w-2xl">{t("submitFloodReportDesc")}</p>
                 </div>
 
-                {!isLoggedIn && (
-                  <div className="rounded-[2rem] bg-amber-500/10 border border-amber-500/30 p-6 lg:p-8">
-                    <p className="text-lg font-semibold text-white mb-3">{t("loginRequired")}</p>
-                    <p className="text-muted mb-5">{t("loginRequiredDesc")}</p>
-                    <Link to="/login" className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-marigold-400 to-marigold-500 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition">{t("loginOrRegister")}</Link>
-                  </div>
-                )}
-
                 {isCitizen ? (
-                  <form onSubmit={handleSubmit} className="space-y-7" noValidate>
+                  <form noValidate onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-2">
                     <div className="space-y-4">
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("locationAndType")}</p>
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="block">
                           <span className="text-sm text-muted font-medium">
-                            {t("location")} <span className="text-red-400">*</span>
+                            {t("location")} 
                           </span>
                           <input
                             value={formState.location}
+                            
                             onChange={(e) => handleFormChange("location", e.target.value)}
                             placeholder={t("cityRegionNeighbourhood")}
                             className={`field-input mt-2 rounded-2xl transition-colors ${
@@ -328,11 +401,12 @@ export default function Community() {
                               <span>⚠️</span> {formFieldErrors.location}
                             </p>
                           )}
+                          <button type="button" onClick={fillCurrentLocation} className="text-xs text-teal-300 border border-teal-500/30 rounded-lg px-3 py-2 mt-2">Use my current location</button>
                           {locationStatus && <span className="block text-xs text-muted mt-1">{locationStatus}</span>}
                         </label>
                         <label className="block">
                           <span className="text-sm text-muted font-medium">
-                            {t("incidentType")} <span className="text-red-400">*</span>
+                            {t("incidentType")} 
                           </span>
                           <select value={formState.type} onChange={(e) => handleFormChange("type", e.target.value)} className="field-input mt-2 rounded-2xl">
                             {INCIDENT_TYPES.map((type) => <option key={type} value={type}>{t(INCIDENT_TYPE_KEY_MAP[type])}</option>)}
@@ -345,12 +419,12 @@ export default function Community() {
                       <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("details")}</p>
                       <label className="block">
                         <span className="text-sm text-muted font-medium">
-                          {t("description")} <span className="text-red-400">*</span>
+                          {t("description")} 
                         </span>
                         <textarea
                           value={formState.description}
                           onChange={(e) => handleFormChange("description", e.target.value)}
-                          placeholder="What is happening? Describe water levels, damage, affected areas, and immediate dangers."
+                          placeholder="Minimum 10 characters. Start with a capital letter." minLength={10}
                           rows={5}
                           className={`field-input mt-2 rounded-2xl transition-colors ${
                             formFieldErrors.description ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
@@ -370,20 +444,21 @@ export default function Community() {
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="block">
                           <span className="text-sm text-muted font-medium">
-                            {t("severityLevel")} <span className="text-red-400">*</span>
+                            {t("severityLevel")} 
                           </span>
-                          <select value={formState.severity} onChange={(e) => handleFormChange("severity", e.target.value)} className="field-input mt-2 rounded-2xl">
+                          <select value={formState.severity} onChange={(e) => handleFormChange("severity", e.target.value)} className={`field-input mt-2 rounded-2xl ${formFieldErrors.severity ? "border-red-500 ring-1 ring-red-500" : ""}`}>
                             {SEVERITY_OPTIONS.map((item) => <option key={item} value={item}>{t(SEVERITY_KEY_MAP[item])}</option>)}
                           </select>
+                          {formFieldErrors.severity && <p role="alert" className="text-xs text-red-400">{formFieldErrors.severity}</p>}
                         </label>
                         <label className="block">
                           <span className="text-sm text-muted font-medium">
-                            {t("contactInfo")} <span className="text-red-400">*</span>
+                            {t("contactInfo")} 
                           </span>
                           <input
                             value={formState.contact}
                             onChange={(e) => handleFormChange("contact", e.target.value)}
-                            placeholder="+92 XXX XXX XXXX"
+                            placeholder="03001234567" inputMode="numeric" maxLength={11}
                             className={`field-input mt-2 rounded-2xl transition-colors ${
                               formFieldErrors.contact ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
                             }`}
@@ -399,7 +474,7 @@ export default function Community() {
                     </div>
 
                     <div className="space-y-4">
-                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} <span className="text-red-400">*</span></p>
+                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} </p>
                       <div
                         onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                         onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
@@ -414,8 +489,8 @@ export default function Community() {
                       >
                         <label className="flex cursor-pointer flex-col items-center justify-center gap-3 text-muted">
                           <span className="text-4xl">📷</span>
-                          <div><span className="font-semibold text-white">{t("dragDropImage")}</span><p className="text-sm text-slate-500">{t("orClickToBrowse")}</p></div>
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e.target.files?.[0])} />
+                          <div><span className="font-semibold text-white">{t("dragDropImage")}</span><p className="text-sm text-slate-500">{t("orClickToBrowse")} · JPG, PNG, WebP, GIF · Maximum 50 MB</p></div>
+                          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => handleFileSelect(e.target.files?.[0])} />
                         </label>
                       </div>
                       {formFieldErrors.image && (
@@ -431,7 +506,7 @@ export default function Community() {
                       )}
                     </div>
 
-                    <button type="submit" className="btn-primary w-full py-4 text-base">{t("submitIncidentReport")}</button>
+                    <button type="submit" className="btn-primary w-full py-4 text-base lg:col-span-2">{t("submitIncidentReport")}</button>
                   </form>
                 ) : (
                   <div className="rounded-[2rem] bg-ink/80 border border-white/10 p-8 lg:p-10 text-muted">
@@ -444,20 +519,19 @@ export default function Community() {
             </div>
 
             {/* REPORTS & TIMELINE */}
-            <div className="flex min-w-0 flex-col gap-6 h-full">
+            {!isGovernmentOfficial && <div className="flex min-w-0 flex-col gap-6">
               {/* MY REPORTS (citizens only) — lets them browse/switch between their own submitted reports */}
               {isCitizen && (
-                <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6">
+                <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 flex-1">
                   <h4 className="font-display text-xl text-parchment mb-1">{t("myReports")}</h4>
                   <p className="text-xs text-muted mb-4">{t("myReportsDesc")}</p>
                   {visibleReports.length === 0 ? (
                     <p className="text-sm text-muted">{t("noReportsSubmitted")}</p>
                   ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    <div className="grid gap-3 md:grid-cols-2 items-start">
                       {visibleReports.map((r) => (
-                        <button
+                        <div
                           key={r.id}
-                          onClick={() => setActiveReportId(r.id)}
                           className={`w-full text-left rounded-xl px-4 py-3 border transition-colors ${
                             activeReportId === r.id ? "border-teal-500/50 bg-teal-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
                           }`}
@@ -467,81 +541,21 @@ export default function Community() {
                               <p className="text-sm font-semibold text-white">{r.trackingId} · {r.location}</p>
                               <p className="text-xs text-muted mt-0.5">{t("submittedOn")} {formatTimeStamp(r.createdAt)}</p>
                             </div>
+                            <div className="flex shrink-0 items-center gap-2">
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${statusStyles(r.status)}`}>{t(STATUS_KEY_MAP[r.status] || r.status)}</span>
+                              <button type="button" onClick={() => { setActiveReportId(r.id); setTrackingOpen(true); }} aria-label={`Track report ${r.trackingId}`} className="rounded-full px-3 py-1 text-xs font-semibold text-teal-300 border border-teal-500/40 hover:bg-teal-500/10">Track</button>
+                            </div>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* TIMELINE */}
-              <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl flex-1">
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-teal-500/15 px-4 py-2 border border-teal-500/30 text-xs text-teal-300 uppercase tracking-[0.35em] font-semibold">
-                      <span className="inline-block w-2 h-2 rounded-full bg-teal-400"></span> {t("realTimeTracking")}
-                    </div>
-                    <h3 className="font-display text-3xl text-parchment">{t("reportTimelineTitle")}</h3>
-                  </div>
 
-                  {currentReport ? (
-                    <>
-                      <div className="rounded-2xl bg-ink/80 border border-white/10 p-5 shadow-lg">
-                        <div className="flex items-center justify-between gap-4 mb-2">
-                          <div><p className="text-xs text-muted uppercase tracking-[0.2em]">{t("trackingIdLabel")}</p><p className="text-xl font-bold text-white mt-1">{currentReport.trackingId}</p></div>
-                          <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusStyles(currentReport.status)}`}>{t(STATUS_KEY_MAP[currentReport.status] || currentReport.status)}</span>
-                        </div>
-                        <p className="text-sm text-muted">{currentReport.location} · {currentReport.type}</p>
-                        {currentReport.imageUrl && (
-                          <img src={currentReport.imageUrl} alt={t("visualEvidence")} className="mt-4 max-h-64 w-full rounded-xl border border-white/10 object-cover" />
-                        )}
-                        {currentReport.linked_rescue_op_id && (
-                          <p className="text-xs text-teal-300 mt-2">✓ {t("rescueOpCreatedMsg")} #{currentReport.linked_rescue_op_id}</p>
-                        )}
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-                          <p className="text-xs text-muted">
-                            {(currentReport.confirmedBy || []).length} {(currentReport.confirmedBy || []).length === 1 ? t("personConfirmed") : t("peopleConfirmed")}
-                          </p>
-                          <button
-                            onClick={() => handleConfirmReport(currentReport.id)}
-                            disabled={(currentReport.confirmedBy || []).includes(userEmail)}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-full border border-teal-500/30 text-teal-300 hover:bg-teal-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {(currentReport.confirmedBy || []).includes(userEmail) ? `✓ ${t("confirmed")}` : t("iSeeThisToo")}
-                          </button>
-                        </div>
-                      </div>
 
-                      <div className="space-y-4">
-                        {STATUS_FLOW.map((step, index) => {
-                          const active = STATUS_FLOW.indexOf(currentReport.status) >= index;
-                          const isCompleted = STATUS_FLOW.indexOf(currentReport.status) > index;
-                          return (
-                            <div key={step} className="flex gap-4">
-                              <div className="flex flex-col items-center">
-                                <div className={`h-4 w-4 rounded-full border-2 ${isCompleted ? "bg-emerald-400 border-emerald-400" : active ? "bg-teal-500 border-teal-500" : "bg-ink-soft border-white/10"} ring-4 ${isCompleted ? "ring-emerald-400/20" : active ? "ring-teal-500/20" : "ring-white/10"}`}></div>
-                                {index < STATUS_FLOW.length - 1 && <div className={`w-0.5 h-12 mt-2 ${isCompleted ? "bg-emerald-400/40" : active ? "bg-teal-500/30" : "bg-white/10"}`}></div>}
-                              </div>
-                              <div className="pt-1.5">
-                                <p className={`text-sm font-bold ${isCompleted || active ? "text-white" : "text-slate-500"}`}>{t(STATUS_KEY_MAP[step] || step)}</p>
-                                <p className="text-xs text-slate-500 mt-1">{index === 0 ? t("stepSubmittedDesc") : index === 1 ? t("stepReviewDesc") : index === 2 ? t("stepActionDesc") : t("stepResolvedDesc")}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-2xl bg-ink/80 border border-white/10 p-8 text-center text-muted">
-                      <p className="text-sm">{t("submitReportToTrack")}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
+            </div>}
           </section>
 
           {/* REVIEW PANEL */}
@@ -599,7 +613,6 @@ export default function Community() {
                           </td>
                           <td className="px-5 py-4 text-sm text-muted">{report.authorName}</td>
                           <td className="px-5 py-4 space-y-2">
-                            <button onClick={() => handleReviewAction(report.id, "Under Review")} className="w-full rounded-2xl bg-ink-soft/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-ink-soft">{t("reviewAction")}</button>
                             <button
                               onClick={() => toggleAssignPanel(report.id)}
                               disabled={report.status === "Action Taken" || report.status === "Resolved"}
@@ -646,6 +659,78 @@ export default function Community() {
       </div>
 
       {/* TOAST */}
+      {trackingOpen && currentReport && isCitizen && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setTrackingOpen(false); }}>
+          <div role="dialog" aria-modal="true" aria-label="Report tracking" className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] bg-ink border border-white/10">
+            <button autoFocus type="button" aria-label="Close report tracking" onClick={() => setTrackingOpen(false)} className="absolute top-4 right-5 z-10 text-sm text-parchment px-3 py-2 rounded-lg bg-ink-soft">Close</button>
+
+              <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl flex-1">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-teal-500/15 px-4 py-2 border border-teal-500/30 text-xs text-teal-300 uppercase tracking-[0.35em] font-semibold">
+                      <span className="inline-block w-2 h-2 rounded-full bg-teal-400"></span> {t("realTimeTracking")}
+                    </div>
+                    <h3 className="font-display text-3xl text-parchment">{t("reportTimelineTitle")}</h3>
+                  </div>
+
+                  {currentReport ? (
+                    <>
+                      <div className="rounded-2xl bg-ink/80 border border-white/10 p-5 shadow-lg">
+                        <div className="flex items-center justify-between gap-4 mb-2">
+                          <div><p className="text-xs text-muted uppercase tracking-[0.2em]">{t("trackingIdLabel")}</p><p className="text-xl font-bold text-white mt-1">{currentReport.trackingId}</p></div>
+                          <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusStyles(currentReport.status)}`}>{t(STATUS_KEY_MAP[currentReport.status] || currentReport.status)}</span>
+                        </div>
+                        <p className="text-sm text-muted">{currentReport.location} · {currentReport.type}</p>
+                        {currentReport.notes && <p className="text-sm text-parchment mt-3 whitespace-pre-wrap">{currentReport.notes}</p>}
+                        {getReportImageSource(currentReport.imageUrl) && (
+                          <img src={getReportImageSource(currentReport.imageUrl)} alt={t("visualEvidence")} className="mt-4 max-h-64 w-full rounded-xl border border-white/10 object-cover" />
+                        )}
+                        {currentReport.linked_rescue_op_id && (
+                          <p className="text-xs text-teal-300 mt-2">✓ {t("rescueOpCreatedMsg")} #{currentReport.linked_rescue_op_id}</p>
+                        )}
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
+                          <p className="text-xs text-muted">
+                            {(currentReport.confirmedBy || []).length} {(currentReport.confirmedBy || []).length === 1 ? t("personConfirmed") : t("peopleConfirmed")}
+                          </p>
+                          <button
+                            onClick={() => handleConfirmReport(currentReport.id)}
+                            disabled={(currentReport.confirmedBy || []).includes(userEmail)}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-full border border-teal-500/30 text-teal-300 hover:bg-teal-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {(currentReport.confirmedBy || []).includes(userEmail) ? `✓ ${t("confirmed")}` : t("iSeeThisToo")}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {STATUS_FLOW.map((step, index) => {
+                          const active = STATUS_FLOW.indexOf(currentReport.status) >= index;
+                          const isCompleted = STATUS_FLOW.indexOf(currentReport.status) > index;
+                          return (
+                            <div key={step} className="flex gap-4">
+                              <div className="flex flex-col items-center">
+                                <div className={`h-4 w-4 rounded-full border-2 ${isCompleted ? "bg-emerald-400 border-emerald-400" : active ? "bg-teal-500 border-teal-500" : "bg-ink-soft border-white/10"} ring-4 ${isCompleted ? "ring-emerald-400/20" : active ? "ring-teal-500/20" : "ring-white/10"}`}></div>
+                                {index < STATUS_FLOW.length - 1 && <div className={`w-0.5 h-12 mt-2 ${isCompleted ? "bg-emerald-400/40" : active ? "bg-teal-500/30" : "bg-white/10"}`}></div>}
+                              </div>
+                              <div className="pt-1.5">
+                                <p className={`text-sm font-bold ${isCompleted || active ? "text-white" : "text-slate-500"}`}>{t(STATUS_KEY_MAP[step] || step)}</p>
+                                <p className="text-xs text-slate-500 mt-1">{index === 0 ? t("stepSubmittedDesc") : index === 1 ? t("stepActionDesc") : t("stepResolvedDesc")}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl bg-ink/80 border border-white/10 p-8 text-center text-muted">
+                      <p className="text-sm">{t("submitReportToTrack")}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className="fixed right-6 top-28 z-50 w-full max-w-sm rounded-3xl border border-white/10 bg-ink/95 p-5 shadow-2xl shadow-black/40">
           <div className="flex items-start gap-4">

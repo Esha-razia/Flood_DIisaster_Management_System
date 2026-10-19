@@ -101,3 +101,26 @@ def register(app):
                 except Exception as fallback_error:
                     app.logger.warning('Photon reverse lookup failed: %s', fallback_error)
                     return jsonify(message='Address services could not be reached. Check internet access or enter the address manually.'), 503
+
+def resolve_report_address(address):
+    """Resolve a typed incident address; never invent a map point."""
+    query = urllib.parse.urlencode({
+        'q': address, 'format': 'jsonv2', 'addressdetails': 1,
+        'limit': 1, 'countrycodes': 'pk'
+    })
+    req = urllib.request.Request(
+        'https://nominatim.openstreetmap.org/search?' + query,
+        headers={'User-Agent':'FloodDisasterManagement/1.0 (incident address lookup)', 'Accept':'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as remote:
+            results = json.load(remote)
+        if not results:
+            return None
+        result = results[0]
+        lat, lng = float(result['lat']), float(result['lon'])
+        if not math.isfinite(lat) or not math.isfinite(lng) or abs(lat)>90 or abs(lng)>180:
+            return None
+        return {'latitude':lat, 'longitude':lng,
+                'region':result.get('address', {}).get('state', '')}
+    except Exception:
+        return None

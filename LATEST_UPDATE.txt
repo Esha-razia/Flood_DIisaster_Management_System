@@ -1,0 +1,45 @@
+Continues Flood_Community_Tracking_Final.zip.
+
+Requested changes only:
+- Community: full-width report-form and report-list sections; desktop form fields
+  use a two-column grid and reports use matching cards. Removes empty sidebar
+  and duplicate logged-out login notice.
+- Map reports: success confirmation with tracking ID and My reports link.
+  Citizen account identity is sent with the report and requests. New map
+  submissions appear in that citizen's Community report list.
+  Existing reports lacking a reliable owner are not reassigned.
+- Community report dates/times display explicitly in Asia/Karachi. Legacy
+  timezone-less SQL timestamps are interpreted as UTC. New report timestamps
+  are timezone-aware UTC and explicitly stored as UTC in the database.
+- Bell heading accurately says Alerts & advisories (not all system events).
+- Removes duplicate expanded alert details and Google Maps link.
+- Single compact alert card with one timestamp.
+- Current and View all: cleared/dismissed items remain accessible in View all.
+- Dismiss hides the current version immediately and persists through polling.
+  New information in an updated alert can reappear. Dismissed versions are
+  labeled in View all, rather than showing a nonworking repeated dismiss action.
+- Existing unread dot, outside-click close and admin/history controls retained.
+- Existing map, validation, tracking and other application features retained.
+
+Validation passed:
+Production build and Python compile; Navbar DOM tests (dismiss, polling,
+View all, Clear all, outside click); actual map-submit function isolated test;
+actual Flask report handlers in isolation (owner list/account separation);
+actual SQLite insert (UTC timestamp/column count); Pakistan-time formatting.
+These checks mock network/map services. Full live GPS/browser/multi-device
+verification remains for the user's laptop.
+
+RUN (Windows CMD), from flood_disaster_website:
+Terminal 1:
+cd backend
+"%USERPROFILE%\fyp-venv\Scripts\python.exe" -m pip install -r requirements.txt
+set PORT=5000
+"%USERPROFILE%\fyp-venv\Scripts\python.exe" app.py
+
+Terminal 2 from flood_disaster_website:
+cd frontend
+npm install
+set VITE_API_URL=http://127.0.0.1:5000
+npm run dev
+
+Stop old project servers first. Keep both new terminals running.

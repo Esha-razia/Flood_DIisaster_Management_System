@@ -3,6 +3,7 @@ import json
 from contextlib import contextmanager
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -40,24 +41,18 @@ def db():
     connection.row_factory = sqlite3.Row
     connection.execute('CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)')
     connection.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER NOT NULL, action TEXT NOT NULL, timestamp TEXT NOT NULL, actor TEXT NOT NULL, payload TEXT NOT NULL)')
-    try:
-        count = connection.execute('SELECT COUNT(*) FROM alerts').fetchone()[0]
-        if count < 2:
-            defaults = [
-                ("High flood risk detected in Karachi Eastern District. Heavy monsoon rainfall causing localized urban flooding. Immediate evacuation recommended.", "High", "Karachi"),
-                ("Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.", "Medium", "Hyderabad"),
-                ("Flash flood advisory active for Sukkur Barrage catchment area. Continuous monitoring and emergency response teams deployed.", "High", "Sukkur")
-            ]
-            stamp = datetime.now(timezone.utc).isoformat()
-            for msg, rsk, loc in defaults:
-                rec = dict(message=msg, risk=rsk, risk_level=rsk, location=loc, status='Active', assigned_worker=None, linked_rescue_op_id=None, created_at=stamp, updated_at=stamp, source='automatic')
-                aid = connection.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',)).lastrowid
-                rec['id'] = aid
-                connection.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(rec), aid))
-                connection.execute('INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)', (aid, 'created', stamp, 'System', json.dumps(rec)))
-            connection.commit()
-    except Exception:
-        pass
+    # Remove only the exact legacy demo alerts; retain real alerts and history.
+    demo_messages = {
+        "High flood risk detected in Karachi Eastern District. Heavy monsoon rainfall causing localized urban flooding. Immediate evacuation recommended.",
+        "Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.",
+        "Flash flood advisory active for Sukkur Barrage catchment area. Continuous monitoring and emergency response teams deployed."
+    }
+    with connection:
+        for row in connection.execute('SELECT id, payload FROM alerts').fetchall():
+            record = json.loads(row['payload'])
+            if record.get('source') == 'automatic' and record.get('message') in demo_messages:
+                connection.execute('DELETE FROM history WHERE alert_id=?', (row['id'],))
+                connection.execute('DELETE FROM alerts WHERE id=?', (row['id'],))
     try:
         with connection:
             yield connection
@@ -79,7 +74,155 @@ def create(message, risk, location, actor='System', source='manual'):
         log(c, record, 'created', actor)
     return record
 
+# ---- Public advisory notifications: stored in the MAIN application database ----
+# (SQL Server / PostgreSQL / SQLite, whichever app.py connected to). The tables
+# are NOT created here; see database/migrations/advisory_notifications.sql.
+_main_db_provider = None
+_advisory_lock = threading.Lock()
+
+ADVISORY_DDL = {
+    'sql_server': [
+        "IF OBJECT_ID('advisory_notifications', 'U') IS NULL CREATE TABLE advisory_notifications (advisory_id INT NOT NULL PRIMARY KEY, title NVARCHAR(255) NOT NULL, message NVARCHAR(MAX) NOT NULL, region NVARCHAR(255) NULL, issued_by NVARCHAR(255) NULL, created_at VARCHAR(40) NOT NULL)",
+        "IF OBJECT_ID('advisory_notification_reads', 'U') IS NULL CREATE TABLE advisory_notification_reads (email NVARCHAR(255) NOT NULL, advisory_id INT NOT NULL, read_at VARCHAR(40) NOT NULL, CONSTRAINT PK_advisory_notification_reads PRIMARY KEY (email, advisory_id))",
+    ],
+    'postgresql': [
+        "CREATE TABLE IF NOT EXISTS advisory_notifications (advisory_id INTEGER PRIMARY KEY, title VARCHAR(255) NOT NULL, message TEXT NOT NULL, region VARCHAR(255), issued_by VARCHAR(255), created_at VARCHAR(40) NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS advisory_notification_reads (email VARCHAR(255) NOT NULL, advisory_id INTEGER NOT NULL, read_at VARCHAR(40) NOT NULL, PRIMARY KEY (email, advisory_id))",
+    ],
+    'sqlite': [
+        "CREATE TABLE IF NOT EXISTS advisory_notifications (advisory_id INTEGER PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, region TEXT, issued_by TEXT, created_at TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS advisory_notification_reads (email TEXT NOT NULL, advisory_id INTEGER NOT NULL, read_at TEXT NOT NULL, PRIMARY KEY (email, advisory_id))",
+    ],
+}
+
+class AdvisoryStorageError(RuntimeError):
+    pass
+
+def bind_main_db(provider):
+    """provider() -> (connection, db_type) or None when no main database is connected."""
+    global _main_db_provider
+    _main_db_provider = provider
+
+def _main_cursor():
+    info = _main_db_provider() if _main_db_provider else None
+    if not info or not info[0]:
+        raise AdvisoryStorageError('Main database is not connected; advisory notifications cannot be stored.')
+    conn, db_type = info
+    if db_type == 'sqlite' and os.environ.get('RENDER'):
+        raise AdvisoryStorageError('Production is running on temporary local SQLite; advisory notifications were not stored.')
+    return conn, conn.cursor()
+
+def ensure_advisory_tables():
+    """Guarded, additive DDL. Only invoked on explicit opt-in (FMS_CREATE_ADVISORY_TABLES=1)."""
+    info = _main_db_provider() if _main_db_provider else None
+    if not info or not info[0] or info[1] not in ADVISORY_DDL:
+        raise AdvisoryStorageError('Main database is not connected.')
+    conn, db_type = info
+    cur = conn.cursor()
+    for statement in ADVISORY_DDL[db_type]:
+        cur.execute(statement)
+    conn.commit()
+
+def _storage_call(work):
+    with _advisory_lock:
+        conn, cur = _main_cursor()
+        try:
+            result = work(conn, cur)
+            conn.commit()
+            return result
+        except AdvisoryStorageError:
+            raise
+        except Exception as error:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise AdvisoryStorageError(f'Advisory notification storage is unavailable ({type(error).__name__}). Ensure the advisory notification migration has been applied.') from error
+
+def _exists(cur, sql, params):
+    cur.execute(sql, params)
+    return cur.fetchone() is not None
+
+def create_advisory_notification(advisory):
+    """Store one notification per advisory id. Repeats/retries are no-ops. Returns True if newly created."""
+    def work(conn, cur):
+        check = 'SELECT advisory_id FROM advisory_notifications WHERE advisory_id = ?'
+        if _exists(cur, check, (advisory['id'],)):
+            return False
+        try:
+            cur.execute(
+                'INSERT INTO advisory_notifications (advisory_id, title, message, region, issued_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                (advisory['id'], advisory['title'], advisory['message'], advisory.get('region'), advisory.get('issued_by'), str(advisory['created_at'])),
+            )
+            return True
+        except Exception:
+            # A concurrent request may have inserted the same advisory first.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if _exists(conn.cursor(), check, (advisory['id'],)):
+                return False
+            raise
+    return _storage_call(work)
+
+def list_advisory_notifications(email):
+    def work(conn, cur):
+        cur.execute(
+            'SELECT n.advisory_id, n.title, n.message, n.region, n.issued_by, n.created_at, r.read_at '
+            'FROM advisory_notifications n LEFT JOIN advisory_notification_reads r '
+            'ON r.advisory_id = n.advisory_id AND r.email = ? ORDER BY n.created_at DESC, n.advisory_id DESC',
+            (email,),
+        )
+        return [
+            {'advisory_id': r['advisory_id'], 'title': r['title'], 'message': r['message'], 'region': r['region'],
+             'issued_by': r['issued_by'], 'created_at': str(r['created_at']), 'read_at': r['read_at'], 'read': bool(r['read_at'])}
+            for r in cur.fetchall()
+        ]
+    return _storage_call(work)
+
+def mark_advisory_read(email, advisory_id):
+    def work(conn, cur):
+        if not _exists(cur, 'SELECT advisory_id FROM advisory_notifications WHERE advisory_id = ?', (advisory_id,)):
+            return False
+        check = 'SELECT advisory_id FROM advisory_notification_reads WHERE email = ? AND advisory_id = ?'
+        if not _exists(cur, check, (email, advisory_id)):
+            try:
+                cur.execute('INSERT INTO advisory_notification_reads (email, advisory_id, read_at) VALUES (?, ?, ?)', (email, advisory_id, now()))
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                if not _exists(conn.cursor(), check, (email, advisory_id)):
+                    raise
+        return True
+    return _storage_call(work)
+
 def register(app):
+    @app.route('/advisory-notifications', methods=['GET'])
+    def advisory_notifications():
+        user = identity()
+        if user.get('role') != 'citizen' or not user.get('email'):
+            return jsonify([])
+        try:
+            return jsonify(list_advisory_notifications(user['email'].lower()))
+        except AdvisoryStorageError as error:
+            return jsonify(message=str(error)), 503
+
+    @app.route('/advisory-notifications/<int:advisory_id>/read', methods=['POST'])
+    def advisory_notification_read(advisory_id):
+        user = identity()
+        if user.get('role') != 'citizen' or not user.get('email'):
+            return jsonify(message='Citizen sign-in required'), 403
+        try:
+            found = mark_advisory_read(user['email'].lower(), advisory_id)
+        except AdvisoryStorageError as error:
+            return jsonify(message=str(error)), 503
+        if not found:
+            return jsonify(message='No notification for this advisory'), 404
+        return jsonify(message='Marked as read')
+
     @app.after_request
     def login_token(response):
         if request.path in ('/login', '/admin/login') and response.status_code == 200:

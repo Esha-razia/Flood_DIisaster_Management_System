@@ -13,6 +13,8 @@ axios.interceptors.request.use((config) => {
     if (notificationToken) config.headers.set('Authorization', `Bearer ${notificationToken}`);
     const actorName = localStorage.getItem('userName');
     const actorRole = localStorage.getItem('userRole');
+    const actorEmail = localStorage.getItem('userEmail');
+    if (actorEmail) config.headers.set('X-FMS-Actor-Email', actorEmail);
     if (actorName) config.headers.set('X-FMS-Actor-Name', actorName);
     if (actorRole) config.headers.set('X-FMS-Actor-Role', actorRole);
   }

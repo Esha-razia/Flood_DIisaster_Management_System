@@ -685,7 +685,6 @@ export default function AdminDashboard() {
         risk_level: report.severity || "High",
         status: "Active"
       });
-      await handleReportStatus(report.id, "Under Review");
       fetchAlerts();
       showNotification("Emergency Alert created from Citizen Report!");
     } catch (err) {
@@ -1082,7 +1081,7 @@ export default function AdminDashboard() {
 
   const activeAlertsCount = activeAlertsList.length;
   const activeOpsCount = rescueOps.filter(o => o.status !== "Completed").length;
-  const pendingReportsCount = communityReports.filter(r => r.status === "Submitted" || r.status === "Under Review").length;
+  const pendingReportsCount = communityReports.filter(r => r.status === "Submitted").length;
 
   const getRiskColor = (risk) => {
     if (risk === "High") return "text-red-400";
@@ -2020,7 +2019,6 @@ export default function AdminDashboard() {
                   >
                     <option value="All">All Statuses</option>
                     <option value="Submitted">Submitted</option>
-                    <option value="Under Review">Under Review</option>
                     <option value="Action Taken">Action Taken</option>
                     <option value="Resolved">Resolved</option>
                   </select>
@@ -2067,15 +2065,6 @@ export default function AdminDashboard() {
 
                       <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-1.5">
                         <div className="flex flex-wrap items-center gap-1">
-                          {report.status === "Submitted" && (
-                            <button
-                              onClick={() => handleReportStatus(report.id, "Under Review")}
-                              className="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
-                            >
-                              Under Review
-                            </button>
-                          )}
-
                           {report.status !== "Action Taken" && report.status !== "Resolved" && (
                             <button
                               onClick={() => setAssigningReportId(assigningReportId === report.id ? null : report.id)}

@@ -21,3 +21,6 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+
+# Local service credentials
+backend/.env

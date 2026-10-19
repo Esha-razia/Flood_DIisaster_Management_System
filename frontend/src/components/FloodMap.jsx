@@ -1,3 +1,4 @@
+import { capitalizeDescription, validateReportFields, reportImageError, getReportImageSource } from '../utils/reportValidation';
 import { lookupLocation, getCurrentPosition, escapeMapText, locationErrorMessage } from "../utils/mapLocation";
 import { printMapOnly } from "../utils/printMap";
 import { useEffect, useRef, useState, useMemo } from "react";
@@ -138,12 +139,18 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const [measurePoints, setMeasurePoints] = useState([]); // up to 2 [lat,lng] points
   const [tripStops, setTripStops] = useState([]); // marker ids selected for multi-stop routing
   const [reportMode, setReportMode] = useState(false);
+  const [reportReceipt, setReportReceipt] = useState(null);
+  useEffect(() => {
+    if (!reportReceipt) return;
+    const timer = setTimeout(() => setReportReceipt(null), 8000);
+    return () => clearTimeout(timer);
+  }, [reportReceipt]);
   const [reportDraft, setReportDraft] = useState(null); // { lat, lng, location, description, severity, contact }
   const [weatherPoints, setWeatherPoints] = useState([]);
   const [showWeather, setShowWeather] = useState(false);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+
   const [showHelplines, setShowHelplines] = useState(false);
-  const heatmapLayerRef = useRef(null);
+
   const measureLayerRef = useRef(null);
   const weatherLayerRef = useRef(null);
   const containerRef = useRef(null);
@@ -226,10 +233,10 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       (pos) => {
         locationSuccessVersion.current += 1;
         setLocationError('');
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy:pos.coords.accuracy });
       },
       () => {},
-      { timeout: 8000 }
+      { enableHighAccuracy:true, maximumAge:0, timeout:20000 }
     );
   }, []);
 
@@ -269,7 +276,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     routeLayerRef.current = L.layerGroup().addTo(map);
     measureLayerRef.current = L.layerGroup().addTo(map);
     weatherLayerRef.current = L.layerGroup().addTo(map);
-    heatmapLayerRef.current = L.layerGroup().addTo(map);
+
     mapRef.current = map;
 
     if (focusTarget) {
@@ -414,21 +421,47 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     return () => map.off('click', handler);
   }, [reportMode]);
 
+  const reportLocationBusy = useRef(false);
+  const fillReportLocation = async () => {
+    if (reportLocationBusy.current) return;
+    reportLocationBusy.current = true;
+    const version = ++locationRequest.current;
+    setReportDraft(d => d ? {...d, locating:true, error:''} : d);
+    try {
+      const position = await getCurrentPosition();
+      const lat = position.coords.latitude, lng = position.coords.longitude;
+      const location = await lookupLocation(lat, lng);
+      if (version === locationRequest.current) {
+        setUserLocation({lat,lng,location,accuracy:position.coords.accuracy});
+        setReportDraft(d => d ? {...d,lat,lng,location,locating:false,errors:{...d.errors,location:''}} : d);
+      }
+    } catch (error) {
+      if (version === locationRequest.current) setReportDraft(d => d ? {...d,locating:false,error:locationErrorMessage(error)} : d);
+    } finally { reportLocationBusy.current = false; }
+  };
+  const reportField = field => reportDraft?.errors?.[field] ? 'border-red-500 ring-1 ring-red-500' : '';
+  const reportError = field => reportDraft?.errors?.[field] && <p role="alert" className="text-xs text-red-300">{reportDraft.errors[field]}</p>;
   const chooseReportPhoto = file => {
     if (!file) return;
-    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setReportDraft(current => ({...current,error:'Upload a JPG, PNG, WebP or GIF image up to 5 MB.'})); return;
-    }
+    const error = reportImageError(file);
+    if (error) { setReportDraft(d => ({...d,imageUrl:'',errors:{...d.errors,image:error}})); return; }
     const reader = new FileReader();
-    reader.onload = () => setReportDraft(current => current ? {...current,imageUrl:reader.result,error:''} : current);
+    reader.onload = () => setReportDraft(current => current ? {...current,imageUrl:reader.result,error:'',errors:{...current.errors,image:''}} : current);
     reader.readAsDataURL(file);
   };
   const submitQuickReport = async () => {
-    if (reportDraft && !reportDraft.imageUrl) {setReportDraft(current=>({...current,error:'Please upload an incident photo before submitting.'}));return;}
-    if (reportDraft?.location.includes('(address unavailable)')) {setReportDraft(current=>({...current,error:'Enter the incident address before submitting.'}));return;}
-    if (!reportDraft || reportDraft.locating || !reportDraft.location.trim() || !reportDraft.description.trim() || !reportDraft.contact.trim() || !reportDraft.severity) return;
+    if (!reportDraft) return;
+    const errors = validateReportFields(reportDraft);
+    if (reportDraft.locating) errors.location = 'Wait for location lookup to finish.';
+    if (Object.keys(errors).length) { setReportDraft(d => ({...d,errors})); return; }
+    const email = localStorage.getItem('userEmail');
+    const name = localStorage.getItem('userName');
+    if (!email || !name || localStorage.getItem('userRole') !== 'citizen') {
+      setReportDraft(d => ({...d,error:'Sign in as a citizen to submit and track your report.'})); return;
+    }
     try {
-      await axios.post(`${API_BASE}/community-reports`, {
+      const result = await axios.post(`${API_BASE}/community-reports`, {
+        authorEmail: email, authorName: name,
         location: reportDraft.location.trim(),
         imageUrl:reportDraft.imageUrl,
         description: reportDraft.description.trim(),
@@ -438,9 +471,11 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         latitude: reportDraft.lat,
         longitude: reportDraft.lng,
       });
+      setReportReceipt(result.data);
       setReportDraft(null);
       fetchMarkers();
     } catch (err) {
+      setReportDraft(d => d ? {...d,errors:err.response?.data?.errors || {},error:err.response?.data?.message || "Could not submit report. Please try again."} : d);
       console.error("Failed to submit report:", err);
     }
   };
@@ -499,34 +534,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     });
   }, [weatherPoints, showWeather]);
 
-  // Community-report density "heatmap" — where are reports clustering
-  // geographically, at a glance, instead of counting individual dots.
-  useEffect(() => {
-    const layer = heatmapLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    if (!showHeatmap) return;
 
-    const reports = markers.filter((m) => m.type === "community_report");
-    const cellDeg = 0.5; // roughly a city-sized area
-    const cells = {};
-    reports.forEach((r) => {
-      const key = `${Math.round(r.latitude / cellDeg)}_${Math.round(r.longitude / cellDeg)}`;
-      if (!cells[key]) cells[key] = { lat: 0, lng: 0, count: 0 };
-      cells[key].lat += r.latitude;
-      cells[key].lng += r.longitude;
-      cells[key].count += 1;
-    });
-    Object.values(cells).forEach((cell) => {
-      const avgLat = cell.lat / cell.count;
-      const avgLng = cell.lng / cell.count;
-      const color = cell.count >= 5 ? "#ef4444" : cell.count >= 2 ? "#E8A33D" : "#F3EDE1";
-      const radius = 8000 + Math.min(cell.count, 10) * 4000;
-      L.circle([avgLat, avgLng], { radius, color, fillColor: color, fillOpacity: 0.25, weight: 1, opacity: 0.5 })
-        .bindPopup(`<strong>${cell.count}</strong> ${t("reportsInAreaLabel")}`, { className: "fdm-popup" })
-        .addTo(layer);
-    });
-  }, [markers, showHeatmap]);
 
   // The same filtered+searched list feeds both the map markers AND the
   // sidebar directory, so they never disagree with each other. Sorted by
@@ -587,7 +595,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     // "You are here" marker
     if (userLocation) {
       L.marker([userLocation.lat, userLocation.lng], { icon: makeUserDivIcon(), zIndexOffset: 1000 })
-        .bindPopup(`<strong>${t("yourLocationLabel")}</strong><div>${escapeMapText(userLocation.location || "Finding address...")}</div><small>${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}</small>`, { className: "fdm-popup" })
+        .bindPopup(`<strong>${t("yourLocationLabel")}</strong><div>${escapeMapText(userLocation.location || "Finding address...")}</div><small>${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)} · Accuracy: ${Math.round(userLocation.accuracy || 0)} m</small>`, { className: "fdm-popup" })
         .bindTooltip(escapeMapText(userLocation.location || t("yourLocationLabel")), { permanent:true, direction:"top", offset:[0,-12], className:"fdm-location-label" })
         .addTo(layer);
     }
@@ -674,7 +682,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         const details = [
           `<strong>${(lang === "ur" && m.name_ur) ? m.name_ur : (m.name || "")}</strong>`,
           verifiedBadge,
-          m.type === 'community_report' && canEdit ? `<div>${escapeMapText(m.description || '')}</div>${m.imageUrl ? `<img src="${escapeMapText(m.imageUrl)}" alt="Incident photo" style="max-width:220px;max-height:140px;margin-top:6px" />` : ''}<a href="/community?report=${m.report_id}" style="display:block;margin-top:8px;color:#3FBDB6">Review report ${escapeMapText(m.trackingId || '')}</a>` : '',
+          m.type === 'community_report' && canEdit ? `<div>${escapeMapText(m.description || '')}</div>${getReportImageSource(m.imageUrl) ? `<img src="${escapeMapText(getReportImageSource(m.imageUrl))}" alt="Incident photo" style="max-width:220px;max-height:140px;margin-top:6px" />` : ''}<a href="/community?report=${m.report_id}" style="display:block;margin-top:8px;color:#3FBDB6">Review report ${escapeMapText(m.trackingId || '')}</a>` : '',
           m.location ? `<div>${m.location}</div>` : "",
           (m.type === "shelter") ? `<div style="opacity:.7">${t("capacityPrefix")}: ${
             m.capacity
@@ -799,7 +807,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     setLocationError('');
     try {
       const position = await getCurrentPosition();
-      const loc = { lat:position.coords.latitude, lng:position.coords.longitude };
+      const loc = { lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy };
       locationSuccessVersion.current += 1;
       setLocationError('');
       setUserLocation(loc);
@@ -1173,12 +1181,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         >
           {t("weatherBtn")}
         </button>
-        <button
-          onClick={() => setShowHeatmap((v) => !v)}
-          className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${showHeatmap ? "bg-red-500 text-white" : "btn-secondary"}`}
-        >
-          {t("heatmapBtn")}
-        </button>
+
         <button
           onClick={() => setFavoritesOnly((v) => !v)}
           className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${favoritesOnly ? "bg-marigold-500 text-ink" : "btn-secondary"}`}
@@ -1242,30 +1245,35 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           <button onClick={() => setMeasurePoints([])} className="text-teal-300 hover:text-teal-100">✕</button>
         </div>
       )}
+      {reportReceipt && <div role="status" className="fdm-no-print mx-4 my-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+        Report submitted successfully. Tracking ID: {reportReceipt.trackingId}.
+        <a href="/community" className="underline ml-2">View My reports</a>
+        <button type="button" className="float-right ml-3" aria-label="Close report confirmation" onClick={() => setReportReceipt(null)}>×</button>
+      </div>}
       {locationError && <p className="fdm-no-print px-4 py-2 text-xs text-red-300">{locationError}</p>}
       {reportDraft && (
         <div className="fdm-no-print px-4 py-3 bg-marigold-500/10 border-b border-marigold-500/20 space-y-2">
           <p className="text-xs text-marigold-200 font-semibold">{t("quickReportTitle")}</p>
           <div className="grid sm:grid-cols-2 gap-2">
-            <input value={reportDraft.location} onChange={(e) => setReportDraft((d) => ({ ...d, location: e.target.value }))}
-              placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")} disabled={reportDraft.locating} className="field-input py-2 text-sm" />
-            <select value={reportDraft.severity} onChange={(e) => setReportDraft((d) => ({ ...d, severity: e.target.value }))}
-              className="field-input py-2 text-sm">
+            <input aria-label="Incident location" onFocus={fillReportLocation} value={reportDraft.location} onChange={(e) => setReportDraft((d) => ({ ...d, location: e.target.value, lat:null, lng:null }))}
+              placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")} aria-busy={reportDraft.locating} className={`field-input py-2 text-sm ${reportField("location")}`} />
+            {reportError("location")}<select aria-label="Incident severity" value={reportDraft.severity} onChange={(e) => setReportDraft((d) => ({ ...d, severity: e.target.value }))}
+              className={`field-input py-2 text-sm ${reportField("severity")}`}>
               <option value="">{t("selectSeverityPh")}</option>
               <option value="Low">{t("lowSeverity")}</option>
               <option value="Medium">{t("mediumSeverity")}</option>
               <option value="High">{t("highSeverity")}</option>
-            </select>
+            </select>{reportError("severity")}
           </div>
-          <textarea value={reportDraft.description} onChange={(e) => setReportDraft((d) => ({ ...d, description: e.target.value }))}
-            placeholder={t("descriptionLabel")} rows={2} className="field-input py-2 text-sm w-full" />
-          <input value={reportDraft.contact} onChange={(e) => setReportDraft((d) => ({ ...d, contact: e.target.value }))}
-            placeholder={t("contactLabel")} className="field-input py-2 text-sm w-full" />
-          <label className="block text-xs text-parchment">Incident photo <span className="text-red-400">*</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
-          {reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
+          <textarea aria-label="Incident description" value={reportDraft.description} onChange={(e) => setReportDraft((d) => ({ ...d, description: capitalizeDescription(e.target.value) }))}
+            placeholder="Minimum 10 characters. Start with a capital letter." minLength={10} rows={2} className={`field-input py-2 text-sm w-full ${reportField("description")}`} />
+          {reportError("description")}<input aria-label="Contact number" inputMode="numeric" maxLength={11} value={reportDraft.contact} onChange={(e) => setReportDraft((d) => ({ ...d, contact: e.target.value }))}
+            placeholder="03001234567 (11 digits)" className={`field-input py-2 text-sm w-full ${reportField("contact")}`} />
+          {reportError("contact")}<label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
+          {reportError("image")}{reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
           {reportDraft.error && <p role="alert" className="text-xs text-red-300">{reportDraft.error}</p>}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setReportDraft(null)} className="text-xs px-3 py-2 rounded-full btn-secondary">{t("cancel")}</button>
+            <button onClick={() => { locationRequest.current += 1; setReportDraft(null); }} className="text-xs px-3 py-2 rounded-full btn-secondary">{t("cancel")}</button>
             <button onClick={submitQuickReport} className="text-xs px-3 py-2 rounded-full bg-marigold-500 text-ink font-semibold">{t("submitReportBtn")}</button>
           </div>
         </div>

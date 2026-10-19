@@ -122,7 +122,7 @@ export default function AdminLogin() {
 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    Admin Username <span className="text-red-400">*</span>
+                    Admin Username
                   </label>
                   <input
                     type="text"
@@ -148,7 +148,7 @@ export default function AdminLogin() {
 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    Password <span className="text-red-400">*</span>
+                    Password
                   </label>
                   <div className="relative">
                     <input

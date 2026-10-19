@@ -91,7 +91,7 @@ const translations = {
     sendCode: "Send verification code", sending: "Sending…",
     verificationCode: "Verification code", newPassword: "New password", confirmNewPassword: "Confirm new password",
     resettingPassword: "Resetting…", useAnotherEmail: "← Use a different email", backToLogin: "← Back to login",
-    smtpNote: "No SMTP service is configured for this deployment — the code is printed to the backend terminal instead of a real inbox. The reset itself is fully functional.",
+    smtpNote: "A verification code will be sent to your email.",
     // Admin Dashboard
     administration: "Administration", controlPanel: "Control panel",
     controlPanelDesc: "Manage users, alerts, shelters, hospitals and review flood predictions.",
@@ -527,7 +527,7 @@ const translations = {
     sendCode: "تصدیقی کوڈ بھیجیں", sending: "بھیجا جا رہا ہے…",
     verificationCode: "تصدیقی کوڈ", newPassword: "نیا پاس ورڈ", confirmNewPassword: "نئے پاس ورڈ کی تصدیق کریں",
     resettingPassword: "ری سیٹ ہو رہا ہے…", useAnotherEmail: "← دوسرا ای میل استعمال کریں", backToLogin: "← لاگ ان پر واپس جائیں",
-    smtpNote: "اس ڈیپلائمنٹ کے لیے کوئی SMTP سروس کنفیگر نہیں ہے — کوڈ اصل ان باکس کی بجائے بیک اینڈ ٹرمینل پر پرنٹ ہوتا ہے۔ ری سیٹ مکمل طور پر فعال ہے۔",
+    smtpNote: "تصدیقی کوڈ آپ کے ای میل پر بھیجا جائے گا۔",
     administration: "انتظامیہ", controlPanel: "کنٹرول پینل",
     controlPanelDesc: "صارفین، الرٹس، شیلٹرز، ہسپتال منظم کریں اور سیلابی پیشگوئیوں کا جائزہ لیں۔",
     totalUsers: "کل صارفین", citizens: "شہری", rescueWorkers: "ریسکیو ورکرز", govOfficials: "سرکاری اہلکار", admins: "منتظمین",

@@ -1,14 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
+import { getReportImageSource } from "../utils/reportValidation";
 
 const SEVERITY_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
-const OP_STATUS_KEY_MAP = { "Assigned": "statusAssigned", "In Progress": "statusInProgress", "Completed": "statusCompleted" };
-
 export default function GovDashboard() {
   const { t, lang } = useLanguage();
   const [predictions, setPredictions] = useState([]);
@@ -20,7 +19,6 @@ export default function GovDashboard() {
   const [advisories, setAdvisories] = useState([]);
   const [advisoryForm, setAdvisoryForm] = useState({ title: "", message: "", region: "All regions" });
   const [showAdvisoryForm, setShowAdvisoryForm] = useState(false);
-  const [compareCities, setCompareCities] = useState(["", ""]);
   const [reportCity, setReportCity] = useState("");
   const [rescueWorkers, setRescueWorkers] = useState([]);
   const [allRescueOps, setAllRescueOps] = useState([]);
@@ -31,9 +29,16 @@ export default function GovDashboard() {
   const [selectedOperationId, setSelectedOperationId] = useState(null);
   const [operationFeedback, setOperationFeedback] = useState("");
   const [operationForm, setOperationForm] = useState({
-    location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", alert_id: ""
+    location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", worker_names: [], alert_id: ""
   });
+  const [multiWorkerEnabled, setMultiWorkerEnabled] = useState(false);
+  const [manageWorkerPick, setManageWorkerPick] = useState([]);
   const [seasonalTrend, setSeasonalTrend] = useState([]);
+  const [communityReports, setCommunityReports] = useState([]);
+  const [reportStatusFilter, setReportStatusFilter] = useState("All");
+  const [reportSeverityFilter, setReportSeverityFilter] = useState("All");
+  const [expandedReportId, setExpandedReportId] = useState(null);
+  const [operationStatusFilter, setOperationStatusFilter] = useState("Active");
   const [activeTab, setActiveTab] = useState("analytics");
 
   const fetchAllRescueOps = async () => {
@@ -41,6 +46,27 @@ export default function GovDashboard() {
       const res = await axios.get(`${API_BASE}/rescue-operations`);
       setAllRescueOps(res.data || []);
     } catch (err) { console.error(err); }
+  };
+
+  const fetchCommunityReports = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/community-reports`, {
+        headers: {
+          "X-FMS-Actor-Role": "government_official",
+          "X-FMS-Actor-Email": localStorage.getItem("userEmail") || "",
+        },
+      });
+      setCommunityReports(res.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const updateCommunityReport = async (reportId, status) => {
+    try {
+      const res = await axios.put(`${API_BASE}/community-reports/${reportId}/status`, { status });
+      setCommunityReports((reports) => reports.map((report) => report.id === reportId ? res.data : report));
+    } catch (err) {
+      console.error("Failed to update citizen report:", err);
+    }
   };
 
   const fetchSeasonalTrend = async () => {
@@ -56,16 +82,10 @@ export default function GovDashboard() {
       const res = await axios.get(`${API_BASE}/users`);
       setRescueWorkers((res.data || []).filter((u) => u.role === "rescue_worker"));
     } catch (err) { console.error(err); }
-  };
-
-  const handleUpdateWorkerStatus = async (workerId, newStatus) => {
     try {
-      const endpoint = newStatus === "Active" ? "activate" : "deactivate";
-      await axios.put(`${API_BASE}/users/${workerId}/${endpoint}`);
-      fetchRescueWorkers();
-    } catch (err) {
-      console.error(err);
-    }
+      const res = await axios.get(`${API_BASE}/rescue-operations/workers`);
+      setMultiWorkerEnabled(Boolean(res.data?.multi_worker_enabled));
+    } catch (err) { setMultiWorkerEnabled(false); }
   };
 
   const refreshRescueData = async () => {
@@ -89,8 +109,12 @@ export default function GovDashboard() {
       showOperationFeedback("Please provide an operation description (at least 5 characters).");
       return;
     }
-    if (!operationForm.assigned_team || operationForm.assigned_team === "Unassigned") {
-      showOperationFeedback("Please select and assign a rescue worker or team.");
+    if (!operationForm.worker_names.length) {
+      showOperationFeedback("Please select at least one available rescue worker.");
+      return;
+    }
+    if (operationForm.worker_names.length > 1 && !multiWorkerEnabled) {
+      showOperationFeedback("Multi-worker assignment is pending database migration approval. Select one worker for now.");
       return;
     }
     const selectedAlert = operationForm.alert_id
@@ -110,11 +134,12 @@ export default function GovDashboard() {
         location: operationForm.location.trim(),
         description: operationForm.description.trim(),
         risk_level: operationForm.risk_level,
-        assigned_team: operationForm.assigned_team,
+        assigned_team: operationForm.worker_names[0],
+        worker_names: operationForm.worker_names,
         ...(selectedAlert ? { alert_id: selectedAlert.id } : {}),
       });
       operationCreated = operationRes.status === 201;
-      setOperationForm({ location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", alert_id: "" });
+      setOperationForm({ location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", worker_names: [], alert_id: "" });
       setShowOperationForm(false);
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not create the rescue operation.");
@@ -138,9 +163,20 @@ export default function GovDashboard() {
     try {
       const linkedOperation = getAlertOperation(alertItem);
       if (linkedOperation) {
-        await axios.put(`${API_BASE}/rescue-operations/${linkedOperation.id}/status`, {
-          assigned_team: assignForm.worker,
-        });
+        if (multiWorkerEnabled) {
+          await axios.post(`${API_BASE}/rescue-operations/${linkedOperation.id}/workers`, {
+            worker_names: [assignForm.worker],
+          });
+        } else {
+          const hasTeam = linkedOperation.assigned_team && linkedOperation.assigned_team !== "Unassigned";
+          if (hasTeam) {
+            showOperationFeedback("Adding more workers is pending database migration approval.");
+            return;
+          }
+          await axios.put(`${API_BASE}/rescue-operations/${linkedOperation.id}/status`, {
+            assigned_team: assignForm.worker,
+          });
+        }
       } else {
         await axios.post(`${API_BASE}/rescue-operations`, {
           location: alertItem.location,
@@ -161,18 +197,36 @@ export default function GovDashboard() {
     }
   };
 
+  const handleAddWorkers = async (operation, workerNames) => {
+    if (!workerNames.length) return;
+    if (!multiWorkerEnabled) {
+      showOperationFeedback("Multi-worker assignment is pending database migration approval.");
+      return;
+    }
+    try {
+      await axios.post(`${API_BASE}/rescue-operations/${operation.id}/workers`, { worker_names: workerNames });
+      setManageWorkerPick([]);
+      await refreshRescueData();
+      showOperationFeedback(`${workerNames.join(", ")} added to the operation.`);
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not add the rescue workers.");
+    }
+  };
+
+  const handleRemoveWorker = async (operation, workerName) => {
+    try {
+      await axios.delete(`${API_BASE}/rescue-operations/${operation.id}/workers`, { params: { name: workerName } });
+      await refreshRescueData();
+      showOperationFeedback(`${workerName} removed and is now available.`);
+    } catch (err) {
+      showOperationFeedback(err.response?.data?.message || "Could not remove the rescue worker.");
+    }
+  };
+
   const handleUpdateOperation = async (operation, changes) => {
-    const nextWorker = changes.assigned_team;
-    if (nextWorker && nextWorker !== "Unassigned") {
-      const conflictingOperation = allRescueOps.find((item) =>
-        item.id !== operation.id &&
-        item.status !== "Completed" &&
-        item.assigned_team === nextWorker
-      );
-      if (conflictingOperation) {
-        showOperationFeedback(`${nextWorker} is already assigned to another active operation.`);
-        return;
-      }
+    if (operation.status === "Completed") {
+      showOperationFeedback("Completed operations are read-only.");
+      return;
     }
 
     try {
@@ -185,6 +239,10 @@ export default function GovDashboard() {
   };
 
   const handleChecklistUpdate = async (operation, itemIndex, done) => {
+    if (operation.status === "Completed") {
+      showOperationFeedback("Completed operations are read-only.");
+      return;
+    }
     try {
       await axios.put(`${API_BASE}/rescue-operations/${operation.id}/checklist`, {
         item_index: itemIndex,
@@ -262,25 +320,14 @@ export default function GovDashboard() {
     }
   };
 
-  const cityComparisonData = useMemo(() => {
-    return compareCities.filter(Boolean).map((city) => {
-      const cityPreds = predictions.filter((p) => p.location === city);
-      const latest = cityPreds[0];
-      const highCount = cityPreds.filter((p) => p.risk === "High").length;
-      return {
-        city, totalPredictions: cityPreds.length,
-        latestRisk: latest?.risk || "—", latestConfidence: latest?.confidence,
-        highRiskCount: highCount,
-      };
-    });
-  }, [compareCities, predictions]);
-
   useEffect(() => {
     fetchPredictions();
     fetchAlerts();
+    fetchCommunityReports();
     const interval = setInterval(() => {
       fetchPredictions();
       fetchAlerts();
+      fetchCommunityReports();
     }, 60000); // Refresh every minute
 
     return () => clearInterval(interval);
@@ -345,8 +392,9 @@ export default function GovDashboard() {
   const activeWorkerNames = useMemo(() => new Set(
     allRescueOps
       .filter((operation) => operation.status === "Assigned" || operation.status === "In Progress")
-      .map((operation) => operation.assigned_team)
+      .flatMap((operation) => operation.worker_names || [operation.assigned_team])
       .filter((worker) => worker && worker !== "Unassigned")
+      .map((worker) => worker.toLowerCase())
   ), [allRescueOps]);
 
   const pendingAlerts = useMemo(() => uniqueAlerts.filter((alert) =>
@@ -396,6 +444,17 @@ export default function GovDashboard() {
     const locations = [...new Set(predictions.map(pred => pred.location))];
     return locations.sort();
   }, [predictions]);
+
+  const filteredCommunityReports = useMemo(() => communityReports.filter((report) =>
+    (reportStatusFilter === "All" || report.status === reportStatusFilter) &&
+    (reportSeverityFilter === "All" || report.severity === reportSeverityFilter)
+  ), [communityReports, reportSeverityFilter, reportStatusFilter]);
+
+  const displayedOperations = useMemo(() => allRescueOps.filter((operation) =>
+    operationStatusFilter === "All" ||
+    (operationStatusFilter === "Active" && operation.status !== "Completed") ||
+    (operationStatusFilter === "Completed" && operation.status === "Completed")
+  ), [allRescueOps, operationStatusFilter]);
 
   // Chart data
   const riskDistributionData = useMemo(() => {
@@ -787,37 +846,96 @@ export default function GovDashboard() {
 
           {/* ============ TAB: REPORTS & TRENDS ============ */}
           {activeTab === "policy" && (<>
-          {/* Multi-City Comparison */}
+          {/* Citizen reports are reviewed here, instead of on the public
+              Community page for government officials. */}
           <div className="dashboard-card p-6 mb-8">
-            <p className="eyebrow text-teal-400 mb-2">{t("comparativeAnalysis")}</p>
-            <h2 className="font-display text-2xl text-parchment mb-4">{t("multiCityComparison")}</h2>
-            <div className="grid md:grid-cols-2 gap-4 mb-6">
-              {[0, 1].map((i) => (
-                <select
-                  key={i}
-                  value={compareCities[i]}
-                  onChange={(e) => setCompareCities((prev) => { const next = [...prev]; next[i] = e.target.value; return next; })}
-                  className="field-input"
-                >
-                  <option value="">{t("selectCityToCompare")}</option>
-                  {[...new Set(predictions.map((p) => p.location))].filter(Boolean).map((loc) => (
-                    <option key={loc} value={loc}>{loc}</option>
-                  ))}
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+              <div>
+                <p className="eyebrow text-purple-300 mb-2">Community intelligence</p>
+                <h2 className="font-display text-2xl text-parchment">Citizen reports</h2>
+                <p className="text-sm text-muted mt-1">Review incidents submitted by citizens and track their response status.</p>
+              </div>
+              <div className="flex gap-3">
+                <select value={reportStatusFilter} onChange={(e) => setReportStatusFilter(e.target.value)} className="field-input text-sm">
+                  <option value="All">All statuses</option>
+                  {["Submitted", "Action Taken", "Resolved"].map((status) => <option key={status} value={status}>{status}</option>)}
                 </select>
-              ))}
+                <select value={reportSeverityFilter} onChange={(e) => setReportSeverityFilter(e.target.value)} className="field-input text-sm">
+                  <option value="All">All severities</option>
+                  {["Low", "Medium", "High"].map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+                </select>
+              </div>
             </div>
-            {cityComparisonData.length > 0 && (
-              <div className="grid md:grid-cols-2 gap-4">
-                {cityComparisonData.map((c) => (
-                  <div key={c.city} className="stat-tile">
-                    <h4 className="font-display text-lg text-parchment mb-3">{c.city}</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-muted">{t("latestRisk")}</span><span className="text-white">{c.latestRisk}</span></div>
-                      <div className="flex justify-between"><span className="text-muted">{t("totalPredictionsLabel")}</span><span className="text-white">{c.totalPredictions}</span></div>
-                      <div className="flex justify-between"><span className="text-muted">{t("highRiskCount")}</span><span className="text-red-300">{c.highRiskCount}</span></div>
-                    </div>
-                  </div>
-                ))}
+            {filteredCommunityReports.length === 0 ? (
+              <p className="text-sm text-muted">No citizen reports match the selected filters.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-muted">
+                      <th className="pb-3">Tracking ID</th>
+                      <th className="pb-3">Location</th>
+                      <th className="pb-3">Severity</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3">Submitted by</th>
+                      <th className="pb-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {filteredCommunityReports.map((report) => (
+                      <Fragment key={report.id}>
+                        <tr>
+                          <td className="py-3 text-white">{report.trackingId}</td>
+                          <td className="py-3 text-muted">{report.location}</td>
+                          <td className="py-3 text-muted">{report.severity}</td>
+                          <td className="py-3">
+                            <span className={`rounded-full border px-2.5 py-1 text-xs ${
+                              report.status === "Resolved"
+                                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                                  : "border-white/10 bg-white/5 text-muted"
+                            }`}>{report.status}</span>
+                          </td>
+                          <td className="py-3 text-muted">{report.authorName}</td>
+                          <td className="py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => setExpandedReportId((current) => current === report.id ? null : report.id)}
+                                className="btn-secondary text-xs py-1.5"
+                              >
+                                {expandedReportId === report.id ? "Hide details" : "View details"}
+                              </button>
+                              {report.status !== "Resolved" && (
+                                <>
+                                  <button onClick={() => updateCommunityReport(report.id, "Action Taken")} className="btn-secondary text-xs py-1.5">Action taken</button>
+                                  <button onClick={() => updateCommunityReport(report.id, "Resolved")} className="btn-primary text-xs py-1.5">Resolve</button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedReportId === report.id && (
+                          <tr key={`${report.id}-details`}>
+                            <td colSpan="6" className="border-b border-white/10 bg-white/[0.03] p-4">
+                              <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+                                <div className="space-y-2 text-sm">
+                                  <p className="text-white"><span className="text-muted">Incident type:</span> {report.type || "Flooding"}</p>
+                                  <p className="text-white"><span className="text-muted">Description:</span> {report.description || "No description provided."}</p>
+                                  <p className="text-white"><span className="text-muted">Contact:</span> {report.contact || "Not provided"}</p>
+                                  {report.notes && <p className="text-teal-300"><span className="text-muted">Latest update:</span> {report.notes}</p>}
+                                </div>
+                                {getReportImageSource(report.imageUrl) ? (
+                                  <img src={getReportImageSource(report.imageUrl)} alt={`Evidence for ${report.trackingId}`} className="h-36 w-full rounded-xl border border-white/10 object-cover" />
+                                ) : (
+                                  <div className="flex h-36 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-muted">No photo attached</div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -906,7 +1024,7 @@ export default function GovDashboard() {
                             className="field-input text-sm"
                           >
                             <option value="">{t("selectRescueWorker")}</option>
-                            {rescueWorkers.filter((worker) => worker.status === "Active" && !activeWorkerNames.has(worker.name)).map((worker) => (
+                            {rescueWorkers.filter((worker) => worker.status === "Active" && !activeWorkerNames.has(worker.name.toLowerCase())).map((worker) => (
                               <option key={worker.id} value={worker.name}>{worker.name} ({worker.email})</option>
                             ))}
                           </select>
@@ -932,7 +1050,8 @@ export default function GovDashboard() {
             )}
           </div>
 
-          {/* Rescue Worker Directory */}
+          {/* Rescue Worker Directory: availability is useful for dispatch,
+              while account activation remains an admin responsibility. */}
           <div className="dashboard-card p-6 mb-8">
             <p className="eyebrow text-teal-400 mb-2">{t("workforceOversight")}</p>
             <h2 className="font-display text-2xl text-parchment mb-2">{t("rescueWorkerDirectory")}</h2>
@@ -948,29 +1067,18 @@ export default function GovDashboard() {
                       <th className="pb-2">{t("email")}</th>
                       <th className="pb-2">{t("status")}</th>
                       <th className="pb-2">Availability</th>
-                      <th className="pb-2">{t("actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {rescueWorkers.map((w) => (
-                      <tr key={w.id}>
-                        <td className="py-2 text-white">{w.name}</td>
-                        <td className="py-2 text-muted">{w.email}</td>
+                    {rescueWorkers.map((worker) => (
+                      <tr key={worker.id}>
+                        <td className="py-2 text-white">{worker.name}</td>
+                        <td className="py-2 text-muted">{worker.email}</td>
+                        <td className="py-2 text-teal-300">{worker.status === "Active" ? t("active") : t("inactive")}</td>
                         <td className="py-2">
-                          <span className={w.status === "Active" ? "text-teal-300" : "text-muted"}>{w.status === "Active" ? t("active") : t("inactive")}</span>
-                        </td>
-                        <td className="py-2">
-                          <span className={activeWorkerNames.has(w.name) ? "text-amber-300" : "text-emerald-300"}>
-                            {activeWorkerNames.has(w.name) ? "Busy" : "Available"}
+                          <span className={activeWorkerNames.has(worker.name.toLowerCase()) ? "text-amber-300" : "text-emerald-300"}>
+                            {activeWorkerNames.has(worker.name.toLowerCase()) ? "Busy" : "Available"}
                           </span>
-                        </td>
-                        <td className="py-2">
-                          <button
-                            onClick={() => handleUpdateWorkerStatus(w.id, w.status === "Active" ? "Inactive" : "Active")}
-                            className="text-xs text-teal-300 hover:text-teal-200"
-                          >
-                            {w.status === "Active" ? t("deactivate") : t("activate")}
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1021,22 +1129,31 @@ export default function GovDashboard() {
                   onChange={(e) => setOperationForm((form) => ({ ...form, description: e.target.value }))}
                   className="field-input resize-none"
                 />
-                <select
-                  required
-                  value={operationForm.assigned_team}
-                  onChange={(e) => setOperationForm((form) => ({ ...form, assigned_team: e.target.value }))}
-                  className="field-input"
-                >
-                  <option value="">Select Rescue Worker / Team *</option>
+                <div className="field-input space-y-1 max-h-40 overflow-y-auto">
+                  <p className="text-xs text-muted">
+                    Select rescue workers *{!multiWorkerEnabled && " (multi-worker assignment pending migration approval — choose one)"}
+                  </p>
                   {rescueWorkers.filter((worker) => worker.status === "Active").map((worker) => {
-                    const busy = activeWorkerNames.has(worker.name);
+                    const busy = activeWorkerNames.has(worker.name.toLowerCase());
+                    const checked = operationForm.worker_names.includes(worker.name);
                     return (
-                    <option key={worker.id} value={worker.name} disabled={busy}>
-                      {worker.name} {busy ? "(Busy)" : "(Available)"}
-                    </option>
+                      <label key={worker.id} className={`flex items-center gap-2 text-sm ${busy ? "opacity-50" : ""}`}>
+                        <input
+                          type="checkbox"
+                          disabled={busy}
+                          checked={checked}
+                          onChange={(e) => setOperationForm((form) => ({
+                            ...form,
+                            worker_names: e.target.checked
+                              ? [...form.worker_names, worker.name]
+                              : form.worker_names.filter((name) => name !== worker.name),
+                          }))}
+                        />
+                        {worker.name} {busy ? "(Busy)" : "(Available)"}
+                      </label>
                     );
                   })}
-                </select>
+                </div>
                 <select
                   value={operationForm.alert_id}
                   onChange={(e) => setOperationForm((form) => ({ ...form, alert_id: e.target.value }))}
@@ -1049,14 +1166,23 @@ export default function GovDashboard() {
                       </option>
                     ))}
                 </select>
-                <button type="submit" className="btn-primary w-full">Create Rescue Operation</button>
+                <button type="submit" className="btn-primary w-full">Create & dispatch operation</button>
               </form>
             )}
             {allRescueOps.length === 0 ? (
               <p className="text-sm text-muted">{t("noOperationsFound")}</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <div className="flex justify-end mb-4">
+                  <select value={operationStatusFilter} onChange={(e) => setOperationStatusFilter(e.target.value)} className="field-input text-sm max-w-xs">
+                    <option value="Active">Active operations</option>
+                    <option value="Completed">Completed operations</option>
+                    <option value="All">All operations</option>
+                  </select>
+                </div>
+                {displayedOperations.length === 0 ? (
+                  <p className="text-sm text-muted">No operations in this view.</p>
+                ) : <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/20 text-muted">
                       <th className="pb-2">{t("location2")}</th>
@@ -1068,16 +1194,17 @@ export default function GovDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
-                    {allRescueOps.map((op) => (
-                      <tr key={op.id} className="align-top">
+                    {displayedOperations.map((op) => (
+                      <tr key={op.id} className={`align-top ${op.status === "Completed" ? "bg-white/[0.02]" : ""}`}>
                         <td className="py-2 text-white">{op.location}</td>
                         <td className="py-2">
                           <select
                             value={op.status}
                             onChange={(e) => handleUpdateOperation(op, { status: e.target.value })}
-                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white"
+                            disabled={op.status === "Completed"}
+                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
                           >
-                            <option className="bg-[#0b1f3a] text-white" value="Assigned">Assigned</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Assigned">Started</option>
                             <option className="bg-[#0b1f3a] text-white" value="In Progress">In Progress</option>
                             <option className="bg-[#0b1f3a] text-white" value="Completed">Completed</option>
                           </select>
@@ -1086,7 +1213,8 @@ export default function GovDashboard() {
                           <select
                             value={op.risk_level || "Medium"}
                             onChange={(e) => handleUpdateOperation(op, { risk_level: e.target.value })}
-                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white"
+                            disabled={op.status === "Completed"}
+                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
                           >
                             <option className="bg-[#0b1f3a] text-white" value="High">High</option>
                             <option className="bg-[#0b1f3a] text-white" value="Medium">Medium</option>
@@ -1094,16 +1222,22 @@ export default function GovDashboard() {
                           </select>
                         </td>
                         <td className="py-2">
-                          <select
-                            value={op.assigned_team || "Unassigned"}
-                            onChange={(e) => handleUpdateOperation(op, { assigned_team: e.target.value })}
-                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white max-w-40"
-                          >
-                            <option className="bg-[#0b1f3a] text-white" value="Unassigned">Unassigned</option>
-                            {rescueWorkers.map((worker) => (
-                              <option className="bg-[#0b1f3a] text-white" key={worker.id} value={worker.name}>{worker.name}</option>
-                            ))}
-                          </select>
+                          {(() => {
+                            const isActive = op.status !== "Completed";
+                            const chips = op.workers || (op.assigned_team && op.assigned_team !== "Unassigned"
+                              ? op.assigned_team.split(", ").map((name) => ({ name, status: isActive ? "Busy" : "Available" }))
+                              : []);
+                            return (
+                              <div className="flex flex-wrap gap-1 max-w-56">
+                                {chips.map((worker) => (
+                                  <span key={worker.name} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs text-white">
+                                    {worker.name}
+                                  </span>
+                                ))}
+                                {chips.length === 0 && <span className="text-xs text-muted">No team selected</span>}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="py-2 text-muted">{new Date(op.updated_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
                         <td className="py-2">
@@ -1117,7 +1251,7 @@ export default function GovDashboard() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table>}
               </div>
             )}
             {selectedOperationId && (() => {
@@ -1127,6 +1261,63 @@ export default function GovDashboard() {
                 <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                   <h3 className="font-display text-xl text-parchment mb-2">Operation #{operation.id} details</h3>
                   <p className="text-sm text-muted mb-4">{operation.description || "No description provided."}</p>
+                  {(() => {
+                    const isActive = operation.status !== "Completed";
+                    const team = operation.workers || (operation.assigned_team && operation.assigned_team !== "Unassigned"
+                      ? operation.assigned_team.split(", ").map((name) => ({ name }))
+                      : []);
+                    const available = rescueWorkers.filter((worker) =>
+                      worker.status === "Active" && !activeWorkerNames.has(String(worker.name).toLowerCase()));
+                    return (
+                      <div className="mb-5 rounded-lg border border-white/10 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted mb-2">Manage Team</p>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {team.length === 0 && <span className="text-sm text-muted">No team selected</span>}
+                          {team.map((worker) => (
+                            <span key={worker.name} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white">
+                              {worker.name}
+                              {isActive && multiWorkerEnabled && (
+                                <button type="button" title="Remove worker" onClick={() => handleRemoveWorker(operation, worker.name)} className="text-red-300 hover:text-red-200">Remove</button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                        {isActive && !multiWorkerEnabled && (
+                          <p className="text-xs text-amber-300">Adding or removing workers is pending database migration approval.</p>
+                        )}
+                        {isActive && multiWorkerEnabled && (
+                          <div>
+                            <p className="text-xs text-muted mb-1">Add Workers (available only)</p>
+                            {available.length === 0 ? (
+                              <p className="text-xs text-muted">No available workers.</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-3 mb-2">
+                                {available.map((worker) => (
+                                  <label key={worker.id} className="flex items-center gap-1 text-xs text-white">
+                                    <input
+                                      type="checkbox"
+                                      checked={manageWorkerPick.includes(worker.name)}
+                                      onChange={(e) => setManageWorkerPick((prev) =>
+                                        e.target.checked ? [...prev, worker.name] : prev.filter((n) => n !== worker.name))}
+                                    />
+                                    {worker.name}
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              disabled={manageWorkerPick.length === 0}
+                              onClick={() => handleAddWorkers(operation, manageWorkerPick)}
+                              className="btn-secondary text-xs py-1 px-3 disabled:opacity-50"
+                            >
+                              Add selected workers
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="grid md:grid-cols-2 gap-5">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-muted mb-2">Progress checklist</p>
@@ -1137,6 +1328,7 @@ export default function GovDashboard() {
                               type="checkbox"
                               checked={!!item.done}
                               onChange={(e) => handleChecklistUpdate(operation, index, e.target.checked)}
+                              disabled={operation.status === "Completed"}
                             />
                             {item.label}
                           </label>
@@ -1218,8 +1410,11 @@ export default function GovDashboard() {
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, title: e.target.value }))} className="field-input" />
                 <textarea required rows={3} placeholder={t("advisoryMessagePh")} value={advisoryForm.message}
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, message: e.target.value }))} className="field-input resize-none" />
-                <input required placeholder={t("advisoryRegionPh")} value={advisoryForm.region}
-                  onChange={(e) => setAdvisoryForm((p) => ({ ...p, region: e.target.value }))} className="field-input" />
+                <select required value={advisoryForm.region}
+                  onChange={(e) => setAdvisoryForm((p) => ({ ...p, region: e.target.value }))} className="field-input">
+                  <option value="All regions">All regions</option>
+                  {uniqueLocations.map((location) => <option key={location} value={location}>{location}</option>)}
+                </select>
                 <button type="submit" className="btn-primary w-full">{t("issueAdvisory")}</button>
               </form>
             )}
