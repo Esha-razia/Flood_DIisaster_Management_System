@@ -543,7 +543,7 @@ export default function Community() {
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${statusStyles(r.status)}`}>{t(STATUS_KEY_MAP[r.status] || r.status)}</span>
-                              <button type="button" onClick={() => { setActiveReportId(r.id); setTrackingOpen(true); }} aria-label={`Track report ${r.trackingId}`} className="rounded-full px-3 py-1 text-xs font-semibold text-teal-300 border border-teal-500/40 hover:bg-teal-500/10">Track</button>
+                              <button type="button" onClick={() => { setActiveReportId(r.id); setTrackingOpen(true); }} aria-label={`Track report ${r.trackingId}`} className="rounded-full px-3 py-1 text-xs font-semibold text-teal-300 border border-teal-500/40 hover:bg-teal-500/10">{t('trackBtn')}</button>
                             </div>
                           </div>
                         </div>
@@ -662,7 +662,7 @@ export default function Community() {
       {trackingOpen && currentReport && isCitizen && (
         <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setTrackingOpen(false); }}>
           <div role="dialog" aria-modal="true" aria-label="Report tracking" className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] bg-ink border border-white/10">
-            <button autoFocus type="button" aria-label="Close report tracking" onClick={() => setTrackingOpen(false)} className="absolute top-4 right-5 z-10 text-sm text-parchment px-3 py-2 rounded-lg bg-ink-soft">Close</button>
+            <button autoFocus type="button" aria-label="Close report tracking" onClick={() => setTrackingOpen(false)} className="absolute top-4 right-5 z-10 text-sm text-parchment px-3 py-2 rounded-lg bg-ink-soft">{t('close')}</button>
 
               <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 shadow-xl flex-1">
                 <div className="space-y-6">

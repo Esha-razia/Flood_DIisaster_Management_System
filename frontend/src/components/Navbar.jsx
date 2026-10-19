@@ -207,14 +207,6 @@ export default function Navbar() {
               </Link>
             </>
           )}
-
-          <button
-            onClick={toggleLang}
-            className="ml-1 px-2.5 py-1.5 text-xs font-mono-data font-semibold rounded-full border border-white/15 text-muted hover:text-parchment hover:bg-white/5 transition-colors"
-            title="Switch language"
-          >
-            {lang === 'en' ? 'اردو' : 'EN'}
-          </button>
         </div>
 
         {isAuthenticated && userName && (
@@ -227,29 +219,29 @@ export default function Navbar() {
               {showAlertsPanel && (
                 <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/10">
-                    <p className="text-sm font-semibold text-parchment">Alerts &amp; advisories</p>
+                    <p className="text-sm font-semibold text-parchment">{t('alertsAndAdvisories')}</p>
                     <div className="flex gap-2 mt-2 text-xs">
-                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(false); }}>Current</button>
-                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(true); }}>View all</button>
-                      {official && <button className="text-teal-300" onClick={() => setShowHistory(true)}>Alert history</button>}
-                      {!showAllAlerts && userRole === 'citizen' && (visibleAlerts.length > 0 || visibleNotes.length > 0) && <button className="text-muted ml-auto" onClick={() => dismissNotifications(visibleAlerts, visibleNotes)}>Clear all</button>}
-                      {userRole === 'admin' && <button className="text-marigold-300" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>Create alert</button>}
+                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(false); }}>{t('current')}</button>
+                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(true); }}>{t('viewAll')}</button>
+                      {official && <button className="text-teal-300" onClick={() => setShowHistory(true)}>{t('alertHistory')}</button>}
+                      {!showAllAlerts && userRole === 'citizen' && (visibleAlerts.length > 0 || visibleNotes.length > 0) && <button className="text-muted ml-auto" onClick={() => dismissNotifications(visibleAlerts, visibleNotes)}>{t('clearAll')}</button>}
+                      {userRole === 'admin' && <button className="text-marigold-300" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>{t('createAlertBtn')}</button>}
                     </div>
-                    {'Notification' in window && Notification.permission === 'default' && <button className="text-xs text-muted mt-2" onClick={() => Notification.requestPermission()}>Enable browser notifications</button>}
+                    {'Notification' in window && Notification.permission === 'default' && <button className="text-xs text-muted mt-2" onClick={() => Notification.requestPermission()}>{t('enableBrowserNotifications')}</button>}
                     {error && <p className="text-xs text-red-300 mt-2" role="alert">{error}</p>}
                     {editing !== null && userRole === 'admin' && (
                       <form onSubmit={saveAlert} className="space-y-2 mt-3">
-                        <input required aria-label="Alert message" placeholder="Alert message" className="field-input text-xs" value={draft.message} onChange={e => setDraft({ ...draft, message: e.target.value })}/>
-                        <input required aria-label="Affected location" placeholder="Affected location" className="field-input text-xs" value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/>
-                        <select aria-label="Risk level" className="field-input text-xs" value={draft.risk_level} onChange={e => setDraft({ ...draft, risk_level: e.target.value })}>{['Low','Medium','High'].map(r => <option key={r}>{r}</option>)}</select>
-                        <button className="text-xs text-teal-300" type="submit">Save alert</button>
-                        <button className="text-xs text-muted ml-3" type="button" onClick={() => setEditing(null)}>Close</button>
+                        <input required aria-label={t('alertMessage')} placeholder={t('alertMessage')} className="field-input text-xs" value={draft.message} onChange={e => setDraft({ ...draft, message: e.target.value })}/>
+                        <input required aria-label={t('affectedLocation')} placeholder={t('affectedLocation')} className="field-input text-xs" value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/>
+                        <select aria-label={t('riskLevel')} className="field-input text-xs" value={draft.risk_level} onChange={e => setDraft({ ...draft, risk_level: e.target.value })}>{['Low','Medium','High'].map(r => <option key={r} value={r}>{r === 'High' ? (lang === 'ur' ? 'زیادہ خطرہ (High)' : 'High') : r === 'Medium' ? (lang === 'ur' ? 'درمیانہ خطرہ (Medium)' : 'Medium') : (lang === 'ur' ? 'کم خطرہ (Low)' : 'Low')}</option>)}</select>
+                        <button className="text-xs text-teal-300" type="submit">{t('saveAlert')}</button>
+                        <button className="text-xs text-muted ml-3" type="button" onClick={() => setEditing(null)}>{t('close')}</button>
                       </form>
                     )}
                   </div>
                   <div className="max-h-80 overflow-y-auto" aria-live="polite">
                     {showHistory && official ? (
-                      history.length === 0 ? <p className="text-xs text-muted px-4 py-4">No alert history.</p> : history.map(entry => (
+                      history.length === 0 ? <p className="text-xs text-muted px-4 py-4">{t('noAlertHistory')}</p> : history.map(entry => (
                         <div key={entry.id} className="px-4 py-3 border-b border-white/5">
                           <p className="text-xs text-teal-300">Alert #{entry.alert_id} · {entry.action} · {entry.alert.risk_level}</p>
                           <p className="text-sm text-parchment">{entry.alert.message}</p>
@@ -261,22 +253,22 @@ export default function Navbar() {
                       <>
                         {displayedNotes.map(n => (
                           <div key={`adv-${n.advisory_id}`}><Link to={`/community?advisory=${n.advisory_id}&n=${Date.now()}`} onClick={() => { setShowAlertsPanel(false); setAdvisoryNotes(list => list.map(x => x.advisory_id === n.advisory_id ? { ...x, read: true } : x)); }} className="block px-4 py-3 border-b border-white/5 hover:bg-white/5">
-                            <p className="text-xs text-marigold-300">Public advisory · {n.read ? 'Read' : 'Unread'}{!n.read && <span className="inline-block w-1.5 h-1.5 rounded-full bg-marigold-400 ml-1.5 align-middle"/>}</p>
+                            <p className="text-xs text-marigold-300">{t('publicAdvisory')} · {n.read ? t('read') : t('unread')}{!n.read && <span className="inline-block w-1.5 h-1.5 rounded-full bg-marigold-400 ml-1.5 align-middle"/>}</p>
                             <p className="text-sm text-parchment font-medium mt-1">{n.title}</p>
                             <p className="text-xs text-muted mt-1 line-clamp-2">{n.message}</p>
                             <p className="text-xs text-muted mt-1">{formatAlertDateTime(n.created_at)}</p>
                           </Link>
-                          {userRole === 'citizen' && (dismissedVersions[`advisory-${n.advisory_id}`] === noteVersion(n) ? <p className="text-xs text-muted px-4 pb-2">Dismissed</p> : <button type="button" className="text-xs text-muted px-4 pb-2" onClick={() => dismissNotifications([], [n])}>Dismiss advisory</button>)}
+                          {userRole === 'citizen' && (dismissedVersions[`advisory-${n.advisory_id}`] === noteVersion(n) ? <p className="text-xs text-muted px-4 pb-2">{t('dismissed')}</p> : <button type="button" className="text-xs text-muted px-4 pb-2" onClick={() => dismissNotifications([], [n])}>{t('dismissAdvisory')}</button>)}
                           </div>
                         ))}
-                        {displayedAlerts.length === 0 && displayedNotes.length === 0 && <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? "No alerts or advisories." : "Nothing to show. Cleared items are available in View all."}</p>}
+                        {displayedAlerts.length === 0 && displayedNotes.length === 0 && <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? t('noAlertsOrAdvisories') : t('nothingToShowCleared')}</p>}
                         {displayedAlerts.map(item => (
                           <div key={item.id} className="px-4 py-3 border-b border-white/5">
-                            <p className="text-xs text-teal-300">{item.risk_level} risk · {item.location}</p>
+                            <p className="text-xs text-teal-300">{lang === 'ur' ? (item.risk_level === 'High' ? 'زیادہ خطرہ' : item.risk_level === 'Medium' ? 'درمیانہ خطرہ' : 'کم خطرہ') : `${item.risk_level} risk`} · {item.location}</p>
                             <p className="text-sm text-parchment font-medium mt-1">{item.message}</p>
-                            {userRole === 'citizen' && (dismissedVersions[`alert-${item.id}`] === alertVersion(item) ? <p className="text-xs text-muted mt-2">Dismissed</p> : <button type="button" className="text-xs text-muted mt-2 px-2 py-1 border border-white/15 rounded-md" aria-label={`Dismiss alert: ${item.location}`} onClick={() => dismissNotifications([item])}>Dismiss</button>)}
-                            <p className="text-xs text-muted mt-1">Created: {formatAlertDateTime(item.created_at)}</p>
-                            {userRole === 'admin' && <div className="flex gap-3 mt-2 text-xs"><button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>Update</button><button className="text-red-300" onClick={() => cancelAlert(item.id)}>Cancel alert</button></div>}
+                            {userRole === 'citizen' && (dismissedVersions[`alert-${item.id}`] === alertVersion(item) ? <p className="text-xs text-muted mt-2">{t('dismissed')}</p> : <button type="button" className="text-xs text-muted mt-2 px-2 py-1 border border-white/15 rounded-md" aria-label={`Dismiss alert: ${item.location}`} onClick={() => dismissNotifications([item])}>{t('dismiss')}</button>)}
+                            <p className="text-xs text-muted mt-1">{t('created')}: {formatAlertDateTime(item.created_at)}</p>
+                            {userRole === 'admin' && <div className="flex gap-3 mt-2 text-xs"><button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>{t('update')}</button><button className="text-red-300" onClick={() => cancelAlert(item.id)}>{t('cancelAlert')}</button></div>}
                           </div>
                         ))}
                       </>
@@ -363,7 +355,7 @@ export default function Navbar() {
               </Link>
               {userName && (
                 <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="text-muted hover:text-parchment text-sm font-medium py-1">
-                  Profile ({userName})
+                  {t('profile')} ({userName})
                 </Link>
               )}
               <button
@@ -388,16 +380,6 @@ export default function Navbar() {
               </Link>
             </div>
           )}
-
-          <div className="flex items-center justify-between border-t border-white/10 pt-4 mt-2">
-            <span className="text-xs text-muted">Language</span>
-            <button
-              onClick={() => { toggleLang(); setIsMobileMenuOpen(false); }}
-              className="px-3 py-1.5 text-xs font-mono-data font-semibold rounded-full border border-white/15 text-muted hover:text-parchment hover:bg-white/5 transition-colors"
-            >
-              {lang === 'en' ? 'اردو' : 'EN'}
-            </button>
-          </div>
         </div>
       )}
     </nav>

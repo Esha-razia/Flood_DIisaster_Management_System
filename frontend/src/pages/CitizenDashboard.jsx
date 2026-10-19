@@ -592,7 +592,34 @@ export default function CitizenDashboard() {
   };
 
   const buildExplanation = (pred) => {
-    return pred?.explanation || "";
+    if (!pred) return "";
+    if (lang !== "ur") return pred.explanation || "";
+
+    const riskUrdu = pred.risk === "High" ? "زیادہ" : pred.risk === "Medium" ? "درمیانہ" : "کم";
+    const riskSummary = pred.risk === "High" ? t("riskSummaryHigh") : pred.risk === "Medium" ? t("riskSummaryMedium") : t("riskSummaryLow");
+    const conf = pred.confidence ? (pred.confidence * 100).toFixed(1) : "—";
+    const model = pred.model_used || "RandomForest";
+
+    let text = `${t("floodRiskAnalysisFor")} ${pred.location}${pred.resolved_city ? ` (${t("matchedCityLabel")}: ${pred.resolved_city})` : ""}:\n\n`;
+    text += `1. ${t("inputParameters")}:\n`;
+    if (pred.input_data) {
+      if (pred.input_data.rainfall !== undefined) text += `   • ${t("rainfall")}: ${pred.input_data.rainfall} ملی میٹر\n`;
+      if (pred.input_data.temperature !== undefined) text += `   • ${t("temperature")}: ${pred.input_data.temperature}°C\n`;
+      if (pred.input_data.humidity !== undefined) text += `   • ${t("featHumidity")}: ${pred.input_data.humidity}%\n`;
+      if (pred.input_data.wind_speed !== undefined) text += `   • ${t("featWindSpeed")}: ${pred.input_data.wind_speed} m/s\n`;
+      if (pred.input_data.soil_moisture_top !== undefined) text += `   • ${t("featSoilMoistureTop")}: ${pred.input_data.soil_moisture_top}\n`;
+      if (pred.input_data.soil_7day_avg !== undefined) text += `   • ${t("featSoil7dayAvg")}: ${pred.input_data.soil_7day_avg}\n`;
+    }
+    if (formData.river_level) {
+      text += `   • ${t("riverLevel")}: ${formData.river_level} (${t("riverLevelNote")})\n`;
+    }
+    text += `\n2. ${t("mlModelPrediction")}:\n`;
+    text += `   • ${t("riskLevel")}: ${riskUrdu} ${t("floodRiskWord")} (${pred.risk})\n`;
+    text += `   • ${t("modelConfidenceLabel")}: ${conf}%\n`;
+    text += `\n3. ${t("riskAssessmentLabel")}:\n`;
+    text += `   ${riskSummary}\n`;
+    text += `\n${t("generatedUsingModel")} ${model} ${t("modelTrainedOnData")}`;
+    return text;
   };
 
   const getSafetyTips = (risk) => {
@@ -762,7 +789,9 @@ export default function CitizenDashboard() {
                 <div className="relative text-center mb-8">
                   <p className="eyebrow text-muted mb-3">{t("assessmentResult")}</p>
                   <div className={`inline-block px-6 py-2.5 rounded-full text-sm font-mono-data uppercase tracking-widest ${getRiskBadgeColor(prediction.risk)}`}>
-                    {prediction.risk?.toUpperCase()} risk
+                    {lang === "ur"
+                      ? (prediction.risk === "High" ? "زیادہ خطرہ" : prediction.risk === "Medium" ? "درمیانہ خطرہ" : "کم خطرہ")
+                      : `${prediction.risk?.toUpperCase()} RISK`}
                   </div>
                 </div>
 
@@ -780,7 +809,9 @@ export default function CitizenDashboard() {
                   </div>
                   <div className="stat-tile text-center">
                     <div className={`font-display text-3xl mb-1 ${getRiskColor(prediction.risk)}`}>
-                      {prediction.risk}
+                      {lang === "ur"
+                        ? (prediction.risk === "High" ? "زیادہ" : prediction.risk === "Medium" ? "درمیانہ" : "کم")
+                        : prediction.risk}
                     </div>
                     <div className="eyebrow text-muted">{t("riskLevel")}</div>
                   </div>
@@ -811,13 +842,21 @@ export default function CitizenDashboard() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="stat-tile text-center">
                         <div className="eyebrow text-muted mb-1">{prediction.model_comparison.primary.model}</div>
-                        <div className={`font-display text-2xl ${getRiskColor(prediction.model_comparison.primary.risk)}`}>{prediction.model_comparison.primary.risk}</div>
-                        <div className="text-xs text-muted mt-1">{(prediction.model_comparison.primary.confidence * 100).toFixed(1)}% confidence</div>
+                        <div className={`font-display text-2xl ${getRiskColor(prediction.model_comparison.primary.risk)}`}>
+                          {lang === "ur"
+                            ? (prediction.model_comparison.primary.risk === "High" ? "زیادہ" : prediction.model_comparison.primary.risk === "Medium" ? "درمیانہ" : "کم")
+                            : prediction.model_comparison.primary.risk}
+                        </div>
+                        <div className="text-xs text-muted mt-1">{(prediction.model_comparison.primary.confidence * 100).toFixed(1)}% {t("confidence")}</div>
                       </div>
                       <div className="stat-tile text-center">
                         <div className="eyebrow text-muted mb-1">{prediction.model_comparison.secondary.model}</div>
-                        <div className={`font-display text-2xl ${getRiskColor(prediction.model_comparison.secondary.risk)}`}>{prediction.model_comparison.secondary.risk}</div>
-                        <div className="text-xs text-muted mt-1">{prediction.model_comparison.secondary.confidence ? `${(prediction.model_comparison.secondary.confidence * 100).toFixed(1)}% confidence` : ""}</div>
+                        <div className={`font-display text-2xl ${getRiskColor(prediction.model_comparison.secondary.risk)}`}>
+                          {lang === "ur"
+                            ? (prediction.model_comparison.secondary.risk === "High" ? "زیادہ" : prediction.model_comparison.secondary.risk === "Medium" ? "درمیانہ" : "کم")
+                            : prediction.model_comparison.secondary.risk}
+                        </div>
+                        <div className="text-xs text-muted mt-1">{prediction.model_comparison.secondary.confidence ? `${(prediction.model_comparison.secondary.confidence * 100).toFixed(1)}% ${t("confidence")}` : ""}</div>
                       </div>
                     </div>
                   </div>
@@ -837,7 +876,11 @@ export default function CitizenDashboard() {
                       {forecast.outlook.map((day) => (
                         <div key={day.date} className="stat-tile text-center">
                           <div className="text-xs text-muted mb-1">{new Date(day.date).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined, { weekday: "short", month: "short", day: "numeric" })}</div>
-                          <div className={`font-display text-xl ${getRiskColor(day.risk)}`}>{day.risk}</div>
+                          <div className={`font-display text-xl ${getRiskColor(day.risk)}`}>
+                            {lang === "ur"
+                              ? (day.risk === "High" ? "زیادہ" : day.risk === "Medium" ? "درمیانہ" : "کم")
+                              : day.risk}
+                          </div>
                           <div className="text-xs text-muted mt-1">{day.temperature}°C · {day.rainfall}mm</div>
                         </div>
                       ))}
@@ -989,8 +1032,12 @@ export default function CitizenDashboard() {
                 <div className="p-5 rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-300 text-sm flex items-center gap-3">
                   <span className="text-2xl">🟢</span>
                   <div>
-                    <p className="font-semibold text-white">No Active Emergency Alerts</p>
-                    <p className="text-xs text-muted mt-0.5">There are currently no active flood emergency alerts in {formData.location || "your area"}. Stay informed!</p>
+                    <p className="font-semibold text-white">{t('noActiveAlertsTitle')}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      {lang === 'ur'
+                        ? `فی الحال ${formData.location || 'آپ کے علاقے'} میں کوئی فعال سیلابی ہنگامی الرٹ نہیں ہے۔ باخبر رہیں!`
+                        : `There are currently no active flood emergency alerts in ${formData.location || "your area"}. Stay informed!`}
+                    </p>
                   </div>
                 </div>
               ) : (

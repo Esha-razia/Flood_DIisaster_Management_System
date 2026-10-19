@@ -134,11 +134,14 @@ export default function Home() {
     axios.get(`${API_BASE}/alerts`).then((res) => {
       const active = (res.data || []).find((a) => a.status !== "Cancelled" && (a.risk === "High" || a.risk === "Medium"));
       if (active) {
+        const riskUrdu = active.risk === "High" ? "زیادہ" : "درمیانہ";
         setLiveSlide({
           isLive: true,
-          tag: `Live alert · ${active.location}`,
+          tag: lang === "ur" ? `لائیو الرٹ · ${active.location}` : `Live alert · ${active.location}`,
           title: active.message,
-          desc: `A ${active.risk.toLowerCase()} flood risk alert is currently active for ${active.location}. Sign in to see the full prediction and safety guidance.`,
+          desc: lang === "ur"
+            ? `${active.location} کے لیے ${riskUrdu} سیلابی خطرے کا الرٹ فی الحال فعال ہے۔ مکمل پیشین گوئی اور حفاظتی رہنمائی دیکھنے کے لیے سائن ان کریں۔`
+            : `A ${active.risk.toLowerCase()} flood risk alert is currently active for ${active.location}. Sign in to see the full prediction and safety guidance.`,
           accent: active.risk === "High" ? "red" : "marigold",
         });
       }
@@ -202,12 +205,12 @@ export default function Home() {
           <div className="max-w-6xl mx-auto px-6">
             <div className="rounded-2xl border border-marigold-500/30 bg-gradient-to-r from-marigold-500/10 to-teal-500/5 p-6 flex flex-col md:flex-row md:items-center gap-4 justify-between">
               <div className="min-w-0">
-                <p className="eyebrow text-marigold-400 mb-2">{t("publicAdvisories")} · Latest</p>
+                <p className="eyebrow text-marigold-400 mb-2">{t("publicAdvisories")} · {t("latest")}</p>
                 <h3 className="font-display text-xl text-parchment mb-1 truncate">{advisories[0].title}</h3>
                 <p className="text-sm text-muted leading-relaxed line-clamp-2">{advisories[0].message}</p>
                 <p className="text-xs text-muted mt-2">{advisories[0].region} · {new Date(advisories[0].created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</p>
               </div>
-              <Link to="/community#public-advisories" className="shrink-0 px-5 py-2 text-sm font-semibold rounded-full text-ink bg-gradient-to-r from-marigold-400 to-marigold-500 hover:brightness-110">View All</Link>
+              <Link to="/community#public-advisories" className="shrink-0 px-5 py-2 text-sm font-semibold rounded-full text-ink bg-gradient-to-r from-marigold-400 to-marigold-500 hover:brightness-110">{t("viewAll")}</Link>
             </div>
           </div>
         </section>

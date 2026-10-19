@@ -6,7 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
 
 export default function Profile() {
-  const { t } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
   const [user, setUser] = useState({
     name: '',
     email: '',
@@ -134,10 +134,10 @@ export default function Profile() {
 
   const getRoleDisplayName = (role) => {
     switch (role) {
-      case 'citizen': return 'Citizen';
-      case 'rescue_worker': return 'Rescue Worker';
-      case 'government_official': return 'Government Official';
-      case 'admin': return 'Administrator';
+      case 'citizen': return t('citizenSingular');
+      case 'rescue_worker': return t('rescueWorkerSingular');
+      case 'government_official': return t('govOfficialSingular');
+      case 'admin': return t('adminSingular');
       default: return role;
     }
   };
@@ -174,7 +174,7 @@ export default function Profile() {
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${getRoleColor(user.role)}`}>
                     {getRoleDisplayName(user.role)}
                   </span>
-                  <span className="text-muted text-sm">{t("memberSince")} {new Date().toLocaleDateString()}</span>
+                  <span className="text-muted text-sm">{t("memberSince")} {new Date().toLocaleDateString(lang === 'ur' ? 'ur-PK' : undefined)}</span>
                 </div>
               </div>
             </div>
@@ -223,7 +223,7 @@ export default function Profile() {
               <form onSubmit={handleSave} className="space-y-6" noValidate>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("fullName2")} <span className="text-red-400">*</span>
+                    {t("fullName2")}
                   </label>
                   <input
                     type="text"
@@ -249,7 +249,7 @@ export default function Profile() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    {t("emailAddress2")} <span className="text-red-400">*</span>
+                    {t("emailAddress2")}
                   </label>
                   <input
                     type="email"
@@ -318,6 +318,55 @@ export default function Profile() {
                     {user.role === 'government_official' && t('govDashboardLabel')}
                     {user.role === 'admin' && t('adminDashboardLabel')}
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings & Preferences Section */}
+            <div className="mt-8 pt-8 border-t border-white/20">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center text-teal-400">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-display text-xl text-parchment">{t("settings")}</h3>
+                  <p className="text-xs text-muted">{t("settingsDesc")}</p>
+                </div>
+              </div>
+
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-parchment">{t("languageSetting")}</h4>
+                    <p className="text-xs text-muted mt-0.5">{t("selectLanguageDesc")}</p>
+                  </div>
+                  <div className="inline-flex rounded-xl p-1 bg-ink border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setLang("en")}
+                      className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                        lang === "en"
+                          ? "bg-teal-500 text-ink shadow-md"
+                          : "text-muted hover:text-parchment hover:bg-white/5"
+                      }`}
+                    >
+                      🇬🇧 {t("englishLang")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLang("ur")}
+                      className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                        lang === "ur"
+                          ? "bg-marigold-400 text-ink shadow-md"
+                          : "text-muted hover:text-parchment hover:bg-white/5"
+                      }`}
+                    >
+                      🇵🇰 {t("urduLang")}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

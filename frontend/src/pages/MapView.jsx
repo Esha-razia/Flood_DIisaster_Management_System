@@ -27,11 +27,11 @@ export default function MapView() {
           <div className="mb-8">
             <p className="eyebrow text-teal-400 mb-3">{t("mapTag")}</p>
             <h1 className="font-display text-4xl sm:text-5xl text-parchment mb-3">
-              {focusTarget ? focusTarget.name || "Location" : t("mapTitle")}
+              {focusTarget ? focusTarget.name || t("locationLabel") : t("mapTitle")}
             </h1>
             <p className="text-muted max-w-xl">
               {focusTarget
-                ? "Zoomed to the location you selected."
+                ? t("zoomedToLocation")
                 : <>{t("mapDesc")} {canEdit ? t("mapDescOfficial") : t("mapDescCitizen")}</>
               }
             </p>

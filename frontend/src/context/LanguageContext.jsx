@@ -448,6 +448,53 @@ const translations = {
     lowChart: "Low", medChart: "Med", highChart: "High", loginSuccessful: "Login successful! Redirecting...",
     mediumRiskAreas: "Medium Risk Areas", elevatedDetected: "ELEVATED - Medium Risk Areas Detected", criticalMultiple: "CRITICAL - Multiple High Risk Areas",
     loginSuccessRedirect: "Successfully logged in! Redirecting to dashboard...",
+    // Settings & Language
+    settings: "Settings",
+    settingsDesc: "Manage your account preferences, profile details, and language settings.",
+    languageSetting: "Website Language",
+    selectLanguageDesc: "Choose whether you want to use the website in English or Urdu.",
+    englishLang: "English",
+    urduLang: "اردو (Urdu)",
+    activeLangBadge: "Active",
+    editProfileDetails: "Edit Profile Details",
+    profile: "Profile",
+    preferences: "Preferences",
+    // Roles
+    citizenSingular: "Citizen",
+    rescueWorkerSingular: "Rescue Worker",
+    govOfficialSingular: "Government Official",
+    adminSingular: "Administrator",
+    // Alerts panel & Navbar notifications
+    alertsAndAdvisories: "Alerts & advisories",
+    current: "Current",
+    viewAll: "View all",
+    alertHistory: "Alert history",
+    clearAll: "Clear all",
+    enableBrowserNotifications: "Enable browser notifications",
+    affectedLocation: "Affected location",
+    saveAlert: "Save alert",
+    noAlertHistory: "No alert history.",
+    publicAdvisory: "Public advisory",
+    read: "Read",
+    unread: "Unread",
+    dismissed: "Dismissed",
+    dismissAdvisory: "Dismiss advisory",
+    noAlertsOrAdvisories: "No alerts or advisories.",
+    nothingToShowCleared: "Nothing to show. Cleared items are available in View all.",
+    dismiss: "Dismiss",
+    created: "Created",
+    update: "Update",
+    cancelAlert: "Cancel alert",
+    // Common UI buttons & alerts
+    trackBtn: "Track",
+    latest: "Latest",
+    zoomedToLocation: "Zoomed to the location you selected.",
+    noActiveAlertsTitle: "No Active Emergency Alerts",
+    noActiveAlertsDesc: "There are currently no active flood emergency alerts in your area. Stay informed!",
+    highRiskUrdu: "High Risk",
+    mediumRiskUrdu: "Medium Risk",
+    lowRiskUrdu: "Low Risk",
+    confidenceUrdu: "confidence",
   },
   ur: {
     home: "ہوم", community: "کمیونٹی", map: "نقشہ", dashboard: "ڈیش بورڈ",
@@ -859,10 +906,57 @@ const translations = {
     lowChart: "کم", medChart: "درمیانہ", highChart: "زیادہ", loginSuccessful: "لاگ ان کامیاب! ری ڈائریکٹ ہو رہا ہے...",
     mediumRiskAreas: "درمیانہ خطرے والے علاقے", elevatedDetected: "بلند — درمیانہ خطرے والے علاقے پائے گئے", criticalMultiple: "نازک — متعدد زیادہ خطرے والے علاقے",
     loginSuccessRedirect: "کامیابی سے لاگ ان ہو گئے! ڈیش بورڈ کی طرف بھیجا جا رہا ہے...",
+    // Settings & Language
+    settings: "تنظیمات",
+    settingsDesc: "اپنے اکاؤنٹ کی ترجیحات، پروفائل کی تفصیلات اور زبان کی ترتیبات سنبھالیں۔",
+    languageSetting: "ویب سائٹ کی زبان",
+    selectLanguageDesc: "منتخب کریں کہ آپ ویب سائٹ انگریزی میں استعمال کرنا چاہتے ہیں یا اردو میں۔",
+    englishLang: "English (انگریزی)",
+    urduLang: "اردو",
+    activeLangBadge: "فعال",
+    editProfileDetails: "پروفائل کی تفصیلات تبدیل کریں",
+    profile: "پروفائل",
+    preferences: "ترجیحات",
+    // Roles
+    citizenSingular: "شہری",
+    rescueWorkerSingular: "ریسکیو ورکر",
+    govOfficialSingular: "حکومتی اہلکار",
+    adminSingular: "ایڈمنسٹریٹر",
+    // Alerts panel & Navbar notifications
+    alertsAndAdvisories: "الرٹس اور اعلانات",
+    current: "موجودہ",
+    viewAll: "سب دیکھیں",
+    alertHistory: "الرٹس کی تاریخ",
+    clearAll: "سب صاف کریں",
+    enableBrowserNotifications: "براؤزر نوٹیفیکیشن آن کریں",
+    affectedLocation: "متاثرہ علاقہ",
+    saveAlert: "الرٹ محفوظ کریں",
+    noAlertHistory: "الرٹس کی کوئی تاریخ موجود نہیں ہے۔",
+    publicAdvisory: "عوامی ہدایت نامہ",
+    read: "پڑھا گیا",
+    unread: "ان پڑھا",
+    dismissed: "مسترد شدہ",
+    dismissAdvisory: "ہدایت نامہ مسترد کریں",
+    noAlertsOrAdvisories: "کوئی الرٹ یا ہدایت نامہ موجود نہیں۔",
+    nothingToShowCleared: "دکھانے کے لیے کچھ نہیں۔ خارج کردہ آئٹمز 'سب دیکھیں' میں دستیاب ہیں۔",
+    dismiss: "مسترد کریں",
+    created: "بنایا گیا",
+    update: "اپڈیٹ کریں",
+    cancelAlert: "الرٹ منسوخ کریں",
+    // Common UI buttons & alerts
+    trackBtn: "ٹریک کریں",
+    latest: "تازہ ترین",
+    zoomedToLocation: "آپ کے منتخب کردہ مقام پر زوم کر دیا گیا۔",
+    noActiveAlertsTitle: "کوئی فعال ہنگامی الرٹ نہیں",
+    noActiveAlertsDesc: "فی الحال آپ کے علاقے میں کوئی فعال سیلابی ہنگامی الرٹ نہیں ہے۔ باخبر رہیں!",
+    highRiskUrdu: "زیادہ خطرہ",
+    mediumRiskUrdu: "درمیانہ خطرہ",
+    lowRiskUrdu: "کم خطرہ",
+    confidenceUrdu: "اعتماد",
   },
 };
 
-const LanguageContext = createContext({ lang: "en", t: (k) => k, toggleLang: () => {} });
+const LanguageContext = createContext({ lang: "en", setLang: () => {}, t: (k) => k, toggleLang: () => {} });
 
 export function LanguageProvider({ children }) {
   const [lang, setLang] = useState(localStorage.getItem("appLang") || "en");
@@ -873,10 +967,10 @@ export function LanguageProvider({ children }) {
   }, [lang]);
 
   const toggleLang = () => setLang((prev) => (prev === "en" ? "ur" : "en"));
-  const t = (key) => translations[lang][key] || translations.en[key] || key;
+  const t = (key) => translations[lang]?.[key] || translations.en?.[key] || key;
 
   return (
-    <LanguageContext.Provider value={{ lang, t, toggleLang }}>
+    <LanguageContext.Provider value={{ lang, setLang, t, toggleLang }}>
       {children}
     </LanguageContext.Provider>
   );
