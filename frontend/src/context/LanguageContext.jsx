@@ -959,18 +959,21 @@ const translations = {
 const LanguageContext = createContext({ lang: "en", setLang: () => {}, t: (k) => k, toggleLang: () => {} });
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(localStorage.getItem("appLang") || "en");
+  const lang = "en";
 
   useEffect(() => {
-    localStorage.setItem("appLang", lang);
-    document.documentElement.dir = lang === "ur" ? "rtl" : "ltr";
-  }, [lang]);
+    try {
+      localStorage.removeItem("appLang");
+      document.documentElement.dir = "ltr";
+    } catch {}
+  }, []);
 
-  const toggleLang = () => setLang((prev) => (prev === "en" ? "ur" : "en"));
-  const t = (key) => translations[lang]?.[key] || translations.en?.[key] || key;
+  const toggleLang = () => {};
+  const setLang = () => {};
+  const t = (key) => translations.en?.[key] || key;
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t, toggleLang }}>
+    <LanguageContext.Provider value={{ lang: "en", setLang, t, toggleLang }}>
       {children}
     </LanguageContext.Provider>
   );
