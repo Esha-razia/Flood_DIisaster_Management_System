@@ -40,7 +40,7 @@ function statusStyles(value) {
 }
 
 export default function Community() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const routerLocation = useLocation();
   const [advisories, setAdvisories] = useState([]);
   const [selectedAdvisory, setSelectedAdvisory] = useState(null);
@@ -317,7 +317,7 @@ export default function Community() {
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("statusLabel")}</p>
                     <p className="text-lg font-semibold text-emerald-400 mt-2 flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>{systemStats ? t("live") : loadingReports ? t("loadingDots") : "Unavailable"}
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>{systemStats ? t("live") : loadingReports ? t("loadingDots") : (lang === "ur" ? "دستیاب نہیں" : "Unavailable")}
                     </p>
                   </div>
                 </div>
@@ -336,7 +336,7 @@ export default function Community() {
                 {advisories.map((a) => (
                   <button key={a.id} type="button" onClick={() => openAdvisory(a)} className="text-left dashboard-card p-6 hover:border-teal-500/40 transition-colors">
                     <div className="flex items-center justify-between gap-2 mb-3">
-                      <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${a.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{a.withdrawn ? "Withdrawn" : "Active"}</span>
+                      <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${a.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{a.withdrawn ? (lang === "ur" ? "واپس لیا گیا" : "Withdrawn") : (lang === "ur" ? "فعال" : "Active")}</span>
                       <span className="text-xs text-muted">{formatTimeStamp(a.created_at)}</span>
                     </div>
                     <h3 className="font-display text-lg text-parchment mb-2">{a.title}</h3>
@@ -350,15 +350,15 @@ export default function Community() {
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" onClick={() => setSelectedAdvisory(null)}>
               <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-ink-soft p-7 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between gap-3 mb-4">
-                  <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${selectedAdvisory.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{selectedAdvisory.withdrawn ? "Withdrawn" : "Active"}</span>
-                  <button type="button" className="text-muted hover:text-parchment text-sm" onClick={() => setSelectedAdvisory(null)}>Close</button>
+                  <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2 py-0.5 rounded-full border ${selectedAdvisory.withdrawn ? "border-red-500/40 text-red-300" : "border-teal-500/40 text-teal-300"}`}>{selectedAdvisory.withdrawn ? (lang === "ur" ? "واپس لیا گیا" : "Withdrawn") : (lang === "ur" ? "فعال" : "Active")}</span>
+                  <button type="button" className="text-muted hover:text-parchment text-sm" onClick={() => setSelectedAdvisory(null)}>{t("close")}</button>
                 </div>
                 <h3 className="font-display text-2xl text-parchment mb-3">{selectedAdvisory.title}</h3>
                 <p className="text-sm text-parchment/90 leading-relaxed whitespace-pre-wrap mb-5">{selectedAdvisory.message}</p>
                 <dl className="text-xs text-muted space-y-1">
-                  <div><dt className="inline text-teal-300">Region: </dt><dd className="inline">{selectedAdvisory.region || "All regions"}</dd></div>
-                  <div><dt className="inline text-teal-300">Issued by: </dt><dd className="inline">{selectedAdvisory.issued_by || "Government Official"}</dd></div>
-                  <div><dt className="inline text-teal-300">Published: </dt><dd className="inline">{formatTimeStamp(selectedAdvisory.created_at)}</dd></div>
+                  <div><dt className="inline text-teal-300">{lang === "ur" ? "علاقہ: " : "Region: "}</dt><dd className="inline">{selectedAdvisory.region || (lang === "ur" ? "تمام علاقے" : "All regions")}</dd></div>
+                  <div><dt className="inline text-teal-300">{lang === "ur" ? "جاری کنندہ: " : "Issued by: "}</dt><dd className="inline">{selectedAdvisory.issued_by || (lang === "ur" ? "سرکاری اہلکار" : "Government Official")}</dd></div>
+                  <div><dt className="inline text-teal-300">{lang === "ur" ? "تاریخ اشاعت: " : "Published: "}</dt><dd className="inline">{formatTimeStamp(selectedAdvisory.created_at)}</dd></div>
                 </dl>
               </div>
             </div>
@@ -401,7 +401,7 @@ export default function Community() {
                               <span>⚠️</span> {formFieldErrors.location}
                             </p>
                           )}
-                          <button type="button" onClick={fillCurrentLocation} className="text-xs text-teal-300 border border-teal-500/30 rounded-lg px-3 py-2 mt-2">Use my current location</button>
+                          <button type="button" onClick={fillCurrentLocation} className="text-xs text-teal-300 border border-teal-500/30 rounded-lg px-3 py-2 mt-2">{t("useMyLocation")}</button>
                           {locationStatus && <span className="block text-xs text-muted mt-1">{locationStatus}</span>}
                         </label>
                         <label className="block">
@@ -424,7 +424,7 @@ export default function Community() {
                         <textarea
                           value={formState.description}
                           onChange={(e) => handleFormChange("description", e.target.value)}
-                          placeholder="Minimum 10 characters. Start with a capital letter." minLength={10}
+                          placeholder={lang === "ur" ? "کم از کم 10 حروف درج کریں۔" : "Minimum 10 characters. Start with a capital letter."} minLength={10}
                           rows={5}
                           className={`field-input mt-2 rounded-2xl transition-colors ${
                             formFieldErrors.description ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''

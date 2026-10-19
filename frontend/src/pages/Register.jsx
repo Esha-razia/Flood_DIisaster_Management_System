@@ -7,7 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
 
 export default function Register() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -74,37 +74,37 @@ export default function Register() {
 
     // Name validation
     if (!formData.name.trim()) {
-      errors.name = 'Please fill out this field';
+      errors.name = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       isValid = false;
     } else if (!validateName(formData.name)) {
-      errors.name = 'Name must be at least 3 characters and contain only letters';
+      errors.name = lang === 'ur' ? 'نام کم از کم 3 حروف پر مشتمل اور صرف حروف پر ہونا چاہیے' : 'Name must be at least 3 characters and contain only letters';
       isValid = false;
     }
 
     // Email validation
     if (!formData.email.trim()) {
-      errors.email = 'Please fill out this field';
+      errors.email = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       isValid = false;
     } else if (!validateEmail(formData.email)) {
-      errors.email = 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)';
+      errors.email = lang === 'ur' ? 'ایک درست ای میل ایڈریس درج کریں (مثلاً user@gmail.com)' : 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)';
       isValid = false;
     }
 
     // Password validation
     if (!formData.password) {
-      errors.password = 'Please fill out this field';
+      errors.password = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       isValid = false;
     } else if (!validatePassword(formData.password)) {
-      errors.password = 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
+      errors.password = lang === 'ur' ? 'پاس ورڈ کم از کم 8 حروف، بڑے اور چھوٹے حروف، نمبر اور خصوصی علامت پر مشتمل ہونا چاہیے' : 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
       isValid = false;
     }
 
     // Confirm password validation
     if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Please fill out this field';
+      errors.confirmPassword = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       isValid = false;
     } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
+      errors.confirmPassword = lang === 'ur' ? 'پاس ورڈز مطابقت نہیں رکھتے' : 'Passwords do not match';
       isValid = false;
     }
 
@@ -115,27 +115,27 @@ export default function Register() {
   const handleBlur = (field) => {
     if (field === 'name') {
       if (!formData.name.trim()) {
-        setFormErrors(prev => ({ ...prev, name: 'Please fill out this field' }));
+        setFormErrors(prev => ({ ...prev, name: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       } else if (!validateName(formData.name)) {
-        setFormErrors(prev => ({ ...prev, name: 'Name must be at least 3 characters and contain only letters' }));
+        setFormErrors(prev => ({ ...prev, name: lang === 'ur' ? 'نام کم از کم 3 حروف پر مشتمل اور صرف حروف پر ہونا چاہیے' : 'Name must be at least 3 characters and contain only letters' }));
       }
     } else if (field === 'email') {
       if (!formData.email.trim()) {
-        setFormErrors(prev => ({ ...prev, email: 'Please fill out this field' }));
+        setFormErrors(prev => ({ ...prev, email: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       } else if (!validateEmail(formData.email)) {
-        setFormErrors(prev => ({ ...prev, email: 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)' }));
+        setFormErrors(prev => ({ ...prev, email: lang === 'ur' ? 'ایک درست ای میل ایڈریس درج کریں (مثلاً user@gmail.com)' : 'Enter a valid email address (e.g., user@gmail.com, user@yahoo.com)' }));
       }
     } else if (field === 'password') {
       if (!formData.password) {
-        setFormErrors(prev => ({ ...prev, password: 'Please fill out this field' }));
+        setFormErrors(prev => ({ ...prev, password: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       } else if (!validatePassword(formData.password)) {
-        setFormErrors(prev => ({ ...prev, password: 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character' }));
+        setFormErrors(prev => ({ ...prev, password: lang === 'ur' ? 'پاس ورڈ کم از کم 8 حروف، بڑے اور چھوٹے حروف، نمبر اور خصوصی علامت پر مشتمل ہونا چاہیے' : 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character' }));
       }
     } else if (field === 'confirmPassword') {
       if (!formData.confirmPassword) {
-        setFormErrors(prev => ({ ...prev, confirmPassword: 'Please fill out this field' }));
+        setFormErrors(prev => ({ ...prev, confirmPassword: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       } else if (formData.password !== formData.confirmPassword) {
-        setFormErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }));
+        setFormErrors(prev => ({ ...prev, confirmPassword: lang === 'ur' ? 'پاس ورڈز مطابقت نہیں رکھتے' : 'Passwords do not match' }));
       }
     }
   };
@@ -167,7 +167,7 @@ export default function Register() {
     }
 
     if (verificationStep && (!verificationCode.trim() || verificationCode.trim().length < 6)) {
-      setError('Please enter the complete 6-digit verification code');
+      setError(lang === 'ur' ? 'براہ کرم 6 ہندسوں کا مکمل تصدیقی کوڈ درج کریں' : 'Please enter the complete 6-digit verification code');
       return;
     }
     
@@ -192,10 +192,10 @@ export default function Register() {
       }
 
       if (verificationStep) {
-        setSuccess('Email verified and account created. Redirecting to login...');
+        setSuccess(lang === 'ur' ? 'ای میل کی تصدیق ہو گئی اور اکاؤنٹ بن گیا۔ لاگ ان پر بھیجا جا رہا ہے...' : 'Email verified and account created. Redirecting to login...');
         setTimeout(() => navigate('/login'), 1800);
       } else {
-        setSuccess('A verification code has been sent to your email.');
+        setSuccess(lang === 'ur' ? 'آپ کی ای میل پر تصدیقی کوڈ بھیج دیا گیا ہے۔' : 'A verification code has been sent to your email.');
         setEmailVerificationSent(true);
         setVerificationStep(true);
       }
@@ -203,7 +203,7 @@ export default function Register() {
       if (err.response && err.response.data && err.response.data.message) {
         setError(err.response.data.message);
       } else {
-        setError('Registration failed. Please make sure the backend server is running.');
+        setError(lang === 'ur' ? 'رجسٹریشن ناکام ہوگئی۔ براہ کرم یقینی بنائیں کہ سرور چل رہا ہے۔' : 'Registration failed. Please make sure the backend server is running.');
       }
       console.error('Register error:', err);
     } finally {
@@ -222,10 +222,10 @@ export default function Register() {
         password: formData.password,
         role: formData.role
       });
-      setSuccess(response.data.message || 'A new verification code was sent to your email.');
+      setSuccess(response.data.message || (lang === 'ur' ? 'ایک نیا تصدیقی کوڈ آپ کے ای میل پر بھیج دیا گیا۔' : 'A new verification code was sent to your email.'));
       setVerificationCode('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not resend the verification code.');
+      setError(err.response?.data?.message || (lang === 'ur' ? 'تصدیقی کوڈ دوبارہ نہیں بھیجا جا سکا۔' : 'Could not resend the verification code.'));
     } finally {
       setLoading(false);
     }
@@ -253,7 +253,7 @@ export default function Register() {
                     <p className="text-green-400 text-sm">{success}</p>
                     {emailVerificationSent && (
                       <p className="text-green-400 text-xs mt-1">
-                        ✓ Verification email sent
+                        ✓ {lang === 'ur' ? 'تصدیقی ای میل بھیج دی گئی' : 'Verification email sent'}
                       </p>
                     )}
                   </div>
@@ -348,7 +348,7 @@ export default function Register() {
                     </p>
                   )}
                   <p className="mt-2 text-xs text-muted">
-                    Must be at least 8 characters with uppercase, lowercase, number, and special character
+                    {lang === 'ur' ? 'کم از کم 8 حروف، بڑے اور چھوٹے حروف، نمبر اور خصوصی علامت ضروری ہے' : 'Must be at least 8 characters with uppercase, lowercase, number, and special character'}
                   </p>
                 </div>
                 <div>
@@ -409,13 +409,13 @@ export default function Register() {
                     <option className="bg-ink text-white" value="rescue_worker">{t("rescueWorkerSingular")}</option>
                   </select>
                   <p className="mt-2 text-xs text-muted">
-                    Select your role to access appropriate dashboard features
+                    {lang === 'ur' ? 'مناسب ڈیش بورڈ کی خصوصیات تک رسائی کے لیے اپنا کردار منتخب کریں' : 'Select your role to access appropriate dashboard features'}
                   </p>
                 </div>
                 {verificationStep && (
                   <div>
                     <label className="block text-sm font-medium text-muted mb-2">
-                      Email verification code
+                      {lang === 'ur' ? 'ای میل کا تصدیقی کوڈ' : 'Email verification code'}
                     </label>
                     <input
                       type="text"
@@ -424,7 +424,7 @@ export default function Register() {
                       value={verificationCode}
                       onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
                       className="w-full px-4 py-3 rounded-lg text-white placeholder-muted bg-white/10 border border-white/20 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                      placeholder="Enter the 6-digit code sent to your email"
+                      placeholder={lang === "ur" ? "اپنی ای میل پر موصولہ 6 ہندسوں کا کوڈ درج کریں" : "Enter the 6-digit code sent to your email"}
                       required
                     />
                     <button
@@ -433,7 +433,7 @@ export default function Register() {
                       disabled={loading}
                       className="mt-2 text-sm text-teal-400 hover:text-teal-300 disabled:opacity-50"
                     >
-                      Resend verification code
+                      {lang === 'ur' ? 'تصدیقی کوڈ دوبارہ بھیجیں' : 'Resend verification code'}
                     </button>
                   </div>
                 )}
@@ -442,7 +442,7 @@ export default function Register() {
                   disabled={loading || Object.values(formErrors).some(error => error !== "")}
                   className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
-                  {loading ? (verificationStep ? 'Verifying email...' : 'Sending verification code...') : (verificationStep ? 'Verify email & create account' : t('createAccount'))}
+                  {loading ? (verificationStep ? (lang === 'ur' ? 'ای میل کی تصدیق ہو رہی ہے...' : 'Verifying email...') : (lang === 'ur' ? 'تصدیقی کوڈ بھیجا جا رہا ہے...' : 'Sending verification code...')) : (verificationStep ? (lang === 'ur' ? 'ای میل کی تصدیق کریں اور اکاؤنٹ بنائیں' : 'Verify email & create account') : t('createAccount'))}
                 </button>
               </form>
             </div>

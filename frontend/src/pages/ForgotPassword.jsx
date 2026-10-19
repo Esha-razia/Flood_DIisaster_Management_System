@@ -7,7 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
 
 export default function ForgotPassword() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [step, setStep] = useState(1); // 1 = request code, 2 = enter code + new password
   const [email, setEmail] = useState('');
   const [token, setToken] = useState('');
@@ -27,12 +27,12 @@ export default function ForgotPassword() {
     setSuccess('');
     
     if (!email.trim()) {
-      setFieldErrors({ email: 'Please fill out this field' });
+      setFieldErrors({ email: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' });
       return;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
     if (!emailRegex.test(email.trim())) {
-      setFieldErrors({ email: 'Please enter a valid email address' });
+      setFieldErrors({ email: t('invalidEmailFormat') });
       return;
     }
     setFieldErrors({});
@@ -40,11 +40,11 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const res = await axios.post(`${API_BASE}/forgot-password`, { email });
-      setSuccess(res.data.message || 'A verification code was sent to your email.');
+      setSuccess(res.data.message || (lang === 'ur' ? 'آپ کی ای میل پر تصدیقی کوڈ بھیج دیا گیا ہے۔' : 'A verification code was sent to your email.'));
       setStep(2);
     } catch (err) {
       if (err.response?.status === 404) {
-        setError('Email not found in our system. Please check and try again.');
+        setError(lang === 'ur' ? 'ای میل ہمارے سسٹم میں نہیں ملا۔ براہ کرم دوبارہ چیک کریں۔' : 'Email not found in our system. Please check and try again.');
       } else {
         setError(err.response?.data?.message || 'Server error. Please make sure the backend is running.');
       }
@@ -59,11 +59,11 @@ export default function ForgotPassword() {
     setSuccess('');
 
     const errors = {};
-    if (!token.trim()) errors.token = 'Please fill out this field';
-    if (!newPassword) errors.newPassword = 'Please fill out this field';
-    if (!confirmPassword) errors.confirmPassword = 'Please fill out this field';
+    if (!token.trim()) errors.token = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
+    if (!newPassword) errors.newPassword = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
+    if (!confirmPassword) errors.confirmPassword = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
     else if (newPassword !== confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match.';
+      errors.confirmPassword = lang === 'ur' ? 'پاس ورڈز مطابقت نہیں رکھتے۔' : 'Passwords do not match.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -77,10 +77,10 @@ export default function ForgotPassword() {
       const res = await axios.post(`${API_BASE}/reset-password`, {
         email, token: token.trim(), new_password: newPassword,
       });
-      setSuccess(res.data.message || 'Password reset successfully.');
+      setSuccess(res.data.message || (lang === 'ur' ? 'پاس ورڈ کامیابی سے ری سیٹ ہو گیا۔' : 'Password reset successfully.'));
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to reset password.');
+      setError(err.response?.data?.message || (lang === 'ur' ? 'پاس ورڈ ری سیٹ کرنے میں ناکامی۔' : 'Failed to reset password.'));
     } finally {
       setLoading(false);
     }
@@ -92,10 +92,10 @@ export default function ForgotPassword() {
     setSuccess('');
     try {
       const res = await axios.post(`${API_BASE}/forgot-password`, { email });
-      setSuccess(res.data.message || 'A new verification code was sent to your email.');
+      setSuccess(res.data.message || (lang === 'ur' ? 'ایک نیا تصدیقی کوڈ آپ کے ای میل پر بھیج دیا گیا۔' : 'A new verification code was sent to your email.'));
       setToken('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not resend the verification code.');
+      setError(err.response?.data?.message || (lang === 'ur' ? 'تصدیقی کوڈ دوبارہ نہیں بھیجا جا سکا۔' : 'Could not resend the verification code.'));
     } finally {
       setLoading(false);
     }
@@ -131,7 +131,7 @@ export default function ForgotPassword() {
               <form onSubmit={handleRequestCode} className="space-y-6" noValidate>
                 <div>
                   <label className="field-label">
-                    {t("emailAddress2")} <span className="text-red-400">*</span>
+                    {t("emailAddress2")} 
                   </label>
                   <input
                     type="email"
@@ -163,7 +163,7 @@ export default function ForgotPassword() {
               <form onSubmit={handleResetPassword} className="space-y-6" noValidate>
                 <div>
                   <label className="field-label">
-                    {t("verificationCode")} <span className="text-red-400">*</span>
+                    {t("verificationCode")} 
                   </label>
                   <input
                     type="text"
@@ -175,7 +175,7 @@ export default function ForgotPassword() {
                     className={`field-input font-mono-data tracking-widest transition-colors ${
                       fieldErrors.token ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
                     }`}
-                    placeholder="Enter the code sent to your email"
+                    placeholder={lang === "ur" ? "اپنی ای میل پر موصولہ کوڈ درج کریں" : "Enter the code sent to your email"}
                     required
                   />
                   {fieldErrors.token && (
@@ -185,11 +185,11 @@ export default function ForgotPassword() {
                   )}
                 </div>
                 <button type="button" onClick={handleResendCode} disabled={loading} className="w-full text-sm text-teal-400 hover:text-teal-300 disabled:opacity-50">
-                  Resend verification code
+                  {lang === 'ur' ? 'تصدیقی کوڈ دوبارہ بھیجیں' : 'Resend verification code'}
                 </button>
                 <div>
                   <label className="field-label">
-                    {t("newPassword")} <span className="text-red-400">*</span>
+                    {t("newPassword")} 
                   </label>
                   <div className="relative">
                     <input
@@ -233,7 +233,7 @@ export default function ForgotPassword() {
                 </div>
                 <div>
                   <label className="field-label">
-                    {t("confirmNewPassword")} <span className="text-red-400">*</span>
+                    {t("confirmNewPassword")} 
                   </label>
                   <div className="relative">
                     <input

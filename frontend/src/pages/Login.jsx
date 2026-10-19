@@ -33,7 +33,7 @@ export default function Login() {
   const handleBlur = (field) => {
     if (field === 'email') {
       if (!email.trim()) {
-        setFieldErrors(prev => ({ ...prev, email: 'Please fill out this field' }));
+        setFieldErrors(prev => ({ ...prev, email: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       } else {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
         if (!emailRegex.test(email.trim())) {
@@ -43,7 +43,7 @@ export default function Login() {
     }
     if (field === 'password') {
       if (!password) {
-        setFieldErrors(prev => ({ ...prev, password: 'Please fill out this field' }));
+        setFieldErrors(prev => ({ ...prev, password: lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field' }));
       }
     }
   };
@@ -57,7 +57,7 @@ export default function Login() {
     let hasError = false;
 
     if (!email.trim()) {
-      errors.email = 'Please fill out this field';
+      errors.email = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     } else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -68,7 +68,7 @@ export default function Login() {
     }
 
     if (!password) {
-      errors.password = 'Please fill out this field';
+      errors.password = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     }
 
@@ -84,7 +84,7 @@ export default function Login() {
       });
 
       if (response.data.role === 'admin') {
-        setError('Access Denied: Administrator sign-in is restricted to the private administrator route.');
+        setError(lang === 'ur' ? 'رسائی مسترد: ایڈمنسٹریٹر سائن ان صرف پرائیویٹ ایڈمن روٹ کے لیے ہے۔' : 'Access Denied: Administrator sign-in is restricted to the private administrator route.');
         setLoading(false);
         return;
       }
@@ -117,7 +117,7 @@ export default function Login() {
       }, 1500);
     } catch (err) {
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
-      setError(serverMessage || err.message || 'Invalid credentials. Please ensure the backend server is running.');
+      setError(serverMessage || (lang === 'ur' ? 'غلط اسناد۔ براہ کرم یقینی بنائیں کہ سرور چل رہا ہے۔' : 'Invalid credentials. Please ensure the backend server is running.'));
       console.error('Login error:', err);
     } finally {
       setLoading(false);
@@ -245,7 +245,7 @@ export default function Login() {
                     to="/government-login"
                     className="text-teal-400 hover:text-teal-300 font-semibold transition-colors inline-flex items-center gap-1"
                   >
-                    🏛️ Government Official Portal →
+                    {lang === 'ur' ? '🏛️ حکومتی اہلکار پورٹل ←' : '🏛️ Government Official Portal →'}
                   </Link>
                 </div>
               </form>

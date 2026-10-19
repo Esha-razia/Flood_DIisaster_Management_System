@@ -102,15 +102,15 @@ export default function GovDashboard() {
     const loc = operationForm.location.trim();
     const desc = operationForm.description.trim();
     if (!loc || loc.length < 3) {
-      showOperationFeedback("Please provide a valid affected location (at least 3 characters).");
+      showOperationFeedback(lang === "ur" ? "براہ کرم درست متاثرہ مقام درج کریں (کم از کم 3 حروف)۔" : "Please provide a valid affected location (at least 3 characters).");
       return;
     }
     if (!desc || desc.length < 5) {
-      showOperationFeedback("Please provide an operation description (at least 5 characters).");
+      showOperationFeedback(lang === "ur" ? "براہ کرم آپریشن کی تفصیل درج کریں (کم از کم 5 حروف)۔" : "Please provide an operation description (at least 5 characters).");
       return;
     }
     if (!operationForm.worker_names.length) {
-      showOperationFeedback("Please select at least one available rescue worker.");
+      showOperationFeedback(lang === "ur" ? "براہ کرم کم از کم ایک دستیاب ریسکیو ورکر منتخب کریں۔" : "Please select at least one available rescue worker.");
       return;
     }
     if (operationForm.worker_names.length > 1 && !multiWorkerEnabled) {
@@ -149,7 +149,7 @@ export default function GovDashboard() {
     if (operationCreated) {
       try {
         await refreshRescueData();
-        showOperationFeedback("Rescue operation created successfully.");
+        showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے بن گیا۔" : "Rescue operation created successfully.");
       } catch (refreshError) {
         console.error("Rescue operation was saved, but dashboard refresh failed:", refreshError);
         showOperationFeedback("Rescue operation created successfully. Refresh the page to see the latest data.");
@@ -189,7 +189,7 @@ export default function GovDashboard() {
       setAssigningAlertId(null);
       setAssignForm({ worker: "", description: "" });
       await refreshRescueData();
-      showOperationFeedback("Rescue worker assigned successfully.");
+      showOperationFeedback(lang === "ur" ? "ریسکیو ورکر کامیابی سے تفویض کر دیا گیا۔" : "Rescue worker assigned successfully.");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not assign the rescue worker.");
     } finally {
@@ -225,14 +225,14 @@ export default function GovDashboard() {
 
   const handleUpdateOperation = async (operation, changes) => {
     if (operation.status === "Completed") {
-      showOperationFeedback("Completed operations are read-only.");
+      showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.");
       return;
     }
 
     try {
       await axios.put(`${API_BASE}/rescue-operations/${operation.id}/status`, changes);
       await refreshRescueData();
-      showOperationFeedback("Rescue operation updated successfully.");
+      showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے اپڈیٹ ہو گیا۔" : "Rescue operation updated successfully.");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not update the rescue operation.");
     }
@@ -240,7 +240,7 @@ export default function GovDashboard() {
 
   const handleChecklistUpdate = async (operation, itemIndex, done) => {
     if (operation.status === "Completed") {
-      showOperationFeedback("Completed operations are read-only.");
+      showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.");
       return;
     }
     try {
@@ -695,8 +695,7 @@ export default function GovDashboard() {
                   onClick={exportData}
                   className="w-full px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors"
                 >
-                  Export CSV
-                </button>
+                  {lang === "ur" ? "ایکسپورٹ CSV" : "Export CSV"}</button>
               </div>
             </div>
           </div>
@@ -851,23 +850,23 @@ export default function GovDashboard() {
           <div className="dashboard-card p-6 mb-8">
             <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
               <div>
-                <p className="eyebrow text-purple-300 mb-2">Community intelligence</p>
-                <h2 className="font-display text-2xl text-parchment">Citizen reports</h2>
-                <p className="text-sm text-muted mt-1">Review incidents submitted by citizens and track their response status.</p>
+                <p className="eyebrow text-purple-300 mb-2">{lang === "ur" ? "کمیونٹی انٹیلی جنس" : "Community intelligence"}</p>
+                <h2 className="font-display text-2xl text-parchment">{lang === "ur" ? "شہری رپورٹس" : "Citizen reports"}</h2>
+                <p className="text-sm text-muted mt-1">{lang === "ur" ? "شہریوں کی جمع کرائی گئی رپورٹس کا جائزہ لیں اور ان کی حیثیت ٹریک کریں۔" : "Review incidents submitted by citizens and track their response status."}</p>
               </div>
               <div className="flex gap-3">
                 <select value={reportStatusFilter} onChange={(e) => setReportStatusFilter(e.target.value)} className="field-input text-sm">
-                  <option value="All">All statuses</option>
+                  <option value="All">{lang === "ur" ? "تمام حیثیتیں" : "All statuses"}</option>
                   {["Submitted", "Action Taken", "Resolved"].map((status) => <option key={status} value={status}>{status}</option>)}
                 </select>
                 <select value={reportSeverityFilter} onChange={(e) => setReportSeverityFilter(e.target.value)} className="field-input text-sm">
-                  <option value="All">All severities</option>
+                  <option value="All">{lang === "ur" ? "تمام شدتیں" : "All severities"}</option>
                   {["Low", "Medium", "High"].map((severity) => <option key={severity} value={severity}>{severity}</option>)}
                 </select>
               </div>
             </div>
             {filteredCommunityReports.length === 0 ? (
-              <p className="text-sm text-muted">No citizen reports match the selected filters.</p>
+              <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -902,12 +901,12 @@ export default function GovDashboard() {
                                 onClick={() => setExpandedReportId((current) => current === report.id ? null : report.id)}
                                 className="btn-secondary text-xs py-1.5"
                               >
-                                {expandedReportId === report.id ? "Hide details" : "View details"}
+                                {lang === "ur" ? (expandedReportId === report.id ? "تفصیلات چھپائیں" : "تفصیلات دیکھیں") : (expandedReportId === report.id ? "Hide details" : "View details")}
                               </button>
                               {report.status !== "Resolved" && (
                                 <>
-                                  <button onClick={() => updateCommunityReport(report.id, "Action Taken")} className="btn-secondary text-xs py-1.5">Action taken</button>
-                                  <button onClick={() => updateCommunityReport(report.id, "Resolved")} className="btn-primary text-xs py-1.5">Resolve</button>
+                                  <button onClick={() => updateCommunityReport(report.id, "Action Taken")} className="btn-secondary text-xs py-1.5">{lang === "ur" ? "کارروائی کی گئی" : "Action taken"}</button>
+                                  <button onClick={() => updateCommunityReport(report.id, "Resolved")} className="btn-primary text-xs py-1.5">{lang === "ur" ? "حل کریں" : "Resolve"}</button>
                                 </>
                               )}
                             </div>
@@ -918,15 +917,15 @@ export default function GovDashboard() {
                             <td colSpan="6" className="border-b border-white/10 bg-white/[0.03] p-4">
                               <div className="grid gap-4 md:grid-cols-[1fr_220px]">
                                 <div className="space-y-2 text-sm">
-                                  <p className="text-white"><span className="text-muted">Incident type:</span> {report.type || "Flooding"}</p>
-                                  <p className="text-white"><span className="text-muted">Description:</span> {report.description || "No description provided."}</p>
-                                  <p className="text-white"><span className="text-muted">Contact:</span> {report.contact || "Not provided"}</p>
-                                  {report.notes && <p className="text-teal-300"><span className="text-muted">Latest update:</span> {report.notes}</p>}
+                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "واقعے کی قسم:" : "Incident type:"}</span> {report.type || "Flooding"}</p>
+                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "تفصیل:" : "Description:"}</span> {report.description || "No description provided."}</p>
+                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "رابطہ:" : "Contact:"}</span> {report.contact || "Not provided"}</p>
+                                  {report.notes && <p className="text-teal-300"><span className="text-muted">{lang === "ur" ? "تازہ ترین اپڈیٹ:" : "Latest update:"}</span> {report.notes}</p>}
                                 </div>
                                 {getReportImageSource(report.imageUrl) ? (
                                   <img src={getReportImageSource(report.imageUrl)} alt={`Evidence for ${report.trackingId}`} className="h-36 w-full rounded-xl border border-white/10 object-cover" />
                                 ) : (
-                                  <div className="flex h-36 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-muted">No photo attached</div>
+                                  <div className="flex h-36 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-muted">{lang === "ur" ? "کوئی تصویر منسلک نہیں" : "No photo attached"}</div>
                                 )}
                               </div>
                             </td>
@@ -1066,7 +1065,7 @@ export default function GovDashboard() {
                       <th className="pb-2">{t("name")}</th>
                       <th className="pb-2">{t("email")}</th>
                       <th className="pb-2">{t("status")}</th>
-                      <th className="pb-2">Availability</th>
+                      <th className="pb-2">{lang === "ur" ? "دستیابی" : "Availability"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
@@ -1077,7 +1076,7 @@ export default function GovDashboard() {
                         <td className="py-2 text-teal-300">{worker.status === "Active" ? t("active") : t("inactive")}</td>
                         <td className="py-2">
                           <span className={activeWorkerNames.has(worker.name.toLowerCase()) ? "text-amber-300" : "text-emerald-300"}>
-                            {activeWorkerNames.has(worker.name.toLowerCase()) ? "Busy" : "Available"}
+                            {activeWorkerNames.has(worker.name.toLowerCase()) ? (lang === "ur" ? "مصروف" : "Busy") : (lang === "ur" ? "دستیاب" : "Available")}
                           </span>
                         </td>
                       </tr>
@@ -1097,7 +1096,7 @@ export default function GovDashboard() {
                 <p className="text-sm text-muted mt-2">{t("rescueOperationsOverviewDesc")}</p>
               </div>
               <button onClick={() => setShowOperationForm((value) => !value)} className="btn-secondary text-sm py-2.5">
-                {showOperationForm ? t("cancel") : "+ New Operation"}
+                {showOperationForm ? t("cancel") : (lang === "ur" ? "+ نیا آپریشن" : "+ New Operation")}
               </button>
             </div>
             {operationFeedback && <p className="text-sm text-emerald-400 mb-4">✓ {operationFeedback}</p>}
@@ -1106,7 +1105,7 @@ export default function GovDashboard() {
                 <div className="grid md:grid-cols-2 gap-3">
                   <input
                     required
-                    placeholder="Affected location *"
+                    placeholder={lang === "ur" ? "متاثرہ مقام" : "Affected location"}
                     value={operationForm.location}
                     onChange={(e) => setOperationForm((form) => ({ ...form, location: e.target.value }))}
                     className="field-input"
@@ -1116,22 +1115,22 @@ export default function GovDashboard() {
                     onChange={(e) => setOperationForm((form) => ({ ...form, risk_level: e.target.value }))}
                     className="field-input"
                   >
-                    <option value="High">High priority</option>
-                    <option value="Medium">Medium priority</option>
-                    <option value="Low">Low priority</option>
+                    <option value="High">{lang === "ur" ? "زیادہ ترجیح" : "High priority"}</option>
+                    <option value="Medium">{lang === "ur" ? "درمیانہ ترجیح" : "Medium priority"}</option>
+                    <option value="Low">{lang === "ur" ? "کم ترجیح" : "Low priority"}</option>
                   </select>
                 </div>
                 <textarea
                   required
                   rows={3}
-                  placeholder="Operation description *"
+                  placeholder={lang === "ur" ? "آپریشن کی تفصیل" : "Operation description"}
                   value={operationForm.description}
                   onChange={(e) => setOperationForm((form) => ({ ...form, description: e.target.value }))}
                   className="field-input resize-none"
                 />
                 <div className="field-input space-y-1 max-h-40 overflow-y-auto">
                   <p className="text-xs text-muted">
-                    Select rescue workers *{!multiWorkerEnabled && " (multi-worker assignment pending migration approval — choose one)"}
+                    {lang === "ur" ? "ریسکیو ورکرز منتخب کریں" : "Select rescue workers"}{!multiWorkerEnabled && (lang === "ur" ? " (ایک ورکر منتخب کریں)" : " (choose one)")}
                   </p>
                   {rescueWorkers.filter((worker) => worker.status === "Active").map((worker) => {
                     const busy = activeWorkerNames.has(worker.name.toLowerCase());
@@ -1159,14 +1158,14 @@ export default function GovDashboard() {
                   onChange={(e) => setOperationForm((form) => ({ ...form, alert_id: e.target.value }))}
                   className="field-input"
                 >
-                  <option value="">No related flood alert (standalone operation)</option>
+                  <option value="">{lang === "ur" ? "سیلاب سے متعلق کوئی الرٹ نہیں (علیحدہ آپریشن)" : "No related flood alert (standalone operation)"}</option>
                   {pendingAlerts.map((alert) => (
                     <option key={alert.id} value={alert.id}>
                         #{alert.id} — {alert.location} ({alert.risk_level || alert.risk})
                       </option>
                     ))}
                 </select>
-                <button type="submit" className="btn-primary w-full">Create & dispatch operation</button>
+                <button type="submit" className="btn-primary w-full">{lang === "ur" ? "آپریشن بنائیں اور روانہ کریں" : "Create & dispatch operation"}</button>
               </form>
             )}
             {allRescueOps.length === 0 ? (
@@ -1175,13 +1174,13 @@ export default function GovDashboard() {
               <div className="overflow-x-auto">
                 <div className="flex justify-end mb-4">
                   <select value={operationStatusFilter} onChange={(e) => setOperationStatusFilter(e.target.value)} className="field-input text-sm max-w-xs">
-                    <option value="Active">Active operations</option>
-                    <option value="Completed">Completed operations</option>
-                    <option value="All">All operations</option>
+                    <option value="Active">{lang === "ur" ? "فعال آپریشنز" : "Active operations"}</option>
+                    <option value="Completed">{lang === "ur" ? "مکمل شدہ آپریشنز" : "Completed operations"}</option>
+                    <option value="All">{lang === "ur" ? "تمام آپریشنز" : "All operations"}</option>
                   </select>
                 </div>
                 {displayedOperations.length === 0 ? (
-                  <p className="text-sm text-muted">No operations in this view.</p>
+                  <p className="text-sm text-muted">{lang === "ur" ? "اس ویو میں کوئی آپریشن موجود نہیں ہے۔" : "No operations in this view."}</p>
                 ) : <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/20 text-muted">
@@ -1204,9 +1203,9 @@ export default function GovDashboard() {
                             disabled={op.status === "Completed"}
                             className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
                           >
-                            <option className="bg-[#0b1f3a] text-white" value="Assigned">Started</option>
-                            <option className="bg-[#0b1f3a] text-white" value="In Progress">In Progress</option>
-                            <option className="bg-[#0b1f3a] text-white" value="Completed">Completed</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Assigned">{lang === "ur" ? "شروع ہوا" : "Started"}</option>
+                            <option className="bg-[#0b1f3a] text-white" value="In Progress">{lang === "ur" ? "جاری ہے" : "In Progress"}</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Completed">{lang === "ur" ? "مکمل" : "Completed"}</option>
                           </select>
                         </td>
                         <td className="py-2">
@@ -1234,7 +1233,7 @@ export default function GovDashboard() {
                                     {worker.name}
                                   </span>
                                 ))}
-                                {chips.length === 0 && <span className="text-xs text-muted">No team selected</span>}
+                                {chips.length === 0 && <span className="text-xs text-muted">{lang === "ur" ? "کوئی ٹیم منتخب نہیں" : "No team selected"}</span>}
                               </div>
                             );
                           })()}
@@ -1259,7 +1258,7 @@ export default function GovDashboard() {
               if (!operation) return null;
               return (
                 <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <h3 className="font-display text-xl text-parchment mb-2">Operation #{operation.id} details</h3>
+                  <h3 className="font-display text-xl text-parchment mb-2">{lang === "ur" ? `آپریشن #${operation.id} کی تفصیلات` : `Operation #${operation.id} details`}</h3>
                   <p className="text-sm text-muted mb-4">{operation.description || "No description provided."}</p>
                   {(() => {
                     const isActive = operation.status !== "Completed";
@@ -1270,9 +1269,9 @@ export default function GovDashboard() {
                       worker.status === "Active" && !activeWorkerNames.has(String(worker.name).toLowerCase()));
                     return (
                       <div className="mb-5 rounded-lg border border-white/10 p-3">
-                        <p className="text-xs uppercase tracking-wide text-muted mb-2">Manage Team</p>
+                        <p className="text-xs uppercase tracking-wide text-muted mb-2">{lang === "ur" ? "ٹیم منظم کریں" : "Manage Team"}</p>
                         <div className="flex flex-wrap gap-2 mb-3">
-                          {team.length === 0 && <span className="text-sm text-muted">No team selected</span>}
+                          {team.length === 0 && <span className="text-sm text-muted">{lang === "ur" ? "کوئی ٹیم منتخب نہیں" : "No team selected"}</span>}
                           {team.map((worker) => (
                             <span key={worker.name} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white">
                               {worker.name}
@@ -1320,7 +1319,7 @@ export default function GovDashboard() {
                   })()}
                   <div className="grid md:grid-cols-2 gap-5">
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-muted mb-2">Progress checklist</p>
+                      <p className="text-xs uppercase tracking-wide text-muted mb-2">{lang === "ur" ? "پیشرفت چیک لسٹ" : "Progress checklist"}</p>
                       <div className="space-y-2">
                         {(operation.checklist || []).map((item, index) => (
                           <label key={`${operation.id}-${index}`} className="flex items-center gap-2 text-sm text-white">
@@ -1336,9 +1335,9 @@ export default function GovDashboard() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-muted mb-2">Worker updates</p>
+                      <p className="text-xs uppercase tracking-wide text-muted mb-2">{lang === "ur" ? "ورکرز اپڈیٹس" : "Worker updates"}</p>
                       {(operation.update_log || []).length === 0 ? (
-                        <p className="text-sm text-muted">No worker updates yet.</p>
+                        <p className="text-sm text-muted">{lang === "ur" ? "ورکر کی طرف سے ابھی کوئی اپڈیٹ نہیں ہے۔" : "No worker updates yet."}</p>
                       ) : (
                         <div className="space-y-2">
                           {operation.update_log.map((entry, index) => (
@@ -1412,7 +1411,7 @@ export default function GovDashboard() {
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, message: e.target.value }))} className="field-input resize-none" />
                 <select required value={advisoryForm.region}
                   onChange={(e) => setAdvisoryForm((p) => ({ ...p, region: e.target.value }))} className="field-input">
-                  <option value="All regions">All regions</option>
+                  <option value="All regions">{lang === "ur" ? "تمام علاقے" : "All regions"}</option>
                   {uniqueLocations.map((location) => <option key={location} value={location}>{location}</option>)}
                 </select>
                 <button type="submit" className="btn-primary w-full">{t("issueAdvisory")}</button>

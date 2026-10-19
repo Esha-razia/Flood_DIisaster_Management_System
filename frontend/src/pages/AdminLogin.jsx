@@ -7,7 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
 
 export default function AdminLogin() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
@@ -34,11 +34,11 @@ export default function AdminLogin() {
 
     const cleanUser = username.trim();
     if (!cleanUser) {
-      errors.username = 'Please fill out this field';
+      errors.username = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     }
     if (!password) {
-      errors.password = 'Please fill out this field';
+      errors.password = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     }
 
@@ -71,7 +71,7 @@ export default function AdminLogin() {
       }
 
       if (response.data.role !== 'admin') {
-        setError('Access Denied: This portal is strictly restricted to System Administrators.');
+        setError(lang === 'ur' ? 'رسائی مسترد: یہ پورٹل صرف سسٹم ایڈمنسٹریٹرز کے لیے مختص ہے۔' : 'Access Denied: This portal is strictly restricted to System Administrators.');
         setLoading(false);
         return;
       }
@@ -82,14 +82,14 @@ export default function AdminLogin() {
       localStorage.setItem('userEmail', response.data.email || 'admin@example.com');
       if (response.data.id) localStorage.setItem('userId', response.data.id);
 
-      setSuccess('Administrator login successful! Redirecting...');
+      setSuccess(lang === 'ur' ? 'ایڈمنسٹریٹر لاگ ان کامیاب! ری ڈائریکٹ ہو رہا ہے...' : 'Administrator login successful! Redirecting...');
 
       setTimeout(() => {
         navigate('/admin-dashboard');
       }, 1000);
     } catch (err) {
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
-      setError(serverMessage || err.message || 'Invalid administrator credentials.');
+      setError(serverMessage || (lang === 'ur' ? 'غلط ایڈمنسٹریٹر اسناد۔' : 'Invalid administrator credentials.'));
       console.error('Admin login error:', err);
     } finally {
       setLoading(false);
@@ -104,8 +104,8 @@ export default function AdminLogin() {
           <div className="max-w-md mx-auto">
             <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl">
               <div className="text-center mb-8">
-                <h1 className="font-display text-3xl text-parchment mb-2">Admin Portal</h1>
-                <p className="text-muted">Sign in with your administrator credentials</p>
+                <h1 className="font-display text-3xl text-parchment mb-2">{lang === "ur" ? "ایڈمن پورٹل" : "Admin Portal"}</h1>
+                <p className="text-muted">{lang === "ur" ? "اپنی ایڈمنسٹریٹر اسناد کے ساتھ سائن ان کریں" : "Sign in with your administrator credentials"}</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6" noValidate>
@@ -122,7 +122,7 @@ export default function AdminLogin() {
 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    Admin Username
+                    {lang === 'ur' ? 'ایڈمن یوزر نیم' : 'Admin Username'}
                   </label>
                   <input
                     type="text"
@@ -136,7 +136,7 @@ export default function AdminLogin() {
                         ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
                         : 'bg-white/10 border border-white/20'
                     }`}
-                    placeholder="Enter admin username (e.g. admin)"
+                    placeholder={lang === "ur" ? "ایڈمن یوزر نیم درج کریں (مثلاً admin)" : "Enter admin username (e.g. admin)"}
                     required
                   />
                   {fieldErrors.username && (
@@ -147,9 +147,7 @@ export default function AdminLogin() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Password
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">{t('password')}</label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
@@ -163,7 +161,7 @@ export default function AdminLogin() {
                           ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
                           : 'bg-white/10 border border-white/20'
                       }`}
-                      placeholder="Enter admin password"
+                      placeholder={lang === "ur" ? "ایڈمن پاس ورڈ درج کریں" : "Enter admin password"}
                       required
                     />
                     <button
@@ -196,7 +194,7 @@ export default function AdminLogin() {
                 <div className="flex items-center justify-between">
                   <label className="flex items-center">
                     <input type="checkbox" className="mr-2" />
-                    <span className="text-sm text-muted">Remember me</span>
+                    <span className="text-sm text-muted">{t("rememberMe")}</span>
                   </label>
                 </div>
 
@@ -205,7 +203,7 @@ export default function AdminLogin() {
                   disabled={loading}
                   className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
                 >
-                  {loading ? 'Authenticating...' : 'Sign In as Admin'}
+                  {loading ? (lang === 'ur' ? 'تصدیق ہو رہی ہے...' : 'Authenticating...') : (lang === 'ur' ? 'بطور ایڈمن سائن ان کریں' : 'Sign In as Admin')}
                 </button>
 
                 <div className="pt-4 mt-2 border-t border-white/10 text-center">
@@ -213,7 +211,7 @@ export default function AdminLogin() {
                     to="/login"
                     className="text-sm text-teal-400 hover:text-teal-300 transition-colors"
                   >
-                    ← Return to Citizen & Staff Sign In
+                    ← {lang === 'ur' ? 'شہری اور اسٹاف سائن ان پر واپس جائیں' : 'Return to Citizen & Staff Sign In'}
                   </Link>
                 </div>
               </form>

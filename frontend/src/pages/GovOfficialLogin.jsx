@@ -3,9 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
 
 export default function GovOfficialLogin() {
+  const { t, lang } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
@@ -36,14 +38,14 @@ export default function GovOfficialLogin() {
 
     const cleanUser = username.trim();
     if (!cleanUser) {
-      errors.username = 'Please fill out this field';
+      errors.username = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     }
     if (!password) {
-      errors.password = 'Please fill out this field';
+      errors.password = lang === 'ur' ? 'براہ کرم یہ فیلڈ پُر کریں' : 'Please fill out this field';
       hasError = true;
     } else if (!validatePassword(password)) {
-      errors.password = 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
+      errors.password = lang === 'ur' ? 'پاس ورڈ کم از کم 8 حروف، بڑے اور چھوٹے حروف، نمبر اور خصوصی علامت پر مشتمل ہونا چاہیے' : 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
       hasError = true;
     }
 
@@ -60,7 +62,7 @@ export default function GovOfficialLogin() {
       const response = await axios.post(`${API_BASE}/login`, payload);
 
       if (response.data.role !== 'government_official') {
-        setError('Access Denied: This portal is restricted to Government Officials.');
+        setError(lang === 'ur' ? 'رسائی مسترد: یہ پورٹل صرف سرکاری اہلکاروں کے لیے ہے۔' : 'Access Denied: This portal is restricted to Government Officials.');
         return;
       }
 
@@ -69,11 +71,11 @@ export default function GovOfficialLogin() {
       localStorage.setItem('userEmail', response.data.email || cleanUser);
       if (response.data.id) localStorage.setItem('userId', response.data.id);
 
-      setSuccess('Government Official login successful! Redirecting...');
+      setSuccess(lang === 'ur' ? 'سرکاری اہلکار لاگ ان کامیاب! ری ڈائریکٹ ہو رہا ہے...' : 'Government Official login successful! Redirecting...');
       setTimeout(() => navigate('/gov-dashboard'), 1000);
     } catch (err) {
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
-      setError(serverMessage || err.message || 'Invalid Government Official credentials.');
+      setError(serverMessage || (lang === 'ur' ? 'غلط سرکاری اہلکار اسناد۔' : 'Invalid Government Official credentials.'));
       console.error('Government Official login error:', err);
     } finally {
       setLoading(false);
@@ -88,8 +90,8 @@ export default function GovOfficialLogin() {
           <div className="max-w-md mx-auto">
             <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl">
               <div className="text-center mb-8">
-                <h1 className="font-display text-3xl text-parchment mb-2">Government Official Portal</h1>
-                <p className="text-muted">Sign in with your government credentials</p>
+                <h1 className="font-display text-3xl text-parchment mb-2">{lang === "ur" ? "سرکاری اہلکار پورٹل" : "Government Official Portal"}</h1>
+                <p className="text-muted">{lang === "ur" ? "اپنی سرکاری اسناد کے ساتھ سائن ان کریں" : "Sign in with your government credentials"}</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6" noValidate>
@@ -98,7 +100,7 @@ export default function GovOfficialLogin() {
 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">
-                    Government Official Username
+                    {lang === 'ur' ? 'سرکاری اہلکار یوزر نیم' : 'Government Official Username'}
                   </label>
                   <input
                     type="text"
@@ -112,7 +114,7 @@ export default function GovOfficialLogin() {
                         ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
                         : 'bg-white/10 border border-white/20'
                     }`}
-                    placeholder="Enter username or email"
+                    placeholder={lang === "ur" ? "یوزر نیم یا ای میل درج کریں" : "Enter username or email"}
                     required
                   />
                   {fieldErrors.username && (
@@ -123,9 +125,7 @@ export default function GovOfficialLogin() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Password
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">{t('password')}</label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
@@ -139,7 +139,7 @@ export default function GovOfficialLogin() {
                           ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
                           : 'bg-white/10 border border-white/20'
                       }`}
-                      placeholder="Enter government password"
+                      placeholder={lang === "ur" ? "سرکاری پاس ورڈ درج کریں" : "Enter government password"}
                       required
                     />
                     <button
@@ -168,14 +168,14 @@ export default function GovOfficialLogin() {
                     </p>
                   )}
                   <p className="mt-2 text-xs text-muted">
-                    Must be at least 8 characters with uppercase, lowercase, number, and special character
+                    {lang === 'ur' ? 'کم از کم 8 حروف، بڑے اور چھوٹے حروف، نمبر اور خصوصی علامت ضروری ہے' : 'Must be at least 8 characters with uppercase, lowercase, number, and special character'}
                   </p>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <label className="flex items-center">
                     <input type="checkbox" className="mr-2" />
-                    <span className="text-sm text-muted">Remember me</span>
+                    <span className="text-sm text-muted">{t("rememberMe")}</span>
                   </label>
                 </div>
 
@@ -184,12 +184,12 @@ export default function GovOfficialLogin() {
                   disabled={loading}
                   className="w-full py-3 px-4 bg-gradient-to-r from-marigold-400 to-marigold-500 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 cursor-pointer"
                 >
-                  {loading ? 'Authenticating...' : 'Sign In as Government Official'}
+                  {loading ? (lang === 'ur' ? 'تصدیق ہو رہی ہے...' : 'Authenticating...') : (lang === 'ur' ? 'بطور سرکاری اہلکار سائن ان کریں' : 'Sign In as Government Official')}
                 </button>
 
                 <div className="pt-4 mt-2 border-t border-white/10 text-center">
                   <Link to="/login" className="text-sm text-teal-400 hover:text-teal-300 transition-colors">
-                    ← Return to Citizen & Staff Sign In
+                    ← {lang === 'ur' ? 'شہری اور اسٹاف سائن ان پر واپس جائیں' : 'Return to Citizen & Staff Sign In'}
                   </Link>
                 </div>
               </form>

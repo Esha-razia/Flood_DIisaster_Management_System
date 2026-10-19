@@ -585,7 +585,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         : `<span style="opacity:.6">${t("noRecordedHistory")}</span>`;
       circle.bindPopup(
         `<div style="min-width:160px">
-           <strong>${z.location}</strong><div style="opacity:.7;margin-bottom:6px">Current: ${z.risk} risk</div>
+           <strong>${z.location}</strong><div style="opacity:.7;margin-bottom:6px">${lang === "ur" ? `موجودہ: ${z.risk === "High" ? "زیادہ" : z.risk === "Medium" ? "درمیانہ" : "کم"} خطرہ` : `Current: ${z.risk} risk`}</div>
            <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:6px">${historyHtml}</div>
          </div>`,
         { className: "fdm-popup" }
@@ -1246,8 +1246,8 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         </div>
       )}
       {reportReceipt && <div role="status" className="fdm-no-print mx-4 my-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-        Report submitted successfully. Tracking ID: {reportReceipt.trackingId}.
-        <a href="/community" className="underline ml-2">View My reports</a>
+        {lang === "ur" ? `رپورٹ کامیابی سے جمع ہو گئی۔ ٹریکنگ آئی ڈی: ${reportReceipt.trackingId}۔` : `Report submitted successfully. Tracking ID: ${reportReceipt.trackingId}.`}
+        <a href="/community" className="underline ml-2">{lang === "ur" ? "میری رپورٹس دیکھیں" : "View My reports"}</a>
         <button type="button" className="float-right ml-3" aria-label="Close report confirmation" onClick={() => setReportReceipt(null)}>×</button>
       </div>}
       {locationError && <p className="fdm-no-print px-4 py-2 text-xs text-red-300">{locationError}</p>}
@@ -1266,10 +1266,10 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
             </select>{reportError("severity")}
           </div>
           <textarea aria-label="Incident description" value={reportDraft.description} onChange={(e) => setReportDraft((d) => ({ ...d, description: capitalizeDescription(e.target.value) }))}
-            placeholder="Minimum 10 characters. Start with a capital letter." minLength={10} rows={2} className={`field-input py-2 text-sm w-full ${reportField("description")}`} />
+            placeholder={lang === "ur" ? "کم از کم 10 حروف درج کریں۔" : "Minimum 10 characters. Start with a capital letter."} minLength={10} rows={2} className={`field-input py-2 text-sm w-full ${reportField("description")}`} />
           {reportError("description")}<input aria-label="Contact number" inputMode="numeric" maxLength={11} value={reportDraft.contact} onChange={(e) => setReportDraft((d) => ({ ...d, contact: e.target.value }))}
             placeholder="03001234567 (11 digits)" className={`field-input py-2 text-sm w-full ${reportField("contact")}`} />
-          {reportError("contact")}<label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
+          {reportError("contact")}<label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>{lang === "ur" ? "واقعے کی تصویر — JPG, PNG, WebP, GIF · زیادہ سے زیادہ 50 MB" : "Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB"}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
           {reportError("image")}{reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
           {reportDraft.error && <p role="alert" className="text-xs text-red-300">{reportDraft.error}</p>}
           <div className="flex justify-end gap-2">
@@ -1286,7 +1286,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       )}
       {routeInfo === "error" && (
         <div className="px-4 py-2.5 bg-red-500/10 border-b border-red-500/20 text-xs text-red-300">
-          Couldn't find a route — check location permission and that at least one shelter is registered.
+          {lang === "ur" ? "راستہ نہیں مل سکا — لوکیشن کی اجازت اور کم از کم ایک رجسٹرڈ شیلٹر چیک کریں۔" : "Couldn't find a route — check location permission and that at least one shelter is registered."}
         </div>
       )}
 

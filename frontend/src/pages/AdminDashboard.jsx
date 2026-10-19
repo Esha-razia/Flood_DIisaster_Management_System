@@ -255,7 +255,7 @@ export default function AdminDashboard() {
       setShowCreateUser(false);
       setNewUser({ name: "", email: "", password: "", role: "citizen" });
       fetchUsers();
-      showNotification("User account created successfully!");
+      showNotification(lang === "ur" ? "صارف کا اکاؤنٹ کامیابی سے بن گیا!" : "User account created successfully!");
     } catch (err) {
       alert(err.response?.data?.message || err.response?.data?.error || "Failed to create user.");
     }
@@ -335,7 +335,7 @@ export default function AdminDashboard() {
           location: loc,
           risk_level: newAlert.risk,
         }, { headers: adminHeaders });
-        showNotification("Active Alert updated successfully!");
+        showNotification(lang === "ur" ? "الرٹ کامیابی سے اپڈیٹ ہو گیا!" : "Active Alert updated successfully!");
       } else {
         await axios.post(`${API_BASE}/alerts`, {
           message: msg,
@@ -344,7 +344,7 @@ export default function AdminDashboard() {
           risk_level: newAlert.risk,
           status: "Active"
         }, { headers: adminHeaders });
-        showNotification("Emergency Alert manually triggered & broadcast!");
+        showNotification(lang === "ur" ? "ہنگامی الرٹ کامیابی سے جاری کر دیا گیا!" : "Emergency Alert manually triggered & broadcast!");
       }
       setShowAlertModal(false);
       setEditingAlertId(null);
@@ -376,7 +376,7 @@ export default function AdminDashboard() {
           'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
         }
       });
-      showNotification("Active alert marked as Cancelled.");
+      showNotification(lang === "ur" ? "الرٹ منسوخ کر دیا گیا۔" : "Active alert marked as Cancelled.");
       fetchAlerts();
     } catch (err) {
       alert("Failed to cancel alert.");
@@ -392,7 +392,7 @@ export default function AdminDashboard() {
           'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
         }
       });
-      showNotification("Alert record removed.");
+      showNotification(lang === "ur" ? "الرٹ کا ریکارڈ خارج کر دیا گیا۔" : "Alert record removed.");
       fetchAlerts();
     } catch (err) {
       alert("Failed to delete alert.");
@@ -768,7 +768,7 @@ export default function AdminDashboard() {
       setShowShelterForm(false);
       setNewShelter({ name: "", address: "", capacity: "", contact: "" });
       fetchShelters();
-      showNotification("Emergency Shelter registered!");
+      showNotification(lang === "ur" ? "امدادی کیمپ رجسٹر ہو گیا!" : "Emergency Shelter registered!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create shelter.");
     }
@@ -822,7 +822,7 @@ export default function AdminDashboard() {
       });
       setEditingShelter(null);
       fetchShelters();
-      showNotification("Shelter updated successfully!");
+      showNotification(lang === "ur" ? "کیمپ کامیابی سے اپڈیٹ ہو گیا!" : "Shelter updated successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update shelter.");
     }
@@ -833,7 +833,7 @@ export default function AdminDashboard() {
     try {
       await axios.delete(`${API_BASE}/shelters/${id}`);
       fetchShelters();
-      showNotification("Shelter deleted.");
+      showNotification(lang === "ur" ? "کیمپ کا ریکارڈ خارج کر دیا گیا۔" : "Shelter deleted.");
     } catch (err) {
       alert("Failed to delete shelter.");
     }
@@ -897,7 +897,7 @@ export default function AdminDashboard() {
       setShowHospitalForm(false);
       setNewHospital({ name: "", address: "", contact: "", services: "" });
       fetchHospitals();
-      showNotification("Emergency Hospital registered!");
+      showNotification(lang === "ur" ? "ہنگامی ہسپتال رجسٹر ہو گیا!" : "Emergency Hospital registered!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create hospital.");
     }
@@ -945,7 +945,7 @@ export default function AdminDashboard() {
       await axios.put(`${API_BASE}/hospitals/${editingHospital.id}`, editingHospital);
       setEditingHospital(null);
       fetchHospitals();
-      showNotification("Hospital updated successfully!");
+      showNotification(lang === "ur" ? "ہسپتال کامیابی سے اپڈیٹ ہو گیا!" : "Hospital updated successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update hospital.");
     }
@@ -956,7 +956,7 @@ export default function AdminDashboard() {
     try {
       await axios.delete(`${API_BASE}/hospitals/${id}`);
       fetchHospitals();
-      showNotification("Hospital deleted.");
+      showNotification(lang === "ur" ? "ہسپتال کا ریکارڈ خارج کر دیا گیا۔" : "Hospital deleted.");
     } catch (err) {
       alert("Failed to delete hospital.");
     }
@@ -993,7 +993,7 @@ export default function AdminDashboard() {
       });
       fetchAccuracyHistory();
       fetchConfidenceTrend();
-      showNotification("Machine Learning model successfully retrained!");
+      showNotification(lang === "ur" ? "مشین لرننگ ماڈل کامیابی سے دوبارہ ٹرین ہو گیا!" : "Machine Learning model successfully retrained!");
     } catch (err) {
       setRetrainResult({ ok: false, message: err.response?.data?.message || "Failed to retrain model." });
     } finally {
@@ -1098,15 +1098,15 @@ export default function AdminDashboard() {
   };
 
   // All navigation tabs in one combined list (shown in expanded grid)
-  const allNavTabs = [
-    { id: 'overview',     label: 'Command Center',       icon: '🛡️',  badge: null },
-    { id: 'users',        label: 'User Accounts',        icon: '👥',  badge: filteredUsers.length },
-    { id: 'reports',      label: 'Citizen Reports',      icon: '📢',  badge: pendingReportsCount },
-    { id: 'shelters',     label: 'Relief Shelters',      icon: '🏢',  badge: shelters.length },
-    { id: 'hospitals',    label: 'Emergency Hospitals',  icon: '🏥',  badge: hospitals.length },
-    { id: 'alerts',       label: 'Emergency Flood Alerts', icon: '🚨', badge: activeAlertsCount },
-    { id: 'rescue',       label: 'Ground Operations',    icon: '⚡',  badge: activeOpsCount },
-    { id: 'predictions',  label: 'AI Model & Analytics', icon: '🌧️',  badge: predictions.length || null },
+    const allNavTabs = [
+    { id: 'overview',     label: lang === 'ur' ? 'کمانڈ سینٹر' : 'Command Center',       icon: '🌐',  badge: null },
+    { id: 'users',        label: lang === 'ur' ? 'صارفین کے اکاؤنٹس' : 'User Accounts',        icon: '👥',  badge: filteredUsers.length },
+    { id: 'reports',      label: lang === 'ur' ? 'شہری رپورٹس' : 'Citizen Reports',      icon: '📢',  badge: pendingReportsCount },
+    { id: 'shelters',     label: lang === 'ur' ? 'امدادی کیمپ' : 'Relief Shelters',      icon: '🏢',  badge: shelters.length },
+    { id: 'hospitals',    label: lang === 'ur' ? 'ہنگامی ہسپتال' : 'Emergency Hospitals',  icon: '🏥',  badge: hospitals.length },
+    { id: 'alerts',       label: lang === 'ur' ? 'ہنگامی الرٹس' : 'Emergency Flood Alerts', icon: '🚨',  badge: activeAlertsCount },
+    { id: 'rescue',       label: lang === 'ur' ? 'زمینی آپریشنز' : 'Ground Operations',    icon: '⚡',  badge: activeOpsCount },
+    { id: 'predictions',  label: lang === 'ur' ? 'AI ماڈل اور تجزیات' : 'AI Model & Analytics', icon: '🤖',  badge: predictions.length || null },
   ];
 
   // For backward compat keep these (used elsewhere in component)
@@ -1124,7 +1124,7 @@ export default function AdminDashboard() {
         <div className="pt-28 pb-16 flex items-center justify-center min-h-[65vh]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-400 mx-auto"></div>
-            <p className="mt-4 text-slate-400 text-sm">Loading Disaster Management Console...</p>
+            <p className="mt-4 text-slate-400 text-sm">{lang === "ur" ? "ڈیزاسٹر مینجمنٹ کنسول لوڈ ہو رہا ہے..." : "Loading Disaster Management Console..."}</p>
           </div>
         </div>
       </div>
@@ -1214,38 +1214,38 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div onClick={() => setActiveSection('users')} className="bg-slate-900/80 border border-slate-800 hover:border-teal-500/40 p-5 rounded-2xl cursor-pointer transition-all shadow-lg hover:shadow-teal-500/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Active Users</span>
+                  <span className="text-xs text-slate-400 uppercase font-semibold">{lang === "ur" ? "فعال صارفین" : "Active Users"}</span>
                   <span className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center text-base">👥</span>
                 </div>
                 <div className="text-3xl font-extrabold text-white mt-2">{filteredUsers.length}</div>
-                <div className="text-xs text-slate-400 mt-1">Managed accounts</div>
+                <div className="text-xs text-slate-400 mt-1">{lang === "ur" ? "زیر انتظام اکاؤنٹس" : "Managed accounts"}</div>
               </div>
 
               <div onClick={() => setActiveSection('alerts')} className="bg-slate-900/80 border border-slate-800 hover:border-red-500/40 p-5 rounded-2xl cursor-pointer transition-all shadow-lg hover:shadow-red-500/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Live Alerts</span>
+                  <span className="text-xs text-slate-400 uppercase font-semibold">{lang === "ur" ? "لائیو الرٹس" : "Live Alerts"}</span>
                   <span className="w-8 h-8 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center text-base">🚨</span>
                 </div>
                 <div className="text-3xl font-extrabold text-red-400 mt-2">{activeAlertsCount}</div>
-                <div className="text-xs text-slate-400 mt-1">Active broadcasts</div>
+                <div className="text-xs text-slate-400 mt-1">{lang === "ur" ? "فعال اعلانات" : "Active broadcasts"}</div>
               </div>
 
               <div onClick={() => setActiveSection('rescue')} className="bg-slate-900/80 border border-slate-800 hover:border-amber-500/40 p-5 rounded-2xl cursor-pointer transition-all shadow-lg hover:shadow-amber-500/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Rescue Missions</span>
+                  <span className="text-xs text-slate-400 uppercase font-semibold">{lang === "ur" ? "ریسکیو مشنز" : "Rescue Missions"}</span>
                   <span className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-base">⚡</span>
                 </div>
                 <div className="text-3xl font-extrabold text-amber-400 mt-2">{activeOpsCount}</div>
-                <div className="text-xs text-slate-400 mt-1">Teams on ground</div>
+                <div className="text-xs text-slate-400 mt-1">{lang === "ur" ? "زمینی ٹیمیں" : "Teams on ground"}</div>
               </div>
 
               <div onClick={() => setActiveSection('reports')} className="bg-slate-900/80 border border-slate-800 hover:border-blue-500/40 p-5 rounded-2xl cursor-pointer transition-all shadow-lg hover:shadow-blue-500/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Citizen Reports</span>
+                  <span className="text-xs text-slate-400 uppercase font-semibold">{lang === "ur" ? "شہری رپورٹس" : "Citizen Reports"}</span>
                   <span className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center text-base">📢</span>
                 </div>
                 <div className="text-3xl font-extrabold text-blue-400 mt-2">{pendingReportsCount}</div>
-                <div className="text-xs text-slate-400 mt-1">Pending review</div>
+                <div className="text-xs text-slate-400 mt-1">{lang === "ur" ? "زیر جائزہ" : "Pending review"}</div>
               </div>
             </div>
 
@@ -1260,15 +1260,15 @@ export default function AdminDashboard() {
                         🚨
                       </div>
                       <div>
-                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Emergency Flood Alerts</h2>
-                        <span className="text-[11px] text-slate-400">Live public hazard warnings</span>
+                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">{lang === "ur" ? "ہنگامی سیلاب الرٹس" : "Emergency Flood Alerts"}</h2>
+                        <span className="text-[11px] text-slate-400">{lang === "ur" ? "عوامی خطرات کی وارننگز" : "Live public hazard warnings"}</span>
                       </div>
                     </div>
                     <button
                       onClick={() => setActiveSection('alerts')}
                       className="text-xs text-red-400 hover:text-red-300 font-medium px-2.5 py-1 rounded-lg hover:bg-red-500/10 transition-colors"
                     >
-                      View All ({activeAlertsCount}) →
+                      {lang === "ur" ? `سب دیکھیں (${activeAlertsCount}) ←` : `View All (${activeAlertsCount}) →`}
                     </button>
                   </div>
 
@@ -1315,7 +1315,7 @@ export default function AdminDashboard() {
                     onClick={() => { setEditingAlertId(null); setNewAlert({ message: "", location: "", risk: "High" }); setShowAlertModal(true); }}
                     className="text-xs text-teal-400 hover:text-teal-300 font-semibold"
                   >
-                    + Trigger Alert
+                    {lang === "ur" ? "+ الرٹ جاری کریں" : "+ Trigger Alert"}
                   </button>
                 </div>
               </div>
@@ -1329,15 +1329,15 @@ export default function AdminDashboard() {
                         ⚡
                       </div>
                       <div>
-                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">Active Field Missions</h2>
-                        <span className="text-[11px] text-slate-400">Ground rescue & evacuation response</span>
+                        <h2 className="text-sm font-bold text-white tracking-wide uppercase">{lang === "ur" ? "فعال فیلڈ مشنز" : "Active Field Missions"}</h2>
+                        <span className="text-[11px] text-slate-400">{lang === "ur" ? "زمینی ریسکیو اور انخلا" : "Ground rescue & evacuation response"}</span>
                       </div>
                     </div>
                     <button
                       onClick={() => setActiveSection('rescue')}
                       className="text-xs text-amber-400 hover:text-amber-300 font-medium px-2.5 py-1 rounded-lg hover:bg-amber-500/10 transition-colors"
                     >
-                      View All ({activeOpsCount}) →
+                      {lang === "ur" ? `سب دیکھیں (${activeOpsCount}) ←` : `View All (${activeOpsCount}) →`}
                     </button>
                   </div>
 
@@ -1383,7 +1383,7 @@ export default function AdminDashboard() {
                     onClick={() => { setCreateRescueForm({ location: "", description: "", risk_level: "High", assigned_team: "" }); setShowCreateRescueModal(true); }}
                     className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
                   >
-                    + Dispatch Team
+                    {lang === "ur" ? "+ ٹیم روانہ کریں" : "+ Dispatch Team"}
                   </button>
                 </div>
               </div>
