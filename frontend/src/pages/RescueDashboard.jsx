@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -24,7 +24,32 @@ const fetchWithRetry = async (requestFn, { retries = 4, delayMs = 3000 } = {}) =
 
 export default function RescueDashboard() {
   const { t, lang } = useLanguage();
-  const currentUserName = localStorage.getItem("userName") || "Rescue Official";
+  const currentUserName = (localStorage.getItem("userName") || "").trim();
+  const currentUserEmail = (localStorage.getItem("userEmail") || "").trim();
+  const [scopeFilter, setScopeFilter] = useState("my"); // "my" | "all"
+
+  const isAssignedToMe = useCallback((op) => {
+    if (!currentUserName && !currentUserEmail) return false;
+    const nameLower = currentUserName.toLowerCase();
+    const emailLower = currentUserEmail.toLowerCase();
+    if (Array.isArray(op.worker_names) && op.worker_names.some((n) => String(n).trim().toLowerCase() === nameLower)) {
+      return true;
+    }
+    if (Array.isArray(op.workers) && op.workers.some((w) => {
+      const wName = String(w.name || "").trim().toLowerCase();
+      const wEmail = String(w.email || "").trim().toLowerCase();
+      return (nameLower && wName === nameLower) || (emailLower && wEmail === emailLower);
+    })) {
+      return true;
+    }
+    if (typeof op.assigned_team === "string") {
+      const parts = op.assigned_team.split(",").map((s) => s.trim().toLowerCase());
+      if (parts.includes(nameLower) || (nameLower && op.assigned_team.toLowerCase().includes(nameLower))) {
+        return true;
+      }
+    }
+    return false;
+  }, [currentUserName, currentUserEmail]);
 
   // Navigation: Active Operations vs Past Operations Log
   const [activeTab, setActiveTab] = useState("active"); // "active" | "history"
@@ -290,9 +315,12 @@ export default function RescueDashboard() {
   // Prioritization logic (High > Medium > Low)
   const PRIORITY_SCORE = { High: 3, Medium: 2, Low: 1 };
 
-  // Real-time active operations list (sorted by risk priority)
+  // Real-time active operations list (sorted by risk priority & scope)
   const activeOperations = useMemo(() => {
     let list = operations.filter((op) => op.status !== "Completed");
+    if (scopeFilter === "my") {
+      list = list.filter((op) => isAssignedToMe(op));
+    }
     if (riskFilter !== "All") {
       list = list.filter((op) => op.risk_level === riskFilter);
     }
@@ -305,7 +333,7 @@ export default function RescueDashboard() {
       if (scoreB !== scoreA) return scoreB - scoreA;
       return new Date(b.updated_at) - new Date(a.updated_at);
     });
-  }, [operations, riskFilter, statusFilter]);
+  }, [operations, scopeFilter, riskFilter, statusFilter, isAssignedToMe]);
 
   // Past operations log list
   const pastOperations = useMemo(() => {
@@ -327,6 +355,7 @@ export default function RescueDashboard() {
 
   // Quick metrics
   const totalActive = operations.filter((o) => o.status !== "Completed").length;
+  const myActiveCount = operations.filter((o) => o.status !== "Completed" && isAssignedToMe(o)).length;
   const highRiskActive = operations.filter((o) => o.status !== "Completed" && o.risk_level === "High").length;
   const inProgressCount = operations.filter((o) => o.status === "In Progress").length;
   const completedCount = operations.filter((o) => o.status === "Completed").length;
@@ -406,8 +435,71 @@ export default function RescueDashboard() {
             </div>
           )}
 
+          {/* Rescue Worker Personalized Banner */}
+          <div className="mb-6 p-4 sm:p-5 rounded-2xl border border-teal-500/30 bg-gradient-to-r from-teal-950/40 via-ink-soft to-ink shadow-lg flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-2xl shadow-inner">
+                🧑‍🚒
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-white">
+                    {lang === "ur" ? `خوش آمدید، ${currentUserName || "ریسکیو ورکر"}` : `Welcome back, ${currentUserName || "Rescue Worker"}`}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/40">
+                    {lang === "ur" ? "ریسکیو اہلکار" : "Rescue Personnel"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted mt-0.5">
+                  {myActiveCount > 0 ? (
+                    lang === "ur" ? (
+                      <>آپ کے پاس اس وقت <strong className="text-teal-300 font-bold">{myActiveCount}</strong> فعال مشن تفویض شدہ ہیں۔</>
+                    ) : (
+                      <>You currently have <strong className="text-teal-300 font-bold">{myActiveCount}</strong> active mission(s) assigned specifically to you.</>
+                    )
+                  ) : (
+                    lang === "ur" ? (
+                      "آپ کو فی الحال کوئی نیا مشن تفویض نہیں ہے۔ نیچے تمام ٹیم آپریشنز دیکھ سکتے ہیں۔"
+                    ) : (
+                      "No active missions are currently assigned to you. You can browse all team operations below."
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScopeFilter("my")}
+                className={`text-xs px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  scopeFilter === "my"
+                    ? "bg-teal-500 text-ink shadow-lg shadow-teal-500/30 font-black scale-105"
+                    : "bg-white/5 text-muted hover:text-white border border-white/10"
+                }`}
+              >
+                🎯 {lang === "ur" ? `میرے تفویض کردہ مشنز (${myActiveCount})` : `My Assigned Missions (${myActiveCount})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScopeFilter("all")}
+                className={`text-xs px-3.5 py-2 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
+                  scopeFilter === "all"
+                    ? "bg-teal-500 text-ink shadow-lg shadow-teal-500/30 font-black scale-105"
+                    : "bg-white/5 text-muted hover:text-white border border-white/10"
+                }`}
+              >
+                🌐 {lang === "ur" ? `تمام ٹیم آپریشنز (${totalActive})` : `All Team Operations (${totalActive})`}
+              </button>
+            </div>
+          </div>
+
           {/* Metrics summary banner */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+            <div className="dashboard-card p-4 text-center border-teal-500/50 bg-teal-950/25 shadow-md shadow-teal-950/30">
+              <div className="font-display text-2xl text-teal-300 font-bold">{myActiveCount}</div>
+              <div className="eyebrow text-teal-400 text-[11px] mt-1 font-bold">🎯 {lang === "ur" ? "میرے مشنز" : "My Missions"}</div>
+            </div>
             <div className="dashboard-card p-4 text-center">
               <div className="font-display text-2xl text-parchment">{totalActive}</div>
               <div className="eyebrow text-muted text-[11px] mt-1">{lang === "ur" ? "فعال آپریشنز" : "Active Operations"}</div>
@@ -484,6 +576,31 @@ export default function RescueDashboard() {
               {/* Risk-Based Prioritization & Filter Toolbar */}
               <div className="dashboard-card p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
+                  {/* Scope Switcher */}
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-ink border border-white/15">
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter("my")}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-all ${
+                        scopeFilter === "my"
+                          ? "bg-teal-500 text-ink shadow-sm"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      🎯 {lang === "ur" ? `میرے مشنز (${myActiveCount})` : `My Missions (${myActiveCount})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter("all")}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                        scopeFilter === "all"
+                          ? "bg-teal-500 text-ink shadow-sm"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      🌐 {lang === "ur" ? `تمام آپریشنز (${totalActive})` : `All Operations (${totalActive})`}
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted font-medium">{lang === "ur" ? "خطرے کی ترجیح:" : "Risk Priority:"}</span>
                     {["All", "High", "Medium", "Low"].map((level) => (
@@ -532,15 +649,39 @@ export default function RescueDashboard() {
                 </div>
               ) : activeOperations.length === 0 ? (
                 <div className="dashboard-card p-12 text-center text-muted">
-                  <p className="text-base text-parchment mb-2">{lang === "ur" ? "موجودہ فلٹرز سے مطابقت رکھنے والا کوئی فعال ریسکیو آپریشن موجود نہیں۔" : "No active rescue operations matching current filters."}</p>
-                  <p className="text-xs max-w-md mx-auto">{lang === "ur" ? "ریسکیو آپریشنز سرکاری اہلکار یا ایڈمن اپنے ڈیش بورڈز سے بناتے اور تفویض کرتے ہیں۔" : "Rescue operations are created and assigned by the Government Official or Admin from their respective dashboards."}</p>
+                  <div className="text-4xl mb-3">{scopeFilter === "my" ? "🛡️" : "📋"}</div>
+                  <p className="text-base font-semibold text-parchment mb-2">
+                    {scopeFilter === "my"
+                      ? (lang === "ur" ? `کوئی مشن تفویض نہیں ہے، ${currentUserName || "ریسکیو ورکر"}` : `No Missions Assigned to You, ${currentUserName || "Rescue Worker"}`)
+                      : (lang === "ur" ? "موجودہ فلٹرز سے مطابقت رکھنے والا کوئی فعال ریسکیو آپریشن موجود نہیں۔" : "No active rescue operations matching current filters.")}
+                  </p>
+                  <p className="text-xs max-w-md mx-auto mb-4">
+                    {scopeFilter === "my"
+                      ? (lang === "ur" ? "جب سرکاری اہلکار کوئی آپریشن آپ کے نام پر تفویض کریں گے تو وہ یہاں ظاہر ہوگا۔ آپ نیچے دیے گئے بٹن سے تمام ٹیم آپریشنز دیکھ سکتے ہیں۔" : "When a Government Official or Admin assigns an operation to your name, it will appear here immediately. You can view all team operations below.")
+                      : (lang === "ur" ? "ریسکیو آپریشنز سرکاری اہلکار یا ایڈمن اپنے ڈیش بورڈز سے بناتے اور تفویض کرتے ہیں۔" : "Rescue operations are created and assigned by the Government Official or Admin from their respective dashboards.")}
+                  </p>
+                  {scopeFilter === "my" && totalActive > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setScopeFilter("all")}
+                      className="btn-secondary text-xs py-2 px-4 inline-flex items-center gap-1.5"
+                    >
+                      🌐 {lang === "ur" ? `تمام ٹیم آپریشنز دیکھیں (${totalActive})` : `View All Team Operations (${totalActive})`}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {activeOperations.map((op) => (
+                  {activeOperations.map((op) => {
+                    const assignedToMe = isAssignedToMe(op);
+                    return (
                     <div
                       key={op.id}
-                      className={`dashboard-card p-5 border-l-4 ${
+                      className={`dashboard-card p-5 border-l-4 transition-all duration-200 ${
+                        assignedToMe
+                          ? "ring-1 ring-emerald-500/50 bg-gradient-to-r from-emerald-950/20 via-ink-soft to-ink shadow-lg shadow-emerald-950/30"
+                          : ""
+                      } ${
                         op.risk_level === "High" ? "border-l-red-500" :
                         op.risk_level === "Medium" ? "border-l-yellow-500" :
                         "border-l-green-500"
@@ -552,6 +693,18 @@ export default function RescueDashboard() {
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
                             <span className="text-xs text-muted font-mono">#{op.id}</span>
                             <h3 className="font-semibold text-white text-lg">{op.location}</h3>
+
+                            {/* Personal Assignment Badge */}
+                            {assignedToMe ? (
+                              <span className="text-xs px-2.5 py-0.5 rounded-full border font-bold bg-emerald-500/25 border-emerald-400 text-emerald-300 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                ⭐ {lang === "ur" ? "آپ کو تفویض کردہ" : "Assigned to You"}
+                              </span>
+                            ) : (
+                              <span className="text-xs px-2 py-0.5 rounded-full border border-white/10 text-muted bg-white/5">
+                                👥 {lang === "ur" ? "ٹیم مشن" : "Team Mission"}
+                              </span>
+                            )}
 
                             {/* Status Badge */}
                             <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${
@@ -636,7 +789,8 @@ export default function RescueDashboard() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
