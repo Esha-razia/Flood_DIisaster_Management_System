@@ -78,14 +78,29 @@ export default function GovDashboard() {
 
 
   const fetchRescueWorkers = async () => {
+    let found = [];
     try {
       const res = await axios.get(`${API_BASE}/users`);
-      setRescueWorkers((res.data || []).filter((u) => u.role === "rescue_worker"));
+      found = (res.data || [])
+        .filter((u) => u.role === "rescue_worker")
+        .map((u) => ({ ...u, status: u.status || "Active" }));
     } catch (err) { console.error(err); }
     try {
       const res = await axios.get(`${API_BASE}/rescue-operations/workers`);
-      setMultiWorkerEnabled(Boolean(res.data?.multi_worker_enabled));
-    } catch (err) { setMultiWorkerEnabled(false); }
+      setMultiWorkerEnabled(Boolean(res.data?.multi_worker_enabled !== false));
+      if (res.data?.workers && res.data.workers.length > 0) {
+        if (found.length === 0) {
+          found = res.data.workers.map((w) => ({
+            id: w.id || w.name,
+            name: w.name,
+            email: w.email || "",
+            role: "rescue_worker",
+            status: "Active"
+          }));
+        }
+      }
+    } catch (err) { setMultiWorkerEnabled(true); }
+    setRescueWorkers(found);
   };
 
   const refreshRescueData = async () => {
@@ -1023,7 +1038,7 @@ export default function GovDashboard() {
                             className="field-input text-sm"
                           >
                             <option value="">{t("selectRescueWorker")}</option>
-                            {rescueWorkers.filter((worker) => worker.status === "Active" && !activeWorkerNames.has(worker.name.toLowerCase())).map((worker) => (
+                            {rescueWorkers.filter((worker) => (!worker.status || worker.status.toLowerCase() === "active") && !activeWorkerNames.has(worker.name.toLowerCase())).map((worker) => (
                               <option key={worker.id} value={worker.name}>{worker.name} ({worker.email})</option>
                             ))}
                           </select>
@@ -1132,7 +1147,7 @@ export default function GovDashboard() {
                   <p className="text-xs text-muted">
                     {lang === "ur" ? "ریسکیو ورکرز منتخب کریں" : "Select rescue workers"}{!multiWorkerEnabled && (lang === "ur" ? " (ایک ورکر منتخب کریں)" : " (choose one)")}
                   </p>
-                  {rescueWorkers.filter((worker) => worker.status === "Active").map((worker) => {
+                  {rescueWorkers.filter((worker) => (!worker.status || worker.status.toLowerCase() === "active")).map((worker) => {
                     const busy = activeWorkerNames.has(worker.name.toLowerCase());
                     const checked = operationForm.worker_names.includes(worker.name);
                     return (
@@ -1266,7 +1281,7 @@ export default function GovDashboard() {
                       ? operation.assigned_team.split(", ").map((name) => ({ name }))
                       : []);
                     const available = rescueWorkers.filter((worker) =>
-                      worker.status === "Active" && !activeWorkerNames.has(String(worker.name).toLowerCase()));
+                      (!worker.status || worker.status.toLowerCase() === "active") && !activeWorkerNames.has(String(worker.name).toLowerCase()));
                     return (
                       <div className="mb-5 rounded-lg border border-white/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-muted mb-2">{lang === "ur" ? "ٹیم منظم کریں" : "Manage Team"}</p>
