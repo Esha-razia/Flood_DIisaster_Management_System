@@ -1039,11 +1039,26 @@ def _send_via_brevo_api(recipient: str, subject: str, body: str, api_key: str, s
     import urllib.error
     import json as _json
 
+    # HTML template helps prevent Gmail from marking the email as spam/phishing
+    html_body = f"""<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 20px; margin: 0;">
+  <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 24px; border: 1px solid #e2e8f0;">
+    <h2 style="color: #0d9488; margin-top: 0;">Flood Disaster Management System</h2>
+    <p style="font-size: 15px; color: #334155;">{body.replace(chr(10), '<br>')}</p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">This is an automated security message. Please do not reply directly.</p>
+  </div>
+</body>
+</html>"""
+
     payload = _json.dumps({
         "sender": {"name": "Flood Disaster Management System", "email": sender_email},
         "to": [{"email": recipient}],
+        "replyTo": {"name": "Flood Disaster Support", "email": sender_email},
         "subject": subject,
         "textContent": body,
+        "htmlContent": html_body,
     }).encode("utf-8")
 
     req = urllib.request.Request(
@@ -1058,8 +1073,14 @@ def _send_via_brevo_api(recipient: str, subject: str, body: str, api_key: str, s
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
+            resp_body = resp.read().decode("utf-8", errors="replace")
             if resp.status not in (200, 201):
-                raise RuntimeError(f"Brevo API returned HTTP {resp.status}")
+                raise RuntimeError(f"Brevo API returned HTTP {resp.status}: {resp_body}")
+            try:
+                msg_data = _json.loads(resp_body)
+                log_event("info", f"Email accepted by Brevo for {recipient}: messageId={msg_data.get('messageId')}")
+            except Exception:
+                pass
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"Brevo API HTTP error {exc.code}: {exc.read().decode(errors='replace')}") from exc
 
