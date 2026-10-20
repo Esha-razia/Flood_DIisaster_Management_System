@@ -1016,8 +1016,7 @@ REGISTRATION_VERIFICATIONS = {}  # email -> {"token": ..., "expires": ..., "user
 
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
 
-import base64
-
+# --------------- .env auto-loader (local dev only) ---------------
 _ENV_FILE = os.path.join(os.path.dirname(__file__), ".env")
 if os.path.exists(_ENV_FILE):
     try:
@@ -1033,22 +1032,61 @@ if os.path.exists(_ENV_FILE):
     except Exception:
         pass
 
-_DEFAULT_SMTP_PASS = base64.b64decode(b"eHNtdHBzaWItOTRiZTFhNGJkODFhNTlhYjlkOWU2NmRkNWI3ZWY3NzcwNTllNzNjZjgzYmRhMmZlOTM2ZjI5M2JhZDc1M2ZhYS1pT3dWMUVUNmRVdGRKaFhK").decode()
+
+def _send_via_brevo_api(recipient: str, subject: str, body: str, api_key: str, sender_email: str) -> None:
+    """Send a transactional email via Brevo HTTPS API (port 443 — works on Render free tier)."""
+    import urllib.request
+    import urllib.error
+    import json as _json
+
+    payload = _json.dumps({
+        "sender": {"name": "Flood Disaster Management System", "email": sender_email},
+        "to": [{"email": recipient}],
+        "subject": subject,
+        "textContent": body,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "api-key": api_key,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"Brevo API returned HTTP {resp.status}")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Brevo API HTTP error {exc.code}: {exc.read().decode(errors='replace')}") from exc
 
 
-def _send_verification_email(recipient, subject, body):
-    smtp_host = (os.environ.get("SMTP_HOST") or "smtp-relay.brevo.com").strip()
-    smtp_user = (os.environ.get("SMTP_USER") or "be4a62001@smtp-brevo.com").strip()
-    smtp_password = (os.environ.get("SMTP_PASSWORD") or _DEFAULT_SMTP_PASS).replace(" ", "")
+def _send_verification_email(recipient: str, subject: str, body: str) -> None:
+    """Send email via Brevo HTTPS API (primary) or SMTP fallback (local dev)."""
     smtp_from = (os.environ.get("SMTP_FROM") or "fdmsproject123@gmail.com").strip()
+
+    # Primary: Brevo HTTPS Transactional API (works on Render free tier)
+    brevo_api_key = os.environ.get("BREVO_API_KEY", "").strip()
+    if brevo_api_key:
+        _send_via_brevo_api(recipient, subject, body, brevo_api_key, smtp_from)
+        return
+
+    # Fallback: SMTP (works locally; Render free tier blocks port 587)
+    smtp_host = os.environ.get("SMTP_HOST", "smtp-relay.brevo.com").strip()
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "").replace(" ", "")
     try:
         smtp_port = int(os.environ.get("SMTP_PORT") or "587")
     except ValueError:
         smtp_port = 587
-    if not smtp_host or not smtp_user or not smtp_password or not smtp_from:
+
+    if not smtp_user or not smtp_password:
         raise RuntimeError(
-            "Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, "
-            "SMTP_PASSWORD and SMTP_FROM before using verification."
+            "Email service is not configured. Set BREVO_API_KEY (preferred) or "
+            "SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SMTP_FROM."
         )
 
     message = EmailMessage()
@@ -1277,10 +1315,7 @@ def request_registration_verification():
 
     if email_sent:
         return jsonify({"message": "A verification code was sent to your email."})
-    return jsonify({
-        "message": f"Verification code: {token} (Please enter this code to complete registration)",
-        "verification_token": token
-    })
+    return jsonify({"message": "We could not send the verification email. Please try again later."}), 503
 
 # ---------------- LOGIN ----------------
 @app.route("/login", methods=["POST"])
@@ -1606,10 +1641,7 @@ def forgot_password():
 
     if email_sent:
         return jsonify({"message": "A password reset code was sent to your email."})
-    return jsonify({
-        "message": f"Verification code: {token} (Please enter this code to reset your password)",
-        "reset_token": token
-    })
+    return jsonify({"message": "We could not send the password reset email. Please try again later."}), 503
 
 @app.route("/reset-password", methods=["POST"])
 def reset_password():
