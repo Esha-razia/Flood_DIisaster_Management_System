@@ -251,15 +251,16 @@ export default function Navbar() {
   }, [isAuthenticated, refresh]);
 
   useEffect(() => {
-    recentAlerts.forEach(item => {
-      if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at && seenVersions[`alert-${item.id}`] !== alertVersion(item)) {
+    (recentAlerts || []).forEach(item => {
+      const isUnread = !isItemRead({ uniqueId: `alert-${item.id}`, ...item });
+      if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at && isUnread) {
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification(`${item.risk_level} flood risk — ${item.location}`, { body: item.message });
         }
       }
       versions.current.set(item.id, item.updated_at);
     });
-  }, [recentAlerts]);
+  }, [recentAlerts, isItemRead]);
 
   const saveAlert = async (event) => {
     event.preventDefault();
