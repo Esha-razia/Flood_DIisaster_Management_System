@@ -3174,19 +3174,94 @@ def delete_hospital(hospital_id):
             print("Failed to delete hospital from database:", e)
     return jsonify({"message": "Hospital deleted successfully"})
 
-MEMORY_COMMUNITY_REPORTS = []
+MEMORY_COMMUNITY_REPORTS = [
+    {
+        "id": 1004,
+        "trackingId": "FMS-1004",
+        "location": "Chowk Azam",
+        "region": "Punjab",
+        "type": "Flooding",
+        "severity": "Medium",
+        "status": "Action Taken",
+        "authorName": "Nida",
+        "authorEmail": "nida@example.com",
+        "description": "Street water accumulation near market area. Drainage channels partly blocked.",
+        "contact": "03001234504",
+        "latitude": 30.9575,
+        "longitude": 70.9632,
+        "imageUrl": "",
+        "notes": "Rescue team dispatched for drainage inspection.",
+        "createdAt": "2026-10-18T10:30:00Z",
+        "confirmedBy": [],
+        "linked_rescue_op_id": None,
+    },
+    {
+        "id": 1003,
+        "trackingId": "FMS-1003",
+        "location": "Chowk Azam",
+        "region": "Punjab",
+        "type": "Flooding",
+        "severity": "Medium",
+        "status": "Resolved",
+        "authorName": "Zain",
+        "authorEmail": "zain@example.com",
+        "description": "Drainage backup cleared after water pumping operation completed.",
+        "contact": "03001234503",
+        "latitude": 30.9620,
+        "longitude": 70.9590,
+        "imageUrl": "",
+        "notes": "Culvert unblocked, water drained safely.",
+        "createdAt": "2026-10-17T14:15:00Z",
+        "confirmedBy": [],
+        "linked_rescue_op_id": None,
+    },
+    {
+        "id": 1002,
+        "trackingId": "FMS-1002",
+        "location": "Chowk Azam",
+        "region": "Punjab",
+        "type": "Flooding",
+        "severity": "High",
+        "status": "Resolved",
+        "authorName": "Ahmed",
+        "authorEmail": "ahmed@example.com",
+        "description": "Rising flood water near residential area. 14 residents evacuated safely.",
+        "contact": "03001234502",
+        "latitude": 30.9550,
+        "longitude": 70.9680,
+        "imageUrl": "",
+        "notes": "Evacuation completed, shelter provided.",
+        "createdAt": "2026-10-16T18:45:00Z",
+        "confirmedBy": [],
+        "linked_rescue_op_id": 1,
+    },
+    {
+        "id": 1001,
+        "trackingId": "FMS-1001",
+        "location": "Chowk Azam",
+        "region": "Punjab",
+        "type": "Flooding",
+        "severity": "High",
+        "status": "Resolved",
+        "authorName": "Ali",
+        "authorEmail": "ali@example.com",
+        "description": "River overflow warning for nearby houses. Sandbags placed along perimeter.",
+        "contact": "03001234501",
+        "latitude": 30.9600,
+        "longitude": 70.9650,
+        "imageUrl": "",
+        "notes": "Perimeter stabilized, water receded.",
+        "createdAt": "2026-10-15T09:20:00Z",
+        "confirmedBy": [],
+        "linked_rescue_op_id": 2,
+    },
+]
 
 @app.route("/community-reports", methods=["GET"])
 def get_community_reports():
-    # Previously this appended DB rows on top of MEMORY_COMMUNITY_REPORTS with
-    # no de-duplication — and since a freshly-created report's memory copy and
-    # database row didn't share the same id (see the old create_community_report),
-    # the exact same report showed up twice, sometimes with two different
-    # statuses depending on which copy a later action happened to update.
-    # Ids are now kept in sync at creation time (see below), so a simple
-    # "skip if already seen" here is enough to guarantee one entry per report.
     data = list(MEMORY_COMMUNITY_REPORTS)
     seen_ids = {r["id"] for r in data}
+    seen_tracking = {r.get("trackingId") for r in data if r.get("trackingId")}
     email_filter = (request.args.get("email") or "").strip().lower()
     if DB_AVAILABLE:
         try:
@@ -3194,7 +3269,7 @@ def get_community_reports():
                                author_name, author_email, description, contact, latitude, longitude, image_url, notes, created_at, linked_rescue_op_id
                                FROM community_reports ORDER BY created_at DESC""")
             for row in cursor.fetchall():
-                if row.id in seen_ids:
+                if row.id in seen_ids or row.tracking_id in seen_tracking:
                     continue
                 data.append({
                     "id": row.id, "trackingId": row.tracking_id, "location": row.location,
@@ -3206,6 +3281,8 @@ def get_community_reports():
                     "confirmedBy": [],
                 })
                 seen_ids.add(row.id)
+                if row.tracking_id:
+                    seen_tracking.add(row.tracking_id)
         except Exception as e:
             print("COMMUNITY REPORTS DB ERROR:", e)
     if request.path == '/community-reports':

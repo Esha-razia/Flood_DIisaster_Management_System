@@ -41,18 +41,83 @@ def db():
     connection.row_factory = sqlite3.Row
     connection.execute('CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)')
     connection.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER NOT NULL, action TEXT NOT NULL, timestamp TEXT NOT NULL, actor TEXT NOT NULL, payload TEXT NOT NULL)')
-    # Remove only the exact legacy demo alerts; retain real alerts and history.
-    demo_messages = {
-        "High flood risk detected in Karachi Eastern District. Heavy monsoon rainfall causing localized urban flooding. Immediate evacuation recommended.",
-        "Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.",
-        "Flash flood advisory active for Sukkur Barrage catchment area. Continuous monitoring and emergency response teams deployed."
-    }
+    DEFAULT_SEED_ALERTS = [
+        {
+            "message": "High flood risk detected in Karachi Eastern District. Heavy monsoon rainfall causing localized urban flooding. Immediate evacuation and response recommended.",
+            "risk": "High",
+            "risk_level": "High",
+            "location": "Karachi Eastern District",
+            "status": "Active",
+            "assigned_worker": None,
+            "linked_rescue_op_id": None,
+            "source": "automatic",
+        },
+        {
+            "message": "Flash flood advisory active for Sukkur Barrage catchment area. Continuous monitoring and emergency response teams deployed.",
+            "risk": "High",
+            "risk_level": "High",
+            "location": "Sukkur Barrage",
+            "status": "Active",
+            "assigned_worker": None,
+            "linked_rescue_op_id": None,
+            "source": "automatic",
+        },
+        {
+            "message": "Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.",
+            "risk": "Medium",
+            "risk_level": "Medium",
+            "location": "Hyderabad Indus basin",
+            "status": "Active",
+            "assigned_worker": None,
+            "linked_rescue_op_id": None,
+            "source": "automatic",
+        },
+        {
+            "message": "High flood risk alert for Chowk Azam low-lying communities following river surge.",
+            "risk": "High",
+            "risk_level": "High",
+            "location": "Chowk Azam",
+            "status": "Active",
+            "assigned_worker": None,
+            "linked_rescue_op_id": None,
+            "source": "automatic",
+        },
+        {
+            "message": "Hill torrent surge warning for Dera Ghazi Khan foothill settlements.",
+            "risk": "High",
+            "risk_level": "High",
+            "location": "Dera Ghazi Khan",
+            "status": "Active",
+            "assigned_worker": None,
+            "linked_rescue_op_id": None,
+            "source": "automatic",
+        },
+    ]
+
     with connection:
-        for row in connection.execute('SELECT id, payload FROM alerts').fetchall():
-            record = json.loads(row['payload'])
-            if record.get('source') == 'automatic' and record.get('message') in demo_messages:
-                connection.execute('DELETE FROM history WHERE alert_id=?', (row['id'],))
-                connection.execute('DELETE FROM alerts WHERE id=?', (row['id'],))
+        # Check active Medium/High alerts count
+        active_count = 0
+        for row in connection.execute('SELECT payload FROM alerts').fetchall():
+            try:
+                rec = json.loads(row['payload'])
+                if rec.get('status') == 'Active' and (rec.get('risk_level') in ('High', 'Medium') or rec.get('risk') in ('High', 'Medium')):
+                    active_count += 1
+            except Exception:
+                pass
+
+        if active_count == 0:
+            stamp = now()
+            for item in DEFAULT_SEED_ALERTS:
+                record = dict(item)
+                record['created_at'] = stamp
+                record['updated_at'] = stamp
+                cur = connection.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',))
+                record['id'] = cur.lastrowid
+                connection.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(record), record['id']))
+                connection.execute(
+                    'INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)',
+                    (record['id'], 'created', stamp, 'System', json.dumps(record))
+                )
     try:
         with connection:
             yield connection
