@@ -217,7 +217,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   }, []);
 
   useEffect(() => {
-    const tick = setInterval(() => setNowTick(Date.now()), 1000);
+    const tick = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(tick);
   }, []);
 

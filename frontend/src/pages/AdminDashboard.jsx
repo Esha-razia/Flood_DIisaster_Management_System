@@ -149,18 +149,23 @@ export default function AdminDashboard() {
 
   const fetchAllData = async () => {
     setLoading(true);
-    await Promise.all([
-      fetchUsers(),
-      fetchAlerts(),
-      fetchPredictions(),
-      fetchShelters(),
-      fetchHospitals(),
-      fetchCommunityReports(),
-      fetchRescueOps(),
-      fetchAccuracyHistory(),
-      fetchConfidenceTrend(),
-    ]);
-    setLoading(false);
+    const fallbackTimer = setTimeout(() => setLoading(false), 1500);
+    try {
+      await Promise.all([
+        fetchUsers(),
+        fetchAlerts(),
+        fetchPredictions(),
+        fetchShelters(),
+        fetchHospitals(),
+        fetchCommunityReports(),
+        fetchRescueOps(),
+        fetchAccuracyHistory(),
+        fetchConfidenceTrend(),
+      ]);
+    } finally {
+      clearTimeout(fallbackTimer);
+      setLoading(false);
+    }
   };
 
   const fetchUsers = async () => {

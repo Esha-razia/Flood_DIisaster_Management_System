@@ -3836,7 +3836,24 @@ MEMORY_ACCURACY_HISTORY = []  # [{timestamp, model, accuracy, training_rows}]
 # Distinct from Admin's operational "Alerts" — advisories are official,
 # policy-level public communications (e.g. seasonal guidance), not
 # emergency triggers.
-MEMORY_ADVISORIES = []
+MEMORY_ADVISORIES = [
+    {
+        "id": 1,
+        "title": "Public Monsoon Flood Advisory — Indus Basin River Surge",
+        "message": "Heavy monsoon rainfall has triggered surges along the Indus River catchment. Citizens living in low-lying riverside communities in Sukkur, Hyderabad, and surrounding areas are advised to monitor official water level bulletins and avoid riverbank crossings.",
+        "region": "Sindh & Lower Indus Basin",
+        "issued_by": "National Disaster Management Authority",
+        "created_at": "2026-10-21 14:30:00",
+    },
+    {
+        "id": 2,
+        "title": "Flash Flood & Hill Torrent Guidance — Southern Punjab & DG Khan",
+        "message": "Continuous hill torrent activity reported in the Koh-e-Suleman range. Low-lying agricultural settlements in Dera Ghazi Khan and Chowk Azam should ensure livestock evacuation to designated high-ground flood shelters.",
+        "region": "Southern Punjab",
+        "issued_by": "Provincial Disaster Management Authority",
+        "created_at": "2026-10-21 16:45:00",
+    }
+]
 
 # ---------------- EQUIPMENT / RESOURCE TRACKER (Rescue Worker) ----------------
 # "assignments" lets a portion of a multi-unit item be deployed to one

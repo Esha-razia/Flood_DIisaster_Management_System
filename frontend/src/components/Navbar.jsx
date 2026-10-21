@@ -91,8 +91,47 @@ export default function Navbar() {
       }
       setError('');
       if (userRole === 'citizen') {
-        const notes = await axios.get(`${API_BASE}/advisory-notifications`).catch(() => ({ data: [] }));
-        setAdvisoryNotes(notes.data || []);
+        try {
+          const notesRes = await axios.get(`${API_BASE}/advisory-notifications`, {
+            headers: {
+              'X-FMS-Actor-Role': 'citizen',
+              'X-FMS-Actor-Email': localStorage.getItem('userEmail') || 'citizen@example.com'
+            },
+            timeout: 6000
+          });
+          const fetchedNotes = Array.isArray(notesRes.data) ? notesRes.data : [];
+          if (fetchedNotes.length > 0) {
+            setAdvisoryNotes(fetchedNotes);
+          } else {
+            const advRes = await axios.get(`${API_BASE}/advisories`, { timeout: 6000 });
+            const list = (advRes.data || []).map((a) => ({
+              advisory_id: a.id,
+              title: a.title,
+              message: a.message,
+              region: a.region,
+              issued_by: a.issued_by,
+              created_at: a.created_at,
+              read: false,
+            }));
+            setAdvisoryNotes(list);
+          }
+        } catch {
+          try {
+            const advRes = await axios.get(`${API_BASE}/advisories`, { timeout: 6000 });
+            const list = (advRes.data || []).map((a) => ({
+              advisory_id: a.id,
+              title: a.title,
+              message: a.message,
+              region: a.region,
+              issued_by: a.issued_by,
+              created_at: a.created_at,
+              read: false,
+            }));
+            setAdvisoryNotes(list);
+          } catch {
+            setAdvisoryNotes([]);
+          }
+        }
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Could not load alerts.');
