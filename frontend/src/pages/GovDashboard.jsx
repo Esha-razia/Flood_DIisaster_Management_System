@@ -883,45 +883,81 @@ export default function GovDashboard() {
             {filteredCommunityReports.length === 0 ? (
               <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02]">
+                <table className="w-full text-left text-sm border-collapse min-w-[820px]">
                   <thead>
-                    <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-3">Tracking ID</th>
-                      <th className="pb-3">Location</th>
-                      <th className="pb-3">Severity</th>
-                      <th className="pb-3">Status</th>
-                      <th className="pb-3">Submitted by</th>
-                      <th className="pb-3">Actions</th>
+                    <tr className="border-b border-white/15 text-muted text-xs uppercase tracking-wider font-semibold">
+                      <th scope="col" className="py-3 px-4 font-semibold w-[120px] whitespace-nowrap">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
+                      <th scope="col" className="py-3 px-4 font-semibold min-w-[170px] max-w-[240px]">{lang === "ur" ? "مقام" : "Location"}</th>
+                      <th scope="col" className="py-3 px-4 font-semibold w-[110px] whitespace-nowrap">{lang === "ur" ? "شدت" : "Severity"}</th>
+                      <th scope="col" className="py-3 px-4 font-semibold w-[130px] whitespace-nowrap">{lang === "ur" ? "حیثیت" : "Status"}</th>
+                      <th scope="col" className="py-3 px-4 font-semibold w-[140px] whitespace-nowrap">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
+                      <th scope="col" className="py-3 px-4 font-semibold text-right min-w-[280px] whitespace-nowrap">{lang === "ur" ? "اقدامات" : "Actions"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {filteredCommunityReports.map((report) => (
                       <Fragment key={report.id}>
-                        <tr>
-                          <td className="py-3 text-white">{report.trackingId}</td>
-                          <td className="py-3 text-muted">{report.location}</td>
-                          <td className="py-3 text-muted">{report.severity}</td>
-                          <td className="py-3">
-                            <span className={`rounded-full border px-2.5 py-1 text-xs ${
-                              report.status === "Resolved"
-                                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                                  : "border-white/10 bg-white/5 text-muted"
-                            }`}>{report.status}</span>
+                        <tr className="hover:bg-white/[0.025] transition-colors">
+                          <td className="py-3 px-4 font-mono text-xs font-semibold text-white whitespace-nowrap align-middle">
+                            {report.trackingId}
                           </td>
-                          <td className="py-3 text-muted">{report.authorName}</td>
-                          <td className="py-3">
-                            <div className="flex flex-wrap gap-2">
+                          <td className="py-3 px-4 text-xs text-parchment/90 min-w-[170px] max-w-[240px] break-words leading-relaxed align-middle">
+                            {report.location}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap align-middle">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${
+                              report.severity === "High"
+                                ? "border-red-500/40 bg-red-500/15 text-red-300"
+                                : report.severity === "Medium"
+                                  ? "border-yellow-500/40 bg-yellow-500/15 text-yellow-300"
+                                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                report.severity === "High" ? "bg-red-400" : report.severity === "Medium" ? "bg-yellow-400" : "bg-emerald-400"
+                              }`} />
+                              {t(SEVERITY_KEY_MAP[report.severity] || report.severity)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap align-middle">
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                              report.status === "Resolved"
+                                ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                : report.status === "Action Taken"
+                                  ? "border-blue-400/40 bg-blue-400/10 text-blue-300"
+                                  : "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                            }`}>
+                              {report.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-xs text-muted whitespace-nowrap align-middle">
+                            {report.authorName || report.authorEmail || "Anonymous"}
+                          </td>
+                          <td className="py-3 px-4 text-right whitespace-nowrap align-middle min-w-[280px]">
+                            <div className="inline-flex items-center justify-end gap-1.5">
                               <button
+                                type="button"
                                 onClick={() => setExpandedReportId((current) => current === report.id ? null : report.id)}
-                                className="btn-secondary text-xs py-1.5"
+                                className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1 text-xs font-medium text-parchment transition-all h-7"
                               >
                                 {lang === "ur" ? (expandedReportId === report.id ? "تفصیلات چھپائیں" : "تفصیلات دیکھیں") : (expandedReportId === report.id ? "Hide details" : "View details")}
                               </button>
                               {report.status !== "Resolved" && (
                                 <>
-                                  <button onClick={() => updateCommunityReport(report.id, "Action Taken")} className="btn-secondary text-xs py-1.5">{lang === "ur" ? "کارروائی کی گئی" : "Action taken"}</button>
-                                  <button onClick={() => updateCommunityReport(report.id, "Resolved")} className="btn-primary text-xs py-1.5">{lang === "ur" ? "حل کریں" : "Resolve"}</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCommunityReport(report.id, "Action Taken")}
+                                    className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1 text-xs font-medium text-parchment transition-all h-7"
+                                  >
+                                    {lang === "ur" ? "کارروائی کی گئی" : "Action taken"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCommunityReport(report.id, "Resolved")}
+                                    className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#EDB35C] to-[#E8A33D] hover:brightness-110 px-3.5 py-1 text-xs font-semibold text-ink shadow-sm transition-all h-7"
+                                  >
+                                    {lang === "ur" ? "حل کریں" : "Resolve"}
+                                  </button>
                                 </>
                               )}
                             </div>
@@ -929,18 +965,18 @@ export default function GovDashboard() {
                         </tr>
                         {expandedReportId === report.id && (
                           <tr key={`${report.id}-details`}>
-                            <td colSpan="6" className="border-b border-white/10 bg-white/[0.03] p-4">
+                            <td colSpan="6" className="border-b border-white/10 bg-white/[0.03] p-5">
                               <div className="grid gap-4 md:grid-cols-[1fr_220px]">
-                                <div className="space-y-2 text-sm">
-                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "واقعے کی قسم:" : "Incident type:"}</span> {report.type || "Flooding"}</p>
-                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "تفصیل:" : "Description:"}</span> {report.description || "No description provided."}</p>
-                                  <p className="text-white"><span className="text-muted">{lang === "ur" ? "رابطہ:" : "Contact:"}</span> {report.contact || "Not provided"}</p>
-                                  {report.notes && <p className="text-teal-300"><span className="text-muted">{lang === "ur" ? "تازہ ترین اپڈیٹ:" : "Latest update:"}</span> {report.notes}</p>}
+                                <div className="space-y-2.5 text-sm">
+                                  <p className="text-white"><span className="text-muted font-medium">{lang === "ur" ? "واقعے کی قسم:" : "Incident type:"}</span> <span className="font-semibold">{report.type || "Flooding"}</span></p>
+                                  <p className="text-white"><span className="text-muted font-medium">{lang === "ur" ? "تفصیل:" : "Description:"}</span> {report.description || "No description provided."}</p>
+                                  <p className="text-white"><span className="text-muted font-medium">{lang === "ur" ? "رابطہ:" : "Contact:"}</span> <span className="font-mono text-xs">{report.contact || "Not provided"}</span></p>
+                                  {report.notes && <p className="text-teal-300"><span className="text-muted font-medium">{lang === "ur" ? "تازہ ترین اپڈیٹ:" : "Latest update:"}</span> {report.notes}</p>}
                                 </div>
                                 {getReportImageSource(report.imageUrl) ? (
                                   <img src={getReportImageSource(report.imageUrl)} alt={`Evidence for ${report.trackingId}`} className="h-36 w-full rounded-xl border border-white/10 object-cover" />
                                 ) : (
-                                  <div className="flex h-36 items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-muted">{lang === "ur" ? "کوئی تصویر منسلک نہیں" : "No photo attached"}</div>
+                                  <div className="flex h-36 items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.01] text-xs text-muted">{lang === "ur" ? "کوئی تصویر منسلک نہیں" : "No photo attached"}</div>
                                 )}
                               </div>
                             </td>
