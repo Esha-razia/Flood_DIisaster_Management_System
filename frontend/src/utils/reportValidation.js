@@ -17,7 +17,6 @@ export function validateReportFields({location = '', description = '', contact =
   else if (!/^\p{L}/u.test(text) || /^[a-z]/.test(text)) errors.description = 'Start the description with a capital letter.';
   if (!/^03\d{9}$/.test(contact.trim())) errors.contact = 'Enter an 11-digit mobile number, e.g. 03001234567.';
   if (!['Low','Medium','High'].includes(severity)) errors.severity = 'Select a severity.';
-  if (!(imageUrl || imagePreview)) errors.image = 'Upload a JPG, PNG, WebP or GIF image (maximum 50 MB).';
   return errors;
 }
 export function reportImageError(file) {

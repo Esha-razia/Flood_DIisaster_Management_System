@@ -480,17 +480,6 @@ export default function RescueDashboard() {
               >
                 🎯 {lang === "ur" ? `میرے تفویض کردہ مشنز (${myActiveCount})` : `My Assigned Missions (${myActiveCount})`}
               </button>
-              <button
-                type="button"
-                onClick={() => setScopeFilter("all")}
-                className={`text-xs px-3.5 py-2 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
-                  scopeFilter === "all"
-                    ? "bg-teal-500 text-ink shadow-lg shadow-teal-500/30 font-black scale-105"
-                    : "bg-white/5 text-muted hover:text-white border border-white/10"
-                }`}
-              >
-                🌐 {lang === "ur" ? `تمام ٹیم آپریشنز (${totalActive})` : `All Team Operations (${totalActive})`}
-              </button>
             </div>
           </div>
 

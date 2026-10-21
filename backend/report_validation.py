@@ -19,19 +19,21 @@ def validate_report(data):
         errors['contact'] = 'Enter an 11-digit mobile number, e.g. 03001234567.'
     if data.get('severity', 'High') not in ('Low', 'Medium', 'High'):
         errors['severity'] = 'Select a valid severity.'
-    try:
-        header, encoded = (data.get('imageUrl') or '').split(',', 1)
-        formats = {'data:image/jpeg;base64':'JPEG', 'data:image/png;base64':'PNG',
-                   'data:image/webp;base64':'WEBP', 'data:image/gif;base64':'GIF'}
-        if header not in formats or len(encoded) > 4 * ((50 * 1024 * 1024 + 2)//3):
-            raise ValueError()
-        raw = base64.b64decode(encoded, validate=True)
-        if len(raw) > 50 * 1024 * 1024:
-            raise ValueError()
-        with Image.open(io.BytesIO(raw)) as image:
-            if image.format != formats[header]:
+    image_data = str(data.get('imageUrl') or '').strip()
+    if image_data:
+        try:
+            header, encoded = image_data.split(',', 1)
+            formats = {'data:image/jpeg;base64':'JPEG', 'data:image/png;base64':'PNG',
+                       'data:image/webp;base64':'WEBP', 'data:image/gif;base64':'GIF'}
+            if header not in formats or len(encoded) > 4 * ((50 * 1024 * 1024 + 2)//3):
                 raise ValueError()
-            image.verify()
-    except Exception:
-        errors['image'] = 'Upload a valid JPG, PNG, WebP or GIF image (maximum 50 MB).'
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > 50 * 1024 * 1024:
+                raise ValueError()
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.format != formats[header]:
+                    raise ValueError()
+                image.verify()
+        except Exception:
+            errors['image'] = 'Upload a valid JPG, PNG, WebP or GIF image (maximum 50 MB).'
     return errors
