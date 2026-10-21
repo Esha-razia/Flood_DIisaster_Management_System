@@ -39,20 +39,58 @@ function statusStyles(value) {
   return "bg-white/10 text-muted border-white/20";
 }
 
+// Session storage caching for fast page navigation between Community and Map
+const getCachedReports = (key) => {
+  try {
+    const val = sessionStorage.getItem(`fms-cache-reports:${key}`);
+    return val ? JSON.parse(val) : null;
+  } catch { return null; }
+};
+const setCachedReports = (key, data) => {
+  try {
+    sessionStorage.setItem(`fms-cache-reports:${key}`, JSON.stringify(data));
+  } catch {}
+};
+const getCachedStats = () => {
+  try {
+    const val = sessionStorage.getItem('fms-cache-community-stats');
+    return val ? JSON.parse(val) : null;
+  } catch { return null; }
+};
+const setCachedStats = (data) => {
+  try {
+    sessionStorage.setItem('fms-cache-community-stats', JSON.stringify(data));
+  } catch {}
+};
+
 export default function Community() {
   const { t, lang } = useLanguage();
   const routerLocation = useLocation();
   const [advisories, setAdvisories] = useState([]);
   const [selectedAdvisory, setSelectedAdvisory] = useState(null);
   const advisoryIdParam = new URLSearchParams(routerLocation.search).get("advisory");
-  const [reports, setReports] = useState([]);
-  const [systemStats, setSystemStats] = useState(null);
+  const userRole = localStorage.getItem("userRole");
+  const userName = localStorage.getItem("userName");
+  const userEmail = localStorage.getItem("userEmail");
+  const isCitizen = userRole === "citizen";
+  const isGovernmentOfficial = userRole === "government_official";
+  const isReviewer = ["admin", "rescue_worker", "government_official"].includes(userRole);
+
+  const userCacheKey = (userEmail || userRole || 'guest').toLowerCase();
+  const cachedInitialReports = getCachedReports(userCacheKey);
+  const cachedInitialStats = getCachedStats();
+
+  const [reports, setReports] = useState(() => cachedInitialReports || []);
+  const [systemStats, setSystemStats] = useState(() => cachedInitialStats);
+  const [loadingReports, setLoadingReports] = useState(() => !cachedInitialReports);
+  const [reportsError, setReportsError] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(() => !cachedInitialStats);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const locationEdited = useRef(false);
-  const [loadingReports, setLoadingReports] = useState(true);
-  const [formState, setFormState] = useState({ location: "", type: "Flooding", description: "", severity: "High", contact: "", imageFile: null, imagePreview: "" });
+  const [formState, setFormState] = useState({ location: "", type: "Flooding", description: "", severity: "", contact: "", imageFile: null, imagePreview: "" });
   const [formFieldErrors, setFormFieldErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const [activeReportId, setActiveReportId] = useState(() => Number(new URLSearchParams(window.location.search).get('report')) || null);
   const [toast, setToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -61,36 +99,60 @@ export default function Community() {
   const [assigningReportId, setAssigningReportId] = useState(null);
   const [assignWorkerChoice, setAssignWorkerChoice] = useState("");
 
-  const userRole = localStorage.getItem("userRole");
-  const userName = localStorage.getItem("userName");
-  const userEmail = localStorage.getItem("userEmail");
-  const isCitizen = userRole === "citizen";
-  const isGovernmentOfficial = userRole === "government_official";
-  const isReviewer = ["admin", "rescue_worker", "government_official"].includes(userRole);
+  const isFetchingReports = useRef(false);
+  const isFetchingStats = useRef(false);
 
+  // Fetch reports independently so reports render as soon as they arrive
   const fetchReports = async () => {
+    if (isFetchingReports.current) return;
+    isFetchingReports.current = true;
     try {
       const res = await axios.get(`${API_BASE}/community-reports`, {
         params: isCitizen && userEmail ? { email: userEmail } : {},
       });
-      const totals = await axios.get(`${API_BASE}/community-stats`).then(r => r.data).catch(() => null);
-      setSystemStats(totals);
       const data = res.data || [];
       setReports(data);
+      setCachedReports(userCacheKey, data);
+      setReportsError(null);
       setActiveReportId((prev) => prev ?? data[0]?.id ?? null);
     } catch (err) {
-      setSystemStats(null);
       console.error("Failed to load community reports:", err);
+      setReportsError(lang === 'ur' ? 'رپورٹس لوڈ کرنے میں ناکامی ہوئی' : 'Failed to load reports. Please try again.');
     } finally {
       setLoadingReports(false);
+      isFetchingReports.current = false;
+    }
+  };
+
+  // Fetch statistics concurrently & independently
+  const fetchStats = async () => {
+    if (isFetchingStats.current) return;
+    isFetchingStats.current = true;
+    try {
+      const res = await axios.get(`${API_BASE}/community-stats`);
+      if (res.data) {
+        setSystemStats(res.data);
+        setCachedStats(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to load community stats:", err);
+    } finally {
+      setLoadingStats(false);
+      isFetchingStats.current = false;
     }
   };
 
   useEffect(() => {
     fetchReports();
-    const interval = setInterval(() => { if (document.visibilityState !== 'hidden') fetchReports(); }, 15000); // keep the review queue live
+    fetchStats();
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        fetchReports();
+        fetchStats();
+      }
+    }, 15000); // keep the review queue live
     return () => clearInterval(interval);
-  }, []);
+  }, [userCacheKey]);
   useEffect(() => {
     if (!isReviewer) return;
     axios.get(`${API_BASE}/users`).then((res) => {
@@ -176,7 +238,8 @@ export default function Community() {
     if (field === 'description') value = capitalizeDescription(value);
     if (field === 'location') { locationEdited.current = true; setLocationStatus(''); }
     if (formFieldErrors[field]) setFormFieldErrors(prev => ({ ...prev, [field]: '' }));
-    setFormState(prev => ({ ...prev, [field]:value, ...(field === 'location' ? { latitude:null, longitude:null } : {}) }));
+    if (field === 'severity' && value) setFormFieldErrors(prev => ({ ...prev, severity: '' }));
+    setFormState(prev => ({ ...prev, [field]: value, ...(field === 'location' ? { latitude: null, longitude: null } : {}) }));
   };
   const handleFileSelect = (file) => {
     if (!file) return;
@@ -203,7 +266,7 @@ export default function Community() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const { location, description, contact, type, severity } = formState;
+    if (submitting) return;
 
     const errors = validateReportFields(formState);
     if (Object.keys(errors).length > 0) {
@@ -212,7 +275,9 @@ export default function Community() {
       return;
     }
     setFormFieldErrors({});
+    setSubmitting(true);
 
+    const { location, type, severity, description, contact } = formState;
     const region = location.includes("Sindh") ? "Sindh" : location.includes("Punjab") ? "Punjab" : location.includes("KPK") ? "KPK" : location.includes("Balochistan") ? "Balochistan" : location.includes("Gilgit") ? "Gilgit-Baltistan" : "";
 
     try {
@@ -224,15 +289,22 @@ export default function Community() {
         imageUrl: formState.imagePreview || "",
       });
       const newReport = res.data;
-      setReports((prev) => [newReport, ...prev]);
+      setReports((prev) => {
+        const next = [newReport, ...prev];
+        setCachedReports(userCacheKey, next);
+        return next;
+      });
       setActiveReportId(newReport.id);
-      setFormState(prev => ({ location:prev.location, latitude:prev.latitude, longitude:prev.longitude, type:"Flooding", description:"", severity:"High", contact:"", imageFile:null, imagePreview:"" }));
+      fetchStats();
+      setFormState(prev => ({ location: prev.location, latitude: prev.latitude, longitude: prev.longitude, type: "Flooding", description: "", severity: "", contact: "", imageFile: null, imagePreview: "" }));
       // FR06-03: acknowledgment notification on submission
       setToast({ type: "success", message: t("incidentReportSubmitted"), trackingId: newReport.trackingId, time: formatTimeStamp(newReport.createdAt) });
     } catch (err) {
       setFormFieldErrors(err.response?.data?.errors || {});
       console.error("Failed to submit report:", err);
-      setToast({ type: "error", message: t("couldNotSubmitReport"), time: new Date().toLocaleTimeString() });
+      setToast({ type: "error", message: err.response?.data?.message || t("couldNotSubmitReport"), time: new Date().toLocaleTimeString() });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -308,16 +380,16 @@ export default function Community() {
                 <div className="space-y-4">
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("activeIncidents")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.active_incidents ?? "—"}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.active_incidents ?? (loadingStats ? t("loadingDots") : "—")}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("monitoredRegions")}</p>
-                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.monitored_regions ?? "—"}</p>
+                    <p className="text-3xl font-bold text-white mt-2">{systemStats?.monitored_regions ?? (loadingStats ? t("loadingDots") : "—")}</p>
                   </div>
                   <div className="rounded-2xl bg-ink-soft/90 p-4 border border-white/5">
                     <p className="text-sm text-muted">{t("statusLabel")}</p>
                     <p className="text-lg font-semibold text-emerald-400 mt-2 flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>{systemStats ? t("live") : loadingReports ? t("loadingDots") : (lang === "ur" ? "دستیاب نہیں" : "Unavailable")}
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>{systemStats ? t("live") : loadingStats ? t("loadingDots") : (lang === "ur" ? "دستیاب نہیں" : "Unavailable")}
                     </p>
                   </div>
                 </div>
@@ -446,10 +518,22 @@ export default function Community() {
                           <span className="text-sm text-muted font-medium">
                             {t("severityLevel")} 
                           </span>
-                          <select value={formState.severity} onChange={(e) => handleFormChange("severity", e.target.value)} className={`field-input mt-2 rounded-2xl ${formFieldErrors.severity ? "border-red-500 ring-1 ring-red-500" : ""}`}>
+                          <select
+                            value={formState.severity}
+                            onChange={(e) => handleFormChange("severity", e.target.value)}
+                            className={`field-input mt-2 rounded-2xl transition-colors ${
+                              formFieldErrors.severity ? 'border-2 border-red-500 bg-red-950/20 ring-1 ring-red-500' : ''
+                            }`}
+                            required
+                          >
+                            <option value="" disabled>{lang === 'ur' ? 'شدت منتخب کریں' : 'Select severity'}</option>
                             {SEVERITY_OPTIONS.map((item) => <option key={item} value={item}>{t(SEVERITY_KEY_MAP[item])}</option>)}
                           </select>
-                          {formFieldErrors.severity && <p role="alert" className="text-xs text-red-400">{formFieldErrors.severity}</p>}
+                          {formFieldErrors.severity && (
+                            <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
+                              <span>⚠️</span> {formFieldErrors.severity}
+                            </p>
+                          )}
                         </label>
                         <label className="block">
                           <span className="text-sm text-muted font-medium">
@@ -506,7 +590,15 @@ export default function Community() {
                       )}
                     </div>
 
-                    <button type="submit" className="btn-primary w-full py-4 text-base lg:col-span-2">{t("submitIncidentReport")}</button>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className={`btn-primary w-full py-4 text-base lg:col-span-2 ${
+                        submitting ? 'opacity-60 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {submitting ? (lang === 'ur' ? 'جمع کر رہے ہیں...' : 'Submitting...') : t("submitIncidentReport")}
+                    </button>
                   </form>
                 ) : (
                   <div className="rounded-[2rem] bg-ink/80 border border-white/10 p-8 lg:p-10 text-muted">
@@ -525,7 +617,14 @@ export default function Community() {
                 <div className="rounded-[2rem] bg-gradient-to-br from-ink-soft/80 to-ink/80 border border-white/10 p-6 lg:p-8 flex-1">
                   <h4 className="font-display text-xl text-parchment mb-1">{t("myReports")}</h4>
                   <p className="text-xs text-muted mb-4">{t("myReportsDesc")}</p>
-                  {visibleReports.length === 0 ? (
+                  {reportsError && reports.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <p className="text-sm text-red-400 mb-2">{reportsError}</p>
+                      <button type="button" onClick={fetchReports} className="px-4 py-1.5 rounded-lg border border-teal-500/40 text-teal-300 text-xs hover:bg-teal-500/10 transition">{lang === 'ur' ? 'دوبارہ کوشش کریں' : 'Retry'}</button>
+                    </div>
+                  ) : loadingReports && reports.length === 0 ? (
+                    <p className="text-sm text-muted">{t("loadingReports") || "Loading reports..."}</p>
+                  ) : visibleReports.length === 0 ? (
                     <p className="text-sm text-muted">{t("noReportsSubmitted")}</p>
                   ) : (
                     <div className="grid gap-3 md:grid-cols-2 items-start">

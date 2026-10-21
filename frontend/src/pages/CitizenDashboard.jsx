@@ -610,9 +610,7 @@ export default function CitizenDashboard() {
       if (pred.input_data.soil_moisture_top !== undefined) text += `   • ${t("featSoilMoistureTop")}: ${pred.input_data.soil_moisture_top}\n`;
       if (pred.input_data.soil_7day_avg !== undefined) text += `   • ${t("featSoil7dayAvg")}: ${pred.input_data.soil_7day_avg}\n`;
     }
-    if (formData.river_level) {
-      text += `   • ${t("riverLevel")}: ${formData.river_level} (${t("riverLevelNote")})\n`;
-    }
+
     text += `\n2. ${t("mlModelPrediction")}:\n`;
     text += `   • ${t("riskLevel")}: ${riskUrdu} ${t("floodRiskWord")} (${pred.risk})\n`;
     text += `   • ${t("modelConfidenceLabel")}: ${conf}%\n`;

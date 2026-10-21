@@ -206,7 +206,7 @@ const translations = {
     rainfallPositive: "Rainfall must be a positive number", rainfallUnrealistic: "Rainfall value seems unrealistic (too high)",
     temperatureRequired: "Temperature is required", temperatureMustBeNumber: "Temperature must be a number",
     temperatureRange: "Temperature must be between -10°C and 60°C", invalidEmailFormat: "Please enter a valid email address",
-    fillRequiredFields: "Please complete all required fields before submitting.",
+    fillRequiredFields: "Please fill in all required fields.",
     locationTooShort: "Please enter a more specific location (at least 3 characters).",
     descriptionTooShort: "Please describe the incident in a bit more detail (at least 10 characters).",
     invalidPhoneFormat: "Please enter a valid Pakistani phone number (e.g. 03001234567).",

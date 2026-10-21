@@ -21,49 +21,139 @@ export default function Navbar() {
   const [draft, setDraft] = useState({ message: '', location: '', risk_level: 'Medium' });
   const versions = useRef(new Map());
   const alertsContainer = useRef(null);
-  const seenKey = `flood-alerts-seen:${localStorage.getItem('userEmail') || userRole || 'guest'}`;
-  const [seenVersions, setSeenVersions] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(seenKey) || '{}'); }
+  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [selectedAdvisoryModal, setSelectedAdvisoryModal] = useState(null);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+
+  // Per-user read state persistence across sessions and polling
+  const userKey = (localStorage.getItem('userEmail') || userRole || 'guest').toLowerCase();
+  const readKey = `flood-notifications-read:${userKey}`;
+  const [readMap, setReadMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(readKey) || '{}'); }
     catch { return {}; }
   });
-  const [showAllAlerts, setShowAllAlerts] = useState(false);
-  const dismissedKey = `flood-alerts-dismissed:${localStorage.getItem('userEmail') || userRole || 'guest'}`;
-  const [dismissedVersions, setDismissedVersions] = useState(() => {
+
+  const dismissedKey = `flood-alerts-dismissed:${userKey}`;
+  const [dismissedMap, setDismissedMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem(dismissedKey) || '{}'); }
     catch { return {}; }
   });
-  const alertVersion = item => JSON.stringify([item.updated_at, item.created_at, item.status, item.message, item.risk_level, item.location]);
-  const noteVersion = item => JSON.stringify([item.created_at, item.title, item.message]);
-  const visibleAlerts = recentAlerts.filter(item => item.status === 'Active' &&
-    (userRole !== 'citizen' || dismissedVersions[`alert-${item.id}`] !== alertVersion(item)));
-  const visibleNotes = advisoryNotes.filter(item =>
-    userRole !== 'citizen' || dismissedVersions[`advisory-${item.advisory_id}`] !== noteVersion(item));
-  const displayedAlerts = showAllAlerts ? recentAlerts.filter(item => item.status === 'Active') : visibleAlerts;
-  const displayedNotes = showAllAlerts ? advisoryNotes : visibleNotes;
-  const dismissNotifications = (items, notes = []) => {
-    setDismissedVersions(previous => {
-      const next = { ...previous };
-      items.forEach(item => { next[`alert-${item.id}`] = alertVersion(item); });
-      notes.forEach(item => { next[`advisory-${item.advisory_id}`] = noteVersion(item); });
-      localStorage.setItem(dismissedKey, JSON.stringify(next));
+
+  // Check if an item is read based on its uniqueId and updated timestamp
+  const isItemRead = useCallback((item) => {
+    const id = item.uniqueId;
+    const itemTs = item.updated_at || item.created_at;
+    if (!itemTs) return false;
+    const itemTime = new Date(itemTs).getTime();
+    const readTime = readMap[id] ? new Date(readMap[id]).getTime() : 0;
+    return readTime >= itemTime;
+  }, [readMap]);
+
+  // Mark an item as read when user clicks it to open popup
+  const markAsRead = useCallback((item) => {
+    const id = item.uniqueId;
+    const itemTs = item.updated_at || item.created_at || new Date().toISOString();
+    setReadMap(prev => {
+      const next = { ...prev, [id]: itemTs };
+      try { localStorage.setItem(readKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    if (item.type === 'advisory' && item.advisory_id) {
+      axios.post(`${API_BASE}/advisory-notifications/${item.advisory_id}/read`, {}, {
+        headers: {
+          'X-FMS-Actor-Role': 'citizen',
+          'X-FMS-Actor-Email': localStorage.getItem('userEmail') || 'citizen@example.com'
+        }
+      }).catch(() => {});
+    }
+  }, [readKey]);
+
+  // Check if an item is dismissed
+  const isItemDismissed = useCallback((item) => {
+    const id = item.uniqueId;
+    const itemTs = item.updated_at || item.created_at;
+    if (!itemTs) return false;
+    const itemTime = new Date(itemTs).getTime();
+    const dismissedTime = dismissedMap[id] ? new Date(dismissedMap[id]).getTime() : 0;
+    return dismissedTime >= itemTime;
+  }, [dismissedMap]);
+
+  const dismissNotification = useCallback((item) => {
+    const id = item.uniqueId;
+    const itemTs = item.updated_at || item.created_at || new Date().toISOString();
+    setDismissedMap(prev => {
+      const next = { ...prev, [id]: itemTs };
+      try { localStorage.setItem(dismissedKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [dismissedKey]);
+
+  const dismissAllVisible = useCallback((items) => {
+    setDismissedMap(prev => {
+      const next = { ...prev };
+      items.forEach(it => {
+        const itemTs = it.updated_at || it.created_at || new Date().toISOString();
+        next[it.uniqueId] = itemTs;
+      });
+      try { localStorage.setItem(dismissedKey, JSON.stringify(next)); } catch {}
       return next;
     });
     setShowAllAlerts(false);
-  };
-  const hasUnread = visibleAlerts.some(item => seenVersions[`alert-${item.id}`] !== alertVersion(item))
-    || visibleNotes.some(item => !item.read && seenVersions[`advisory-${item.advisory_id}`] !== noteVersion(item));
+  }, [dismissedKey]);
 
-  useEffect(() => {
-    if (!showAlertsPanel) return;
-    setSeenVersions(previous => {
-      const next = { ...previous };
-      recentAlerts.forEach(item => { next[`alert-${item.id}`] = alertVersion(item); });
-      advisoryNotes.forEach(item => { next[`advisory-${item.advisory_id}`] = noteVersion(item); });
-      localStorage.setItem(seenKey, JSON.stringify(next));
-      return next;
+  // Merge and sort alerts and advisories chronologically (newest first)
+  const allNotifications = useMemo(() => {
+    const list = [];
+    (recentAlerts || []).forEach(item => {
+      if (item.status === 'Active') {
+        list.push({
+          ...item,
+          type: 'alert',
+          uniqueId: `alert-${item.id}`,
+          timestamp: item.updated_at || item.created_at
+        });
+      }
     });
-  }, [showAlertsPanel, recentAlerts, advisoryNotes, seenKey]);
+    (advisoryNotes || []).forEach(item => {
+      list.push({
+        ...item,
+        type: 'advisory',
+        uniqueId: `advisory-${item.advisory_id || item.id}`,
+        timestamp: item.updated_at || item.created_at
+      });
+    });
 
+    // Deduplicate
+    const seen = new Set();
+    const deduped = [];
+    for (const item of list) {
+      if (!seen.has(item.uniqueId)) {
+        seen.add(item.uniqueId);
+        deduped.push(item);
+      }
+    }
+
+    // Sort newest first by actual timestamp
+    deduped.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    return deduped;
+  }, [recentAlerts, advisoryNotes]);
+
+  const visibleNotifications = useMemo(() => {
+    if (userRole !== 'citizen') return allNotifications;
+    return allNotifications.filter(item => !isItemDismissed(item));
+  }, [allNotifications, userRole, isItemDismissed]);
+
+  const displayedNotifications = showAllAlerts ? allNotifications : visibleNotifications;
+
+  // Bell dot: only appears when there is genuinely unread notification
+  const hasUnread = visibleNotifications.some(item => !isItemRead(item));
+
+  // Outside click & escape for notifications panel
   useEffect(() => {
     if (!showAlertsPanel) return;
     const outside = event => {
@@ -77,6 +167,19 @@ export default function Navbar() {
       document.removeEventListener('keydown', escape);
     };
   }, [showAlertsPanel]);
+
+  // Escape key for details modals
+  useEffect(() => {
+    if (!selectedAlert && !selectedAdvisoryModal) return;
+    const esc = (e) => {
+      if (e.key === 'Escape') {
+        setSelectedAlert(null);
+        setSelectedAdvisoryModal(null);
+      }
+    };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [selectedAlert, selectedAdvisoryModal]);
 
   const navigate = useNavigate();
   const official = ['admin', 'government_official'].includes(userRole);
@@ -258,13 +361,18 @@ export default function Navbar() {
               {showAlertsPanel && (
                 <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/10">
-                    <p className="text-sm font-semibold text-parchment">{t('alertsAndAdvisories')}</p>
-                    <div className="flex gap-2 mt-2 text-xs">
-                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(false); }}>{t('current')}</button>
-                      <button className="text-teal-300" onClick={() => { setShowHistory(false); setShowAllAlerts(true); }}>{t('viewAll')}</button>
-                      {official && <button className="text-teal-300" onClick={() => setShowHistory(true)}>{t('alertHistory')}</button>}
-                      {!showAllAlerts && userRole === 'citizen' && (visibleAlerts.length > 0 || visibleNotes.length > 0) && <button className="text-muted ml-auto" onClick={() => dismissNotifications(visibleAlerts, visibleNotes)}>{t('clearAll')}</button>}
-                      {userRole === 'admin' && <button className="text-marigold-300" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>{t('createAlertBtn')}</button>}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-parchment">{lang === 'ur' ? 'اطلاعات' : 'Notifications'}</h3>
+                        <p className="text-xs text-muted">{t('alertsAndAdvisories')}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2.5 text-xs">
+                      <button className={`transition font-medium ${!showHistory && !showAllAlerts ? 'text-teal-300 font-semibold underline' : 'text-muted hover:text-parchment'}`} onClick={() => { setShowHistory(false); setShowAllAlerts(false); }}>{t('current')}</button>
+                      <button className={`transition font-medium ${!showHistory && showAllAlerts ? 'text-teal-300 font-semibold underline' : 'text-muted hover:text-parchment'}`} onClick={() => { setShowHistory(false); setShowAllAlerts(true); }}>{t('viewAll')}</button>
+                      {official && <button className={`transition font-medium ${showHistory ? 'text-teal-300 font-semibold underline' : 'text-muted hover:text-parchment'}`} onClick={() => setShowHistory(true)}>{t('alertHistory')}</button>}
+                      {!showAllAlerts && userRole === 'citizen' && visibleNotifications.length > 0 && <button className="text-muted hover:text-parchment ml-auto" onClick={() => dismissAllVisible(visibleNotifications)}>{t('clearAll')}</button>}
+                      {userRole === 'admin' && <button className="text-marigold-300 ml-auto font-medium" onClick={() => { setEditing('new'); setDraft({ message: '', location: '', risk_level: 'Medium' }); }}>{t('createAlertBtn')}</button>}
                     </div>
                     {'Notification' in window && Notification.permission === 'default' && <button className="text-xs text-muted mt-2" onClick={() => Notification.requestPermission()}>{t('enableBrowserNotifications')}</button>}
                     {error && <p className="text-xs text-red-300 mt-2" role="alert">{error}</p>}
@@ -282,34 +390,138 @@ export default function Navbar() {
                     {showHistory && official ? (
                       history.length === 0 ? <p className="text-xs text-muted px-4 py-4">{t('noAlertHistory')}</p> : history.map(entry => (
                         <div key={entry.id} className="px-4 py-3 border-b border-white/5">
-                          <p className="text-xs text-teal-300">Alert #{entry.alert_id} · {entry.action} · {entry.alert.risk_level}</p>
-                          <p className="text-sm text-parchment">{entry.alert.message}</p>
-                          <p className="text-xs text-muted">{entry.alert.location} · {entry.actor}</p>
+                          <p className="text-xs text-teal-300">Alert #{entry.alert_id} · {entry.action} · {entry.alert?.risk_level || ''}</p>
+                          <p className="text-sm text-parchment">{entry.alert?.message}</p>
+                          <p className="text-xs text-muted">{entry.alert?.location} · {entry.actor}</p>
                           <p className="text-xs text-muted">{formatAlertDateTime(entry.timestamp)}</p>
                         </div>
                       ))
                     ) : (
                       <>
-                        {displayedNotes.map(n => (
-                          <div key={`adv-${n.advisory_id}`}><Link to={`/community?advisory=${n.advisory_id}&n=${Date.now()}`} onClick={() => { setShowAlertsPanel(false); setAdvisoryNotes(list => list.map(x => x.advisory_id === n.advisory_id ? { ...x, read: true } : x)); }} className="block px-4 py-3 border-b border-white/5 hover:bg-white/5">
-                            <p className="text-xs text-marigold-300">{t('publicAdvisory')} · {n.read ? t('read') : t('unread')}{!n.read && <span className="inline-block w-1.5 h-1.5 rounded-full bg-marigold-400 ml-1.5 align-middle"/>}</p>
-                            <p className="text-sm text-parchment font-medium mt-1">{n.title}</p>
-                            <p className="text-xs text-muted mt-1 line-clamp-2">{n.message}</p>
-                            <p className="text-xs text-muted mt-1">{formatAlertDateTime(n.created_at)}</p>
-                          </Link>
-                          {userRole === 'citizen' && (dismissedVersions[`advisory-${n.advisory_id}`] === noteVersion(n) ? <p className="text-xs text-muted px-4 pb-2">{t('dismissed')}</p> : <button type="button" className="text-xs text-muted px-4 pb-2" onClick={() => dismissNotifications([], [n])}>{t('dismissAdvisory')}</button>)}
-                          </div>
-                        ))}
-                        {displayedAlerts.length === 0 && displayedNotes.length === 0 && <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? t('noAlertsOrAdvisories') : t('nothingToShowCleared')}</p>}
-                        {displayedAlerts.map(item => (
-                          <div key={item.id} className="px-4 py-3 border-b border-white/5">
-                            <p className="text-xs text-teal-300">{lang === 'ur' ? (item.risk_level === 'High' ? 'زیادہ خطرہ' : item.risk_level === 'Medium' ? 'درمیانہ خطرہ' : 'کم خطرہ') : `${item.risk_level} risk`} · {item.location}</p>
-                            <p className="text-sm text-parchment font-medium mt-1">{item.message}</p>
-                            {userRole === 'citizen' && (dismissedVersions[`alert-${item.id}`] === alertVersion(item) ? <p className="text-xs text-muted mt-2">{t('dismissed')}</p> : <button type="button" className="text-xs text-muted mt-2 px-2 py-1 border border-white/15 rounded-md" aria-label={`Dismiss alert: ${item.location}`} onClick={() => dismissNotifications([item])}>{t('dismiss')}</button>)}
-                            <p className="text-xs text-muted mt-1">{t('created')}: {formatAlertDateTime(item.created_at)}</p>
-                            {userRole === 'admin' && <div className="flex gap-3 mt-2 text-xs"><button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>{t('update')}</button><button className="text-red-300" onClick={() => cancelAlert(item.id)}>{t('cancelAlert')}</button></div>}
-                          </div>
-                        ))}
+                        {displayedNotifications.length === 0 ? (
+                          <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? t('noAlertsOrAdvisories') : t('nothingToShowCleared')}</p>
+                        ) : (
+                          displayedNotifications.map(item => {
+                            const read = isItemRead(item);
+                            if (item.type === 'advisory') {
+                              return (
+                                <div
+                                  key={item.uniqueId}
+                                  onClick={() => {
+                                    setSelectedAdvisoryModal(item);
+                                    markAsRead(item);
+                                  }}
+                                  className="px-4 py-3 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors text-left"
+                                >
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-[10px] font-mono-data uppercase tracking-wider px-2 py-0.5 rounded-full border border-marigold-500/40 text-marigold-300 font-semibold bg-marigold-500/10">
+                                        {t('publicAdvisory')}
+                                      </span>
+                                      {!read ? (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-marigold-300">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-marigold-400"></span>
+                                          {t('unread')}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-muted">{t('read')}</span>
+                                      )}
+                                    </div>
+                                    <span className="text-[11px] text-muted whitespace-nowrap">{formatAlertDateTime(item.timestamp)}</span>
+                                  </div>
+
+                                  <h4 className="text-sm font-medium text-parchment line-clamp-1">{item.title}</h4>
+                                  <p className="text-xs text-muted line-clamp-1 mt-0.5">{item.message}</p>
+
+                                  <div className="flex items-center justify-between mt-2 pt-1">
+                                    <span className="text-[11px] text-marigold-300 font-medium hover:underline">
+                                      {lang === 'ur' ? 'تفصیلات دیکھیں ←' : 'View details →'}
+                                    </span>
+                                    {userRole === 'citizen' && (
+                                      <button
+                                        type="button"
+                                        className="text-xs text-muted hover:text-white px-2 py-0.5 border border-white/10 rounded-md hover:bg-white/10 transition"
+                                        aria-label={`Dismiss advisory: ${item.title}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          dismissNotification(item);
+                                        }}
+                                      >
+                                        {t('dismissAdvisory')}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // Alert item
+                            return (
+                              <div
+                                key={item.uniqueId}
+                                onClick={() => {
+                                  setSelectedAlert(item);
+                                  markAsRead(item);
+                                }}
+                                className="px-4 py-3 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors text-left"
+                              >
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-[10px] font-mono-data uppercase tracking-wider px-2 py-0.5 rounded-full border font-semibold ${
+                                      item.risk_level === 'High' ? 'bg-red-500/20 border-red-500/40 text-red-300' :
+                                      item.risk_level === 'Medium' ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' :
+                                      'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                                    }`}>
+                                      {lang === 'ur' ? (item.risk_level === 'High' ? 'زیادہ خطرہ' : item.risk_level === 'Medium' ? 'درمیانہ خطرہ' : 'کم خطرہ') : `${item.risk_level} Risk`}
+                                    </span>
+                                    {!read ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-marigold-300">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-marigold-400"></span>
+                                        {t('unread')}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-muted">{t('read')}</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-muted whitespace-nowrap">{formatAlertDateTime(item.timestamp)}</span>
+                                </div>
+
+                                <h4 className="text-sm font-semibold text-parchment leading-snug">
+                                  {item.title || (lang === 'ur' ? `${item.risk_level} سیلاب الرٹ` : `${item.risk_level} Flood Alert`)}
+                                </h4>
+                                <p className="text-xs text-teal-300/90 mt-0.5">
+                                  📍 {item.location}
+                                </p>
+
+                                <div className="flex items-center justify-between mt-2 pt-1">
+                                  <span className="text-[11px] text-teal-400 font-medium hover:underline">
+                                    {lang === 'ur' ? 'تفصیلات دیکھیں ←' : 'View details →'}
+                                  </span>
+                                  {userRole === 'citizen' && (
+                                    <button
+                                      type="button"
+                                      className="text-xs text-muted hover:text-white px-2 py-0.5 border border-white/10 rounded-md hover:bg-white/10 transition"
+                                      aria-label={`Dismiss alert: ${item.location}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        dismissNotification(item);
+                                      }}
+                                    >
+                                      {t('dismiss')}
+                                    </button>
+                                  )}
+                                </div>
+
+                                {userRole === 'admin' && (
+                                  <div className="flex gap-3 mt-2 text-xs pt-1 border-t border-white/5" onClick={e => e.stopPropagation()}>
+                                    <button className="text-teal-300" onClick={() => { setEditing(item.id); setDraft({ message: item.message, location: item.location, risk_level: item.risk_level }); }}>{t('update')}</button>
+                                    <button className="text-red-300" onClick={() => cancelAlert(item.id)}>{t('cancelAlert')}</button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
                       </>
                     )}
                   </div>
@@ -419,6 +631,137 @@ export default function Navbar() {
               </Link>
             </div>
           )}
+        </div>
+      )}
+          {/* Alert Details Popup Modal */}
+      {selectedAlert && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedAlert(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <span className={`text-[10px] font-mono-data uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold ${
+                selectedAlert.risk_level === 'High' ? 'bg-red-500/20 border-red-500/50 text-red-300' :
+                selectedAlert.risk_level === 'Medium' ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' :
+                'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+              }`}>
+                {lang === 'ur' ? (selectedAlert.risk_level === 'High' ? 'زیادہ خطرہ' : selectedAlert.risk_level === 'Medium' ? 'درمیانہ خطرہ' : 'کم خطرہ') : `${selectedAlert.risk_level} Flood Risk`}
+              </span>
+              <button
+                type="button"
+                className="text-muted hover:text-parchment text-sm px-2 py-1 rounded-lg hover:bg-white/5 transition"
+                onClick={() => setSelectedAlert(null)}
+              >
+                {t('close')}
+              </button>
+            </div>
+
+            <h3 className="font-display text-2xl text-parchment mb-2">
+              {selectedAlert.title || (lang === 'ur' ? `${selectedAlert.risk_level} سیلاب انتباہ` : `${selectedAlert.risk_level} Flood Warning`)}
+            </h3>
+            <p className="text-sm font-semibold text-teal-300 mb-4 flex items-center gap-1.5">
+              <span>📍</span> {selectedAlert.location}
+            </p>
+
+            <div className="rounded-xl bg-ink/70 border border-white/5 p-4 mb-5">
+              <p className="text-xs uppercase tracking-wider text-muted font-medium mb-1.5">{lang === 'ur' ? 'انتباہی پیغام' : 'Warning Message'}</p>
+              <p className="text-sm text-parchment/95 leading-relaxed whitespace-pre-wrap">{selectedAlert.message}</p>
+            </div>
+
+            <dl className="text-xs text-muted space-y-2 border-t border-white/10 pt-4">
+              <div>
+                <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'متاثرہ مقام: ' : 'Affected location: '}</dt>
+                <dd className="inline text-parchment">{selectedAlert.location}</dd>
+              </div>
+              <div>
+                <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'جاری کردہ: ' : 'Issued date & time: '}</dt>
+                <dd className="inline text-parchment">{formatAlertDateTime(selectedAlert.created_at)}</dd>
+              </div>
+              {selectedAlert.updated_at && selectedAlert.updated_at !== selectedAlert.created_at && (
+                <div>
+                  <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'آخری تجدید: ' : 'Updated date & time: '}</dt>
+                  <dd className="inline text-parchment">{formatAlertDateTime(selectedAlert.updated_at)}</dd>
+                </div>
+              )}
+              {selectedAlert.rainfall != null && selectedAlert.rainfall !== '' && (
+                <div>
+                  <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'بارش: ' : 'Rainfall: '}</dt>
+                  <dd className="inline text-parchment">{selectedAlert.rainfall} mm</dd>
+                </div>
+              )}
+              {(selectedAlert.issuer || selectedAlert.issued_by || (selectedAlert.source && selectedAlert.source !== 'manual')) && (
+                <div>
+                  <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'ذریعہ / جاری کنندہ: ' : 'Issuer / Source: '}</dt>
+                  <dd className="inline text-parchment">{selectedAlert.issuer || selectedAlert.issued_by || (selectedAlert.source === 'automatic' ? (lang === 'ur' ? 'خودکار پیشگوئی الرٹ' : 'Automated Prediction Alert') : selectedAlert.source)}</dd>
+                </div>
+              )}
+              {(selectedAlert.recommended_action || selectedAlert.action) && (
+                <div>
+                  <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'تجویز کردہ کارروائی: ' : 'Recommended action: '}</dt>
+                  <dd className="inline text-parchment">{selectedAlert.recommended_action || selectedAlert.action}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        </div>
+      )}
+
+      {/* Advisory Details Popup Modal */}
+      {selectedAdvisoryModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedAdvisoryModal(null)}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <span className="text-[10px] font-mono-data uppercase tracking-widest px-2.5 py-1 rounded-full border border-marigold-500/40 text-marigold-300 font-bold bg-marigold-500/10">
+                {t('publicAdvisory')}
+              </span>
+              <button
+                type="button"
+                className="text-muted hover:text-parchment text-sm px-2 py-1 rounded-lg hover:bg-white/5 transition"
+                onClick={() => setSelectedAdvisoryModal(null)}
+              >
+                {t('close')}
+              </button>
+            </div>
+
+            <h3 className="font-display text-2xl text-parchment mb-2">{selectedAdvisoryModal.title}</h3>
+            <p className="text-sm font-semibold text-teal-300 mb-4 flex items-center gap-1.5">
+              <span>📍</span> {selectedAdvisoryModal.region || (lang === 'ur' ? 'تمام علاقے' : 'All regions')}
+            </p>
+
+            <div className="rounded-xl bg-ink/70 border border-white/5 p-4 mb-5">
+              <p className="text-xs uppercase tracking-wider text-muted font-medium mb-1.5">{lang === 'ur' ? 'پیغام' : 'Message'}</p>
+              <p className="text-sm text-parchment/95 leading-relaxed whitespace-pre-wrap">{selectedAdvisoryModal.message}</p>
+            </div>
+
+            <dl className="text-xs text-muted space-y-2 border-t border-white/10 pt-4">
+              <div>
+                <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'علاقہ: ' : 'Region: '}</dt>
+                <dd className="inline text-parchment">{selectedAdvisoryModal.region || (lang === 'ur' ? 'تمام علاقے' : 'All regions')}</dd>
+              </div>
+              <div>
+                <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'جاری کنندہ: ' : 'Issued by: '}</dt>
+                <dd className="inline text-parchment">{selectedAdvisoryModal.issued_by || (lang === 'ur' ? 'سرکاری اہلکار' : 'Government Official')}</dd>
+              </div>
+              <div>
+                <dt className="inline text-teal-300 font-medium">{lang === 'ur' ? 'تاریخ اشاعت: ' : 'Published: '}</dt>
+                <dd className="inline text-parchment">{formatAlertDateTime(selectedAdvisoryModal.created_at)}</dd>
+              </div>
+            </dl>
+          </div>
         </div>
       )}
     </nav>

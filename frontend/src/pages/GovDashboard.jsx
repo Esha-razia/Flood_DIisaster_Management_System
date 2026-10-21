@@ -567,14 +567,13 @@ export default function GovDashboard() {
     }
 
     const csvContent = [
-      ["Date", "Location", "Risk", "Confidence", "Rainfall", "River Level", "Temperature"],
+      ["Date", "Location", "Risk", "Confidence", "Rainfall", "Temperature"],
       ...filteredPredictions.map(pred => [
         new Date(pred.created_at).toLocaleString(),
         pred.location,
         pred.risk,
         (pred.confidence * 100).toFixed(1) + "%",
         pred.input_data?.rainfall || "N/A",
-        pred.input_data?.river_level || "N/A",
         pred.input_data?.temperature || "N/A"
       ])
     ].map(row => row.join(",")).join("\n");
@@ -832,8 +831,7 @@ export default function GovDashboard() {
                     <th className="pb-3 text-muted">{t("riskLabel")}</th>
                     <th className="pb-3 text-muted">{t("confidence")}</th>
                     <th className="pb-3 text-muted">{t("rainfallLabel")}</th>
-                    <th className="pb-3 text-muted">{t("riverLevelLabel")}</th>
-                    <th className="pb-3 text-muted">{t("temperature")}</th>
+                                        <th className="pb-3 text-muted">{t("temperature")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -848,8 +846,7 @@ export default function GovDashboard() {
                       </td>
                       <td className="py-3 text-muted">{(pred.confidence * 100).toFixed(1)}%</td>
                       <td className="py-3 text-muted">{pred.input_data?.rainfall || "N/A"} mm</td>
-                      <td className="py-3 text-muted">{pred.input_data?.river_level || "N/A"} m</td>
-                      <td className="py-3 text-muted">{pred.input_data?.temperature || "N/A"}°C</td>
+                                            <td className="py-3 text-muted">{pred.input_data?.temperature || "N/A"}°C</td>
                     </tr>
                   ))}
                 </tbody>

@@ -71,7 +71,7 @@ def db():
             "source": "automatic",
         },
         {
-            "message": "Moderate river swell alert for Hyderabad Indus basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.",
+            "message": "Moderate flood alert for Hyderabad basin. Water levels approaching critical gauge height. Residents advised to prepare emergency kits.",
             "risk": "Medium",
             "risk_level": "Medium",
             "location": "Hyderabad Indus basin",
@@ -81,7 +81,7 @@ def db():
             "source": "automatic",
         },
         {
-            "message": "High flood risk alert for Chowk Azam low-lying communities following river surge.",
+            "message": "High flood risk alert for Chowk Azam low-lying communities following heavy rainfall surge.",
             "risk": "High",
             "risk_level": "High",
             "location": "Chowk Azam",
@@ -143,9 +143,16 @@ def now():
 def log(c, record, action, actor):
     c.execute('INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)', (record['id'], action, now(), actor, json.dumps(record)))
 
-def create(message, risk, location, actor='System', source='manual'):
+def create(message, risk, location, actor='System', source='manual', rainfall=None, recommended_action=None, **kwargs):
     stamp = now()
     record = dict(message=message, risk=risk, risk_level=risk, location=location, status='Active', assigned_worker=None, linked_rescue_op_id=None, created_at=stamp, updated_at=stamp, source=source)
+    if rainfall is not None:
+        record['rainfall'] = rainfall
+    if recommended_action is not None:
+        record['recommended_action'] = recommended_action
+    for k, v in kwargs.items():
+        if v is not None and k not in record:
+            record[k] = v
     with db() as c:
         record['id'] = c.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',)).lastrowid
         c.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(record), record['id']))
@@ -278,14 +285,22 @@ def mark_advisory_read(email, advisory_id):
     return _storage_call(work)
 
 def register(app):
+    # In-memory store for fallback advisory reads per email
+    _MEMORY_ADVISORY_READS = {}
+
     @app.route('/advisory-notifications', methods=['GET'])
     def advisory_notifications():
         user = identity()
         email = (user.get('email') or request.args.get('email') or '').lower()
+        user_read_set = _MEMORY_ADVISORY_READS.get(email, set()) if email else set()
         if email:
             try:
                 results = list_advisory_notifications(email)
                 if results:
+                    # Merge with in-memory read records
+                    for r in results:
+                        if r.get('advisory_id') in user_read_set:
+                            r['read'] = True
                     return jsonify(results)
             except Exception:
                 pass
@@ -294,6 +309,7 @@ def register(app):
         try:
             import app as main_app
             for a in getattr(main_app, 'MEMORY_ADVISORIES', []):
+                is_read = a['id'] in user_read_set
                 fallback_notes.append({
                     'advisory_id': a['id'],
                     'title': a['title'],
@@ -301,8 +317,8 @@ def register(app):
                     'region': a.get('region', 'All regions'),
                     'issued_by': a.get('issued_by', 'Government Official'),
                     'created_at': str(a.get('created_at', '')),
-                    'read_at': None,
-                    'read': False
+                    'read_at': now() if is_read else None,
+                    'read': is_read
                 })
         except Exception:
             pass
@@ -311,14 +327,17 @@ def register(app):
     @app.route('/advisory-notifications/<int:advisory_id>/read', methods=['POST'])
     def advisory_notification_read(advisory_id):
         user = identity()
-        if user.get('role') != 'citizen' or not user.get('email'):
+        email = (user.get('email') or request.args.get('email') or '').lower()
+        if user.get('role') != 'citizen' or not email:
             return jsonify(message='Citizen sign-in required'), 403
+        if email not in _MEMORY_ADVISORY_READS:
+            _MEMORY_ADVISORY_READS[email] = set()
+        _MEMORY_ADVISORY_READS[email].add(advisory_id)
+        found = False
         try:
-            found = mark_advisory_read(user['email'].lower(), advisory_id)
-        except AdvisoryStorageError as error:
-            return jsonify(message=str(error)), 503
-        if not found:
-            return jsonify(message='No notification for this advisory'), 404
+            found = mark_advisory_read(email, advisory_id)
+        except Exception:
+            pass
         return jsonify(message='Marked as read')
 
     @app.after_request

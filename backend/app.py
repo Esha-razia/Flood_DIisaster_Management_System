@@ -1852,7 +1852,6 @@ def predict():
 
 Input Parameters:
 • Rainfall: {rainfall} mm
-• River Level: {river_level} m (recorded, not used by the model — no river-level data in training set)
 • Temperature: {temperature:.1f} °C
 
 ML Model Prediction: {risk} flood risk
@@ -1932,9 +1931,9 @@ Generated using a {ACTIVE_MODEL_NAME} model trained on 10-city, 24-year historic
                 alert_message += "Immediate evacuation recommended. "
             else:
                 alert_message += "Stay alert and monitor conditions. "
-            alert_message += f"Rainfall: {rainfall}mm, River Level: {river_level}m"
+            alert_message += f"Rainfall: {rainfall}mm."
             
-            create_notification(alert_message, risk, location, source="automatic")
+            create_notification(alert_message, risk, location, source="automatic", rainfall=rainfall)
 
         model_comparison = None
         if COMPARISON_MODEL is not None:
@@ -3296,13 +3295,33 @@ def get_community_reports():
 
 @app.route("/community-stats", methods=["GET"])
 def get_community_stats():
-    # Aggregate only; individual citizen reports remain private.
-    response = get_community_reports()
-    records = response.get_json()
-    active = [r for r in records if r.get("status") not in ("Resolved", "Rejected", "Spam")]
-    regions = {str(r.get("region") or "").strip().casefold() for r in active}
-    regions.discard("")
-    return jsonify(active_incidents=len(active), monitored_regions=len(regions))
+    # Fast aggregate: avoids downloading full payloads and base64 images
+    active_count = 0
+    regions = set()
+    seen_ids = set()
+    for r in MEMORY_COMMUNITY_REPORTS:
+        seen_ids.add(r.get("id"))
+        if r.get("status") not in ("Resolved", "Rejected", "Spam"):
+            active_count += 1
+            reg = str(r.get("region") or "").strip().casefold()
+            if reg:
+                regions.add(reg)
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("SELECT id, status, region FROM community_reports")
+            for row in cursor.fetchall():
+                row_id = getattr(row, "id", None)
+                if row_id is not None and row_id in seen_ids:
+                    continue
+                st = getattr(row, "status", None)
+                if st not in ("Resolved", "Rejected", "Spam"):
+                    active_count += 1
+                    reg = str(getattr(row, "region", None) or "").strip().casefold()
+                    if reg:
+                        regions.add(reg)
+        except Exception as e:
+            print("COMMUNITY STATS DB ERROR:", e)
+    return jsonify(active_incidents=active_count, monitored_regions=len(regions))
 
 @app.route("/community-reports", methods=["POST"])
 def create_community_report():
