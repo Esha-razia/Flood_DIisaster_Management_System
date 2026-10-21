@@ -612,7 +612,7 @@ export default function RescueDashboard() {
                   )}
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[520px] overflow-y-auto pr-2 table-scrollbar">
                   {activeOperations.map((op) => {
                     const assignedToMe = isAssignedToMe(op);
                     return (
@@ -820,9 +820,9 @@ export default function RescueDashboard() {
                   <p className="text-xs mt-1">{lang === "ur" ? "مکمل شدہ ریسکیو آپریشنز مکمل رپورٹنگ ریکارڈ کے ساتھ یہاں ظاہر ہوں گے۔" : "Completed rescue operations will automatically appear here with full reporting records."}</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[380px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
                   <table className="w-full text-left text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
                       <tr className="border-b border-white/20 text-muted text-xs">
                         <th className="pb-3 font-semibold">{lang === "ur" ? "مشن آئی ڈی" : "Mission ID"}</th>
                         <th className="pb-3 font-semibold">{t("location")}</th>

@@ -1100,9 +1100,9 @@ export default function GovDashboard() {
             {rescueWorkers.length === 0 ? (
               <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
             ) : (
-              <div className="overflow-x-auto max-h-[350px] overflow-y-auto pr-1">
+              <div className="overflow-x-auto max-h-[280px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
                 <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-[#071326] z-10">
+                  <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
                     <tr className="border-b border-white/20 text-muted">
                       <th className="pb-2">{t("name")}</th>
                       <th className="pb-2">{t("email")}</th>
@@ -1224,9 +1224,9 @@ export default function GovDashboard() {
                 {displayedOperations.length === 0 ? (
                   <p className="text-sm text-muted">{lang === "ur" ? "اس ویو میں کوئی آپریشن موجود نہیں ہے۔" : "No operations in this view."}</p>
                 ) : (
-                  <div className="overflow-x-auto max-h-[480px] overflow-y-auto pr-1">
+                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
                     <table className="w-full text-left text-sm">
-                      <thead className="sticky top-0 bg-[#071326] z-10">
+                      <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
                         <tr className="border-b border-white/20 text-muted">
                       <th className="pb-2">{t("location2")}</th>
                       <th className="pb-2">{t("statusLabel")}</th>
