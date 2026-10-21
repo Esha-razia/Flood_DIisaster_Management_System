@@ -823,9 +823,9 @@ export default function GovDashboard() {
                 {t("showingXofYPredictions").replace("{x}", filteredPredictions.length).replace("{y}", predictions.length)}
               </div>
             </div>
-            <div className="overflow-x-auto max-h-[480px] overflow-y-auto pr-1">
+            <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
               <table className="w-full text-left">
-                <thead className="sticky top-0 bg-[#071326] z-10">
+                <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
                   <tr className="border-b border-white/20">
                     <th className="pb-3 text-muted">{t("dateLabel")}</th>
                     <th className="pb-3 text-muted">{t("location2")}</th>
@@ -837,7 +837,7 @@ export default function GovDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPredictions.slice(0, 20).map((pred, index) => (
+                  {filteredPredictions.map((pred, index) => (
                     <tr key={index} className="border-b border-white/10">
                       <td className="py-3 text-muted">{new Date(pred.created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
                       <td className="py-3 text-muted">{pred.location}</td>
@@ -854,11 +854,6 @@ export default function GovDashboard() {
                   ))}
                 </tbody>
               </table>
-              {filteredPredictions.length > 20 && (
-                <div className="text-center mt-4 text-muted">
-                  {t("showingFirst20")}
-                </div>
-              )}
             </div>
           </div>
           </div>
@@ -890,7 +885,7 @@ export default function GovDashboard() {
             {filteredCommunityReports.length === 0 ? (
               <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
-              <div className="overflow-x-auto max-h-[500px] overflow-y-auto pr-1">
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 bg-[#071326] z-10">
                     <tr className="border-b border-white/20 text-muted">

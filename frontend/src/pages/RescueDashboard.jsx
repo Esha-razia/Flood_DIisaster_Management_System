@@ -435,54 +435,6 @@ export default function RescueDashboard() {
             </div>
           )}
 
-          {/* Rescue Worker Personalized Banner */}
-          <div className="mb-6 p-4 sm:p-5 rounded-2xl border border-teal-500/30 bg-gradient-to-r from-teal-950/40 via-ink-soft to-ink shadow-lg flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-2xl shadow-inner">
-                🧑‍🚒
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-white">
-                    {lang === "ur" ? `خوش آمدید، ${currentUserName || "ریسکیو ورکر"}` : `Welcome back, ${currentUserName || "Rescue Worker"}`}
-                  </h2>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/40">
-                    {lang === "ur" ? "ریسکیو اہلکار" : "Rescue Personnel"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted mt-0.5">
-                  {myActiveCount > 0 ? (
-                    lang === "ur" ? (
-                      <>آپ کے پاس اس وقت <strong className="text-teal-300 font-bold">{myActiveCount}</strong> فعال مشن تفویض شدہ ہیں۔</>
-                    ) : (
-                      <>You currently have <strong className="text-teal-300 font-bold">{myActiveCount}</strong> active mission(s) assigned specifically to you.</>
-                    )
-                  ) : (
-                    lang === "ur" ? (
-                      "آپ کو فی الحال کوئی نیا مشن تفویض نہیں ہے۔ نیچے تمام ٹیم آپریشنز دیکھ سکتے ہیں۔"
-                    ) : (
-                      "No active missions are currently assigned to you. You can browse all team operations below."
-                    )
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setScopeFilter("my")}
-                className={`text-xs px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-                  scopeFilter === "my"
-                    ? "bg-teal-500 text-ink shadow-lg shadow-teal-500/30 font-black scale-105"
-                    : "bg-white/5 text-muted hover:text-white border border-white/10"
-                }`}
-              >
-                🎯 {lang === "ur" ? `میرے تفویض کردہ مشنز (${myActiveCount})` : `My Assigned Missions (${myActiveCount})`}
-              </button>
-            </div>
-          </div>
-
           {/* Metrics summary banner */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-6">
             <div className="dashboard-card p-4 text-center border-teal-500/50 bg-teal-950/25 shadow-md shadow-teal-950/30">
