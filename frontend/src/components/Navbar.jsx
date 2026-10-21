@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
