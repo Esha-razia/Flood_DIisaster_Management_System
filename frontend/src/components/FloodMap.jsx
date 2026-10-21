@@ -200,20 +200,19 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     let checking = false;
     fetchMarkers();
     const checkRevision = async () => {
-      if (checking) return;
+      if (checking || document.visibilityState === 'hidden') return;
       checking = true;
       try {
-        const response = await axios.get(`${API_BASE}/map-revision`, { timeout: 5000 });
-        if (active && response.data.revision !== revision) {
+        const response = await axios.get(`${API_BASE}/map-revision`, { timeout: 6000 });
+        if (active && response.data?.revision && response.data.revision !== revision) {
           revision = response.data.revision;
           fetchMarkers();
         }
       } catch {
-        if (active) fetchMarkers();
+        // Silently ignore network failures, never spam fetchMarkers
       } finally { checking = false; }
     };
-    checkRevision();
-    const interval = setInterval(checkRevision, 1000);
+    const interval = setInterval(checkRevision, 15000);
     return () => { active = false; clearInterval(interval); };
   }, []);
 
@@ -543,7 +542,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const visibleMarkers = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = markers
-      .filter((m) => activeTypes.includes(m.type))
+      .filter((m) => m && activeTypes.includes(m.type))
       .filter((m) => !favoritesOnly || favorites.has(m.id))
       .filter((m) => !q || (m.name || "").toLowerCase().includes(q) || (m.location || "").toLowerCase().includes(q));
 

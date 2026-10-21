@@ -137,12 +137,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchAllData();
     const interval = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
       fetchAlerts();
       fetchCommunityReports();
       fetchRescueOps();
       fetchShelters();
       fetchHospitals();
-    }, 6000);
+    }, 20000);
     return () => clearInterval(interval);
   }, []);
 

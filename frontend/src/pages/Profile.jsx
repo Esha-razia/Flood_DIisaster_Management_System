@@ -41,13 +41,13 @@ export default function Profile() {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
-  const [fieldErrors, setFieldErrors] = useState({ name: '', email: '' });
+  const [fieldErrors, setFieldErrors] = useState({ name: '' });
 
   const handleEdit = () => {
     setEditMode(true);
     setError('');
     setSuccess('');
-    setFieldErrors({ name: '', email: '' });
+    setFieldErrors({ name: '' });
   };
 
   const handleCancel = () => {
@@ -58,7 +58,7 @@ export default function Profile() {
     });
     setError('');
     setSuccess('');
-    setFieldErrors({ name: '', email: '' });
+    setFieldErrors({ name: '' });
   };
 
   const handleSave = async (e) => {
@@ -67,8 +67,7 @@ export default function Profile() {
     setSuccess('');
 
     const trimmedName = formData.name.trim();
-    const trimmedEmail = formData.email.trim();
-    const errors = { name: '', email: '' };
+    const errors = { name: '' };
     let hasError = false;
 
     if (!trimmedName) {
@@ -82,20 +81,11 @@ export default function Profile() {
       hasError = true;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmedEmail) {
-      errors.email = 'Please fill out this field';
-      hasError = true;
-    } else if (!emailRegex.test(trimmedEmail)) {
-      errors.email = 'Please enter a valid email address.';
-      hasError = true;
-    }
-
     if (hasError) {
       setFieldErrors(errors);
       return;
     }
-    setFieldErrors({ name: '', email: '' });
+    setFieldErrors({ name: '' });
 
     setLoading(true);
     const userId = localStorage.getItem('userId');
@@ -105,18 +95,15 @@ export default function Profile() {
         throw new Error('Missing user id — please log out and log back in.');
       }
       await axios.put(`${API_BASE}/users/${userId}/profile`, {
-        name: formData.name,
-        email: formData.email,
+        name: trimmedName,
       });
 
       // Update localStorage and user state
-      localStorage.setItem('userName', formData.name);
-      localStorage.setItem('userEmail', formData.email);
-      setUser({
-        ...user,
-        name: formData.name,
-        email: formData.email
-      });
+      localStorage.setItem('userName', trimmedName);
+      setUser(prev => ({
+        ...prev,
+        name: trimmedName,
+      }));
 
       setSuccess('Profile updated successfully!');
       setEditMode(false);
@@ -251,27 +238,23 @@ export default function Profile() {
                   <label className="block text-sm font-medium text-muted mb-2">
                     {t("emailAddress2")}
                   </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={(e) => {
-                      handleInputChange(e);
-                      if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
-                    }}
-                    className={`w-full px-4 py-3 rounded-lg text-white placeholder-muted focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors ${
-                      fieldErrors.email
-                        ? 'bg-red-950/20 border-2 border-red-500 ring-1 ring-red-500'
-                        : 'bg-white/10 border border-white/20'
-                    }`}
-                    placeholder={t("enterEmailAddressPh")}
-                    required
-                  />
-                  {fieldErrors.email && (
-                    <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1 font-medium">
-                      <span>⚠️</span> {fieldErrors.email}
-                    </p>
-                  )}
+                  <div className="relative">
+                    <input
+                      type="email"
+                      name="email"
+                      value={user.email}
+                      disabled
+                      readOnly
+                      className="w-full px-4 py-3 rounded-lg text-muted bg-white/5 border border-white/10 cursor-not-allowed select-none font-mono text-sm"
+                      title={t("emailCannotChange")}
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted text-xs">
+                      🔒
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted flex items-center gap-1 font-medium">
+                    <span>🔒</span> {t("emailCannotChange")}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">{t("role")}</label>

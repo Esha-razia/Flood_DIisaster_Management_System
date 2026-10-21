@@ -88,7 +88,7 @@ export default function Community() {
 
   useEffect(() => {
     fetchReports();
-    const interval = setInterval(fetchReports, 3000); // keep the review queue live
+    const interval = setInterval(() => { if (document.visibilityState !== 'hidden') fetchReports(); }, 15000); // keep the review queue live
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
@@ -116,7 +116,7 @@ export default function Community() {
       setAdvisories(all);
     };
     loadAdvisories();
-    const interval = setInterval(loadAdvisories, 10000);
+    const interval = setInterval(() => { if (document.visibilityState !== 'hidden') loadAdvisories(); }, 30000);
     return () => { active = false; clearInterval(interval); };
   }, []);
 

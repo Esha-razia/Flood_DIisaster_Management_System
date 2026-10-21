@@ -104,7 +104,7 @@ export default function Navbar() {
     // Discard legacy saved notification/reminder entries, without touching accounts.
     Object.keys(localStorage).filter(key => key.startsWith('flood-reminders:')).forEach(key => localStorage.removeItem(key));
     refresh();
-    const timer = setInterval(refresh, 3000);
+    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') refresh(); }, 15000);
     return () => clearInterval(timer);
   }, [isAuthenticated, refresh]);
 

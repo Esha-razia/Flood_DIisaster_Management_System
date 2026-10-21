@@ -11,6 +11,7 @@ import joblib
 import json
 import numpy as np
 import os
+import time
 import uuid
 import pandas as pd
 import secrets
@@ -1522,37 +1523,36 @@ def delete_user(user_id):
 # ---------------- SELF PROFILE UPDATE (FR01-04) ----------------
 @app.route("/users/<int:user_id>/profile", methods=["PUT"])
 def update_own_profile(user_id):
+    """Updates user display name. Email is strictly non-editable as it serves as
+    the permanent account identifier, security identity, and verification anchor."""
     data = request.json or {}
     name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip().lower()
-    if not name or not email:
-        return jsonify({"message": "Name and email are required"}), 400
+    if not name:
+        return jsonify({"message": "Name is required"}), 400
 
     updated_user = None
     for user in MEMORY_USERS:
         if user["id"] == user_id:
-            # reject switching to an email already used by someone else
-            clash = next((u for u in MEMORY_USERS if u["id"] != user_id and u["email"].lower() == email), None)
-            if clash:
-                return jsonify({"message": "That email is already in use"}), 400
             user["name"] = name
-            user["email"] = email
             updated_user = user
             break
 
+    current_email = updated_user.get("email") if updated_user else None
+
     if DB_AVAILABLE:
         try:
-            cursor.execute("SELECT id FROM users WHERE LOWER(email) = ? AND id != ?", (email, user_id))
-            if cursor.fetchone():
-                return jsonify({"message": "That email is already in use"}), 400
-            cursor.execute("UPDATE users SET name = ?, email = ? WHERE id = ?", (name, email, user_id))
+            cursor.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
             conn.commit()
+            cursor.execute("SELECT id, name, email FROM users WHERE id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row:
+                current_email = row[2] if isinstance(row, tuple) else row["email"]
         except Exception as db_error:
             print(f"Failed to update profile in database: {db_error}")
 
     if not updated_user and not DB_AVAILABLE:
         return jsonify({"message": "User not found"}), 404
-    return jsonify({"message": "Profile updated successfully", "name": name, "email": email})
+    return jsonify({"message": "Profile updated successfully", "name": name, "email": current_email})
 
 @app.route("/users/<int:user_id>/duty-status", methods=["PUT"])
 def update_duty_status(user_id):
@@ -3486,6 +3486,15 @@ def delete_blocked_road(road_id):
         except Exception as e:
             print("Failed to delete blocked road:", e)
     return jsonify({"message": "Blocked road removed"})
+
+MAP_DATA_REVISION = int(time.time())
+
+@app.route("/map-revision", methods=["GET"])
+def get_map_revision():
+    """Returns a lightweight revision timestamp so the frontend map can check for updates
+    efficiently without repeatedly querying and recalculating all map markers."""
+    global MAP_DATA_REVISION
+    return jsonify({"revision": MAP_DATA_REVISION})
 
 # ---------------- MAP MARKERS (FR-04: aggregated view for the interactive map) ----------------
 @app.route("/map-markers", methods=["GET"])
