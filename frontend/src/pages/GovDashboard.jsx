@@ -29,6 +29,7 @@ export default function GovDashboard() {
   const [showOperationForm, setShowOperationForm] = useState(false);
   const [selectedOperationId, setSelectedOperationId] = useState(null);
   const [operationFeedback, setOperationFeedback] = useState(null);
+  const [operationStatusErrors, setOperationStatusErrors] = useState({});
   const [operationForm, setOperationForm] = useState({
     location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", worker_names: [], alert_id: ""
   });
@@ -202,6 +203,14 @@ export default function GovDashboard() {
           alert_id: alertItem.id,
         });
       }
+      if (linkedOperation) {
+        setOperationStatusErrors((prev) => {
+          if (!prev[linkedOperation.id]) return prev;
+          const next = { ...prev };
+          delete next[linkedOperation.id];
+          return next;
+        });
+      }
       setAssigningAlertId(null);
       setAssignForm({ worker: "", description: "" });
       await refreshRescueData();
@@ -223,6 +232,12 @@ export default function GovDashboard() {
       await axios.post(`${API_BASE}/rescue-operations/${operation.id}/workers`, { worker_names: workerNames });
       setManageWorkerPick([]);
       await refreshRescueData();
+      setOperationStatusErrors((prev) => {
+        if (!prev[operation.id]) return prev;
+        const next = { ...prev };
+        delete next[operation.id];
+        return next;
+      });
       showOperationFeedback(`${workerNames.join(", ")} added to the operation.`, "success");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not add the rescue workers.");
@@ -239,35 +254,66 @@ export default function GovDashboard() {
     }
   };
 
+  const isOperationAssigned = (operation) => {
+    if (!operation) return false;
+    if (Array.isArray(operation.worker_names) && operation.worker_names.length > 0) return true;
+    if (Array.isArray(operation.workers) && operation.workers.length > 0) return true;
+    const team = (operation.assigned_team || "").trim();
+    return Boolean(team && team.toLowerCase() !== "unassigned");
+  };
+
+  const handleOperationStatusChange = (operation, newStatus) => {
+    if (operation.status === "Completed") {
+      showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.", "error");
+      return;
+    }
+
+    if (newStatus === "Completed") {
+      if (!isOperationAssigned(operation)) {
+        const errorMsg = lang === "ur"
+          ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔"
+          : "Assign at least one rescue worker before completing this operation.";
+        setOperationStatusErrors((prev) => ({ ...prev, [operation.id]: errorMsg }));
+        return;
+      }
+    }
+
+    setOperationStatusErrors((prev) => {
+      if (!prev[operation.id]) return prev;
+      const next = { ...prev };
+      delete next[operation.id];
+      return next;
+    });
+
+    handleUpdateOperation(operation, { status: newStatus });
+  };
+
   const handleUpdateOperation = async (operation, changes) => {
     if (operation.status === "Completed") {
       showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.", "error");
       return;
     }
 
-    if (changes.status === "Completed") {
-      const hasWorkers = Boolean(
-        (operation.worker_names && operation.worker_names.length > 0) ||
-        (operation.workers && operation.workers.length > 0) ||
-        (operation.assigned_team && operation.assigned_team.trim() && operation.assigned_team.trim().toLowerCase() !== "unassigned")
-      );
-      if (!hasWorkers) {
-        showOperationFeedback(
-          lang === "ur"
-            ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔"
-            : "Assign at least one rescue worker before completing this operation.",
-          "error"
-        );
-        return;
-      }
+    if (changes.status === "Completed" && !isOperationAssigned(operation)) {
+      const errorMsg = lang === "ur"
+        ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔"
+        : "Assign at least one rescue worker before completing this operation.";
+      setOperationStatusErrors((prev) => ({ ...prev, [operation.id]: errorMsg }));
+      return;
     }
 
     try {
       await axios.put(`${API_BASE}/rescue-operations/${operation.id}/status`, changes);
       await refreshRescueData();
+      setOperationStatusErrors((prev) => {
+        if (!prev[operation.id]) return prev;
+        const next = { ...prev };
+        delete next[operation.id];
+        return next;
+      });
       showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے اپڈیٹ ہو گیا۔" : "Rescue operation updated successfully.", "success");
     } catch (err) {
-      showOperationFeedback(err.response?.data?.message || "Could not update the rescue operation.");
+      showOperationFeedback(err.response?.data?.message || "Could not update the rescue operation.", "error");
     }
   };
 
@@ -1258,39 +1304,23 @@ export default function GovDashboard() {
                       <tr key={op.id} className={`align-top ${op.status === "Completed" ? "bg-white/[0.02]" : ""}`}>
                         <td className="py-2 text-white">{op.location}</td>
                         <td className="py-2">
-                          {(() => {
-                            const hasWorkers = Boolean(
-                              (op.worker_names && op.worker_names.length > 0) ||
-                              (op.workers && op.workers.length > 0) ||
-                              (op.assigned_team && op.assigned_team.trim() && op.assigned_team.trim().toLowerCase() !== "unassigned")
-                            );
-                            return (
-                              <div>
-                                <select
-                                  value={op.status}
-                                  onChange={(e) => handleUpdateOperation(op, { status: e.target.value })}
-                                  disabled={op.status === "Completed"}
-                                  className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                                >
-                                  <option className="bg-[#0b1f3a] text-white" value="Assigned">{lang === "ur" ? "شروع ہوا" : "Started"}</option>
-                                  <option className="bg-[#0b1f3a] text-white" value="In Progress">{lang === "ur" ? "جاری ہے" : "In Progress"}</option>
-                                  <option
-                                    className="bg-[#0b1f3a] text-white disabled:opacity-50"
-                                    value="Completed"
-                                    disabled={!hasWorkers}
-                                    title={!hasWorkers ? (lang === "ur" ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation.") : undefined}
-                                  >
-                                    {lang === "ur" ? "مکمل" : "Completed"}
-                                  </option>
-                                </select>
-                                {!hasWorkers && op.status !== "Completed" && (
-                                  <p className="text-[10px] text-amber-300/90 mt-1 max-w-[150px] leading-tight" title={lang === "ur" ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation."}>
-                                    {lang === "ur" ? "مکمل کرنے سے پہلے ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation."}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })()}
+                          <select
+                            value={op.status}
+                            onChange={(e) => handleOperationStatusChange(op, e.target.value)}
+                            disabled={op.status === "Completed"}
+                            className={`bg-[#0b1f3a] border rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70 ${
+                              operationStatusErrors[op.id] && !isOperationAssigned(op) ? "border-red-500 ring-1 ring-red-500" : "border-white/20"
+                            }`}
+                          >
+                            <option className="bg-[#0b1f3a] text-white" value="Assigned">{lang === "ur" ? "شروع ہوا" : "Started"}</option>
+                            <option className="bg-[#0b1f3a] text-white" value="In Progress">{lang === "ur" ? "جاری ہے" : "In Progress"}</option>
+                            <option className="bg-[#0b1f3a] text-white" value="Completed">{lang === "ur" ? "مکمل" : "Completed"}</option>
+                          </select>
+                          {operationStatusErrors[op.id] && !isOperationAssigned(op) && (
+                            <p role="alert" className="text-[11px] text-red-400 font-medium mt-1 max-w-[160px] leading-tight">
+                              ⚠ {operationStatusErrors[op.id]}
+                            </p>
+                          )}
                         </td>
                         <td className="py-2">
                           <select
