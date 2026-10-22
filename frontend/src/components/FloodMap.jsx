@@ -102,8 +102,15 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const markersLayerRef = useRef(null);
   const routeLayerRef = useRef(null);
   const userMarkerRef = useRef(null);
-  const [markers, setMarkers] = useState([]);
-  const [riskZones, setRiskZones] = useState([]);
+  const [cachedData] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("fdm_last_markers_v2") || "null");
+    } catch {
+      return null;
+    }
+  });
+  const [markers, setMarkers] = useState(() => cachedData?.markers || []);
+  const [riskZones, setRiskZones] = useState(() => cachedData?.risk_zones || []);
   const [activeTypes, setActiveTypes] = useState(() => {
     if (typeFilter) return [typeFilter];
     try {
@@ -118,10 +125,16 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const [locationError, setLocationError] = useState("");
   const locationSuccessVersion = useRef(0);
   const locationRequest = useRef(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !(cachedData?.markers?.length > 0));
   const [routing, setRouting] = useState(false);
   const [routeInfo, setRouteInfo] = useState(null); // { destination, distanceKm, durationMin } | 'error'
-  const [allPredictions, setAllPredictions] = useState([]);
+  const [allPredictions, setAllPredictions] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("fdm_last_predictions") || "[]");
+    } catch {
+      return [];
+    }
+  });
   const [userLocation, setUserLocation] = useState(null); // { lat, lng } | null
   const [selectedId, setSelectedId] = useState(null);
   const [mapZoom, setMapZoom] = useState(5);
@@ -129,7 +142,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const [locating, setLocating] = useState(false);
   const [kbIndex, setKbIndex] = useState(-1); // keyboard-focused row in the directory list
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(() => cachedData?.savedAt || null);
   const [nowTick, setNowTick] = useState(Date.now()); // re-renders the "updated Xs ago" label every second
   const [favorites, setFavorites] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("fdm_favorites") || "[]")); } catch { return new Set(); }
@@ -158,40 +171,56 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
 
   const [isOffline, setIsOffline] = useState(false);
 
-  const fetchMarkers = () => {
-    axios
-      .get(`${API_BASE}/map-markers`)
-      .then((res) => {
-        setMarkers(res.data.markers || []);
-        setRiskZones(res.data.risk_zones || []);
-        setLastUpdated(Date.now());
-        setIsOffline(false);
-        try {
-          localStorage.setItem("fdm_last_markers_v2", JSON.stringify({ markers: res.data.markers || [], risk_zones: res.data.risk_zones || [], savedAt: Date.now() }));
-        } catch {}
-      })
-      .catch((err) => {
-        console.error("Failed to load map markers:", err);
-        // Flood conditions are exactly when the connection is most likely to
-        // drop — showing a blank map at that moment is the worst possible
-        // outcome. Falling back to the last successfully loaded data (even
-        // if it's a bit stale) is far more useful than nothing at all.
-        try {
-          const cached = JSON.parse(localStorage.getItem("fdm_last_markers_v2") || "null");
-          if (cached) {
-            setMarkers(cached.markers || []);
-            setRiskZones(cached.risk_zones || []);
-            setLastUpdated(cached.savedAt || null);
-            setIsOffline(true);
-          }
-        } catch {}
-      })
-      .finally(() => setLoading(false));
+  const isFetchingRef = useRef(false);
 
-    axios
-      .get(`${API_BASE}/predictions`)
-      .then((res) => setAllPredictions(res.data || []))
-      .catch((err) => console.error("Failed to load prediction history:", err));
+  const fetchMarkers = () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    const markersReq = axios.get(`${API_BASE}/map-markers`);
+    const predsReq = axios.get(`${API_BASE}/predictions`);
+
+    Promise.allSettled([markersReq, predsReq])
+      .then(([markersRes, predsRes]) => {
+        if (markersRes.status === "fulfilled") {
+          const freshMarkers = markersRes.value.data?.markers || [];
+          const freshRiskZones = markersRes.value.data?.risk_zones || [];
+          setMarkers(freshMarkers);
+          setRiskZones(freshRiskZones);
+          const now = Date.now();
+          setLastUpdated(now);
+          setIsOffline(false);
+          try {
+            localStorage.setItem(
+              "fdm_last_markers_v2",
+              JSON.stringify({ markers: freshMarkers, risk_zones: freshRiskZones, savedAt: now })
+            );
+          } catch {}
+        } else {
+          console.error("Failed to load map markers:", markersRes.reason);
+          try {
+            const cached = JSON.parse(localStorage.getItem("fdm_last_markers_v2") || "null");
+            if (cached) {
+              setMarkers(cached.markers || []);
+              setRiskZones(cached.risk_zones || []);
+              setLastUpdated(cached.savedAt || null);
+              setIsOffline(true);
+            }
+          } catch {}
+        }
+
+        if (predsRes.status === "fulfilled") {
+          const preds = predsRes.value.data || [];
+          setAllPredictions(preds);
+          try {
+            localStorage.setItem("fdm_last_predictions", JSON.stringify(preds));
+          } catch {}
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        isFetchingRef.current = false;
+      });
   };
 
   useEffect(() => {
@@ -452,7 +481,14 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     if (!reportDraft) return;
     const errors = validateReportFields(reportDraft);
     if (reportDraft.locating) errors.location = 'Wait for location lookup to finish.';
-    if (Object.keys(errors).length) { setReportDraft(d => ({...d,errors})); return; }
+    if (Object.keys(errors).length) {
+      setReportDraft(d => ({
+        ...d,
+        errors,
+        error: lang === "ur" ? "براہ کرم جمع کرانے سے پہلے تمام مطلوبہ فیلڈز پر کریں۔" : "Please fill all required fields before submitting."
+      }));
+      return;
+    }
     const email = localStorage.getItem('userEmail');
     const name = localStorage.getItem('userName');
     if (!email || !name || localStorage.getItem('userRole') !== 'citizen') {
@@ -1254,23 +1290,97 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         <div className="fdm-no-print px-4 py-3 bg-marigold-500/10 border-b border-marigold-500/20 space-y-2">
           <p className="text-xs text-marigold-200 font-semibold">{t("quickReportTitle")}</p>
           <div className="grid sm:grid-cols-2 gap-2">
-            <input aria-label="Incident location" onFocus={fillReportLocation} value={reportDraft.location} onChange={(e) => setReportDraft((d) => ({ ...d, location: e.target.value, lat:null, lng:null }))}
-              placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")} aria-busy={reportDraft.locating} className={`field-input py-2 text-sm ${reportField("location")}`} />
-            {reportError("location")}<select aria-label="Incident severity" value={reportDraft.severity} onChange={(e) => setReportDraft((d) => ({ ...d, severity: e.target.value }))}
-              className={`field-input py-2 text-sm ${reportField("severity")}`}>
-              <option value="">{t("selectSeverityPh")}</option>
-              <option value="Low">{t("lowSeverity")}</option>
-              <option value="Medium">{t("mediumSeverity")}</option>
-              <option value="High">{t("highSeverity")}</option>
-            </select>{reportError("severity")}
+            <div>
+              <input
+                aria-label="Incident location"
+                onFocus={fillReportLocation}
+                value={reportDraft.location}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setReportDraft((d) => {
+                    if (!d) return d;
+                    const nextErrors = { ...(d.errors || {}) };
+                    if (val.trim().length >= 3) delete nextErrors.location;
+                    const hasOther = Object.keys(nextErrors).length > 0;
+                    return { ...d, location: val, lat: null, lng: null, errors: nextErrors, error: hasOther ? d.error : "" };
+                  });
+                }}
+                placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")}
+                aria-busy={reportDraft.locating}
+                className={`field-input py-2 text-sm w-full ${reportField("location")}`}
+              />
+              {reportError("location")}
+            </div>
+            <div>
+              <select
+                aria-label="Incident severity"
+                value={reportDraft.severity || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setReportDraft((d) => {
+                    if (!d) return d;
+                    const nextErrors = { ...(d.errors || {}) };
+                    if (["Low", "Medium", "High"].includes(val)) delete nextErrors.severity;
+                    const hasOther = Object.keys(nextErrors).length > 0;
+                    return { ...d, severity: val, errors: nextErrors, error: hasOther ? d.error : "" };
+                  });
+                }}
+                className={`field-input py-2 text-sm w-full ${reportField("severity")}`}
+              >
+                <option value="" disabled>{lang === "ur" ? "شدت منتخب کریں" : "Select severity"}</option>
+                <option value="Low">{t("lowSeverity")}</option>
+                <option value="Medium">{t("mediumSeverity")}</option>
+                <option value="High">{t("highSeverity")}</option>
+              </select>
+              {reportError("severity")}
+            </div>
           </div>
-          <textarea aria-label="Incident description" value={reportDraft.description} onChange={(e) => setReportDraft((d) => ({ ...d, description: capitalizeDescription(e.target.value) }))}
-            placeholder={lang === "ur" ? "کم از کم 10 حروف درج کریں۔" : "Minimum 10 characters. Start with a capital letter."} minLength={10} rows={2} className={`field-input py-2 text-sm w-full ${reportField("description")}`} />
-          {reportError("description")}<input aria-label="Contact number" inputMode="numeric" maxLength={11} value={reportDraft.contact} onChange={(e) => setReportDraft((d) => ({ ...d, contact: e.target.value }))}
-            placeholder="03001234567 (11 digits)" className={`field-input py-2 text-sm w-full ${reportField("contact")}`} />
-          {reportError("contact")}<label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>{lang === "ur" ? "واقعے کی تصویر — JPG, PNG, WebP, GIF · زیادہ سے زیادہ 50 MB" : "Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB"}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
+          <div>
+            <textarea
+              aria-label="Incident description"
+              value={reportDraft.description}
+              onChange={(e) => {
+                const val = capitalizeDescription(e.target.value);
+                setReportDraft((d) => {
+                  if (!d) return d;
+                  const nextErrors = { ...(d.errors || {}) };
+                  const text = val.trim();
+                  if (text.length >= 10 && (/^\p{L}/u.test(text) && !/^[a-z]/.test(text))) delete nextErrors.description;
+                  const hasOther = Object.keys(nextErrors).length > 0;
+                  return { ...d, description: val, errors: nextErrors, error: hasOther ? d.error : "" };
+                });
+              }}
+              placeholder={lang === "ur" ? "کم از کم 10 حروف درج کریں۔" : "Minimum 10 characters. Start with a capital letter."}
+              minLength={10}
+              rows={2}
+              className={`field-input py-2 text-sm w-full ${reportField("description")}`}
+            />
+            {reportError("description")}
+          </div>
+          <div>
+            <input
+              aria-label="Contact number"
+              inputMode="numeric"
+              maxLength={11}
+              value={reportDraft.contact}
+              onChange={(e) => {
+                const val = e.target.value;
+                setReportDraft((d) => {
+                  if (!d) return d;
+                  const nextErrors = { ...(d.errors || {}) };
+                  if (/^03\d{9}$/.test(val.trim())) delete nextErrors.contact;
+                  const hasOther = Object.keys(nextErrors).length > 0;
+                  return { ...d, contact: val, errors: nextErrors, error: hasOther ? d.error : "" };
+                });
+              }}
+              placeholder="03001234567 (11 digits)"
+              className={`field-input py-2 text-sm w-full ${reportField("contact")}`}
+            />
+            {reportError("contact")}
+          </div>
+          <label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>{lang === "ur" ? "واقعے کی تصویر — JPG, PNG, WebP, GIF · زیادہ سے زیادہ 50 MB" : "Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB"}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
           {reportError("image")}{reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
-          {reportDraft.error && <p role="alert" className="text-xs text-red-300">{reportDraft.error}</p>}
+          {reportDraft.error && <p role="alert" className="text-xs text-red-300 font-semibold">{reportDraft.error}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={() => { locationRequest.current += 1; setReportDraft(null); }} className="text-xs px-3 py-2 rounded-full btn-secondary">{t("cancel")}</button>
             <button onClick={submitQuickReport} className="text-xs px-3 py-2 rounded-full bg-marigold-500 text-ink font-semibold">{t("submitReportBtn")}</button>

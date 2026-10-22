@@ -1,9 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
-import { formatAlertDateTime } from "../utils/alertDateTime";
+import { formatAlertDateTime, parseTimestampMs } from "../utils/alertDateTime";
 
 export default function Navbar() {
   const { lang, t, toggleLang } = useLanguage();
@@ -44,8 +45,8 @@ export default function Navbar() {
     const id = item.uniqueId;
     const itemTs = item.updated_at || item.created_at;
     if (!itemTs) return false;
-    const itemTime = new Date(itemTs).getTime();
-    const readTime = readMap[id] ? new Date(readMap[id]).getTime() : 0;
+    const itemTime = parseTimestampMs(itemTs);
+    const readTime = readMap[id] ? parseTimestampMs(readMap[id]) : 0;
     return readTime >= itemTime;
   }, [readMap]);
 
@@ -73,8 +74,8 @@ export default function Navbar() {
     const id = item.uniqueId;
     const itemTs = item.updated_at || item.created_at;
     if (!itemTs) return false;
-    const itemTime = new Date(itemTs).getTime();
-    const dismissedTime = dismissedMap[id] ? new Date(dismissedMap[id]).getTime() : 0;
+    const itemTime = parseTimestampMs(itemTs);
+    const dismissedTime = dismissedMap[id] ? parseTimestampMs(dismissedMap[id]) : 0;
     return dismissedTime >= itemTime;
   }, [dismissedMap]);
 
@@ -106,20 +107,24 @@ export default function Navbar() {
     const list = [];
     (recentAlerts || []).forEach(item => {
       if (item.status === 'Active') {
+        const ts = item.updated_at || item.created_at;
         list.push({
           ...item,
           type: 'alert',
           uniqueId: `alert-${item.id}`,
-          timestamp: item.updated_at || item.created_at
+          timestamp: ts,
+          timestampMs: parseTimestampMs(ts)
         });
       }
     });
     (advisoryNotes || []).forEach(item => {
+      const ts = item.updated_at || item.created_at;
       list.push({
         ...item,
         type: 'advisory',
         uniqueId: `advisory-${item.advisory_id || item.id}`,
-        timestamp: item.updated_at || item.created_at
+        timestamp: ts,
+        timestampMs: parseTimestampMs(ts)
       });
     });
 
@@ -133,12 +138,8 @@ export default function Navbar() {
       }
     }
 
-    // Sort newest first by actual timestamp
-    deduped.sort((a, b) => {
-      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return timeB - timeA;
-    });
+    // Sort newest first by actual timestamp (numeric ms)
+    deduped.sort((a, b) => b.timestampMs - a.timestampMs);
 
     return deduped;
   }, [recentAlerts, advisoryNotes]);
@@ -179,6 +180,15 @@ export default function Navbar() {
     };
     document.addEventListener('keydown', esc);
     return () => document.removeEventListener('keydown', esc);
+  }, [selectedAlert, selectedAdvisoryModal]);
+
+  // Lock body scroll while alert/advisory popup modal is open
+  useEffect(() => {
+    if (selectedAlert || selectedAdvisoryModal) {
+      const orig = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = orig; };
+    }
   }, [selectedAlert, selectedAdvisoryModal]);
 
   const navigate = useNavigate();
@@ -635,15 +645,15 @@ export default function Navbar() {
         </div>
       )}
           {/* Alert Details Popup Modal */}
-      {selectedAlert && (
+      {selectedAlert && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[99999] w-screen h-screen min-h-screen bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto cursor-pointer"
           role="dialog"
           aria-modal="true"
           onClick={() => setSelectedAlert(null)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left"
+            className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left cursor-default my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
@@ -656,10 +666,11 @@ export default function Navbar() {
               </span>
               <button
                 type="button"
-                className="text-muted hover:text-parchment text-sm px-2 py-1 rounded-lg hover:bg-white/5 transition"
+                aria-label="Close dialog"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-white/20 bg-white/10 text-parchment hover:bg-white/20 hover:text-white transition font-bold text-lg leading-none shrink-0"
                 onClick={() => setSelectedAlert(null)}
               >
-                {t('close')}
+                ✕
               </button>
             </div>
 
@@ -710,19 +721,20 @@ export default function Navbar() {
               )}
             </dl>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Advisory Details Popup Modal */}
-      {selectedAdvisoryModal && (
+      {selectedAdvisoryModal && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[99999] w-screen h-screen min-h-screen bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto cursor-pointer"
           role="dialog"
           aria-modal="true"
           onClick={() => setSelectedAdvisoryModal(null)}
         >
           <div
-            className="w-full max-w-xl rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left"
+            className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-ink-soft p-6 sm:p-7 shadow-2xl max-h-[85vh] overflow-y-auto text-left cursor-default my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
@@ -731,10 +743,11 @@ export default function Navbar() {
               </span>
               <button
                 type="button"
-                className="text-muted hover:text-parchment text-sm px-2 py-1 rounded-lg hover:bg-white/5 transition"
+                aria-label="Close dialog"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-white/20 bg-white/10 text-parchment hover:bg-white/20 hover:text-white transition font-bold text-lg leading-none shrink-0"
                 onClick={() => setSelectedAdvisoryModal(null)}
               >
-                {t('close')}
+                ✕
               </button>
             </div>
 
@@ -763,7 +776,8 @@ export default function Navbar() {
               </div>
             </dl>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </nav>
   );
