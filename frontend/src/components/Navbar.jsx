@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import { API_BASE } from "../config";
-import { formatAlertDateTime, parseTimestampMs } from "../utils/alertDateTime";
+import { formatAlertDateTime, parseTimestampMs, formatAlertMessage } from "../utils/alertDateTime";
 
 export default function Navbar() {
   const { lang, t, toggleLang } = useLanguage();
@@ -265,7 +265,7 @@ export default function Navbar() {
       const isUnread = !isItemRead({ uniqueId: `alert-${item.id}`, ...item });
       if (item.status === 'Active' && versions.current.get(item.id) !== item.updated_at && isUnread) {
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(`${item.risk_level} flood risk — ${item.location}`, { body: item.message });
+          new Notification(`${item.risk_level} flood risk — ${item.location}`, { body: formatAlertMessage(item.message) });
         }
       }
       versions.current.set(item.id, item.updated_at);
@@ -402,7 +402,7 @@ export default function Navbar() {
                       history.length === 0 ? <p className="text-xs text-muted px-4 py-4">{t('noAlertHistory')}</p> : history.map(entry => (
                         <div key={entry.id} className="px-4 py-3 border-b border-white/5">
                           <p className="text-xs text-teal-300">Alert #{entry.alert_id} · {entry.action} · {entry.alert?.risk_level || ''}</p>
-                          <p className="text-sm text-parchment">{entry.alert?.message}</p>
+                          <p className="text-sm text-parchment">{formatAlertMessage(entry.alert?.message)}</p>
                           <p className="text-xs text-muted">{entry.alert?.location} · {entry.actor}</p>
                           <p className="text-xs text-muted">{formatAlertDateTime(entry.timestamp)}</p>
                         </div>
@@ -683,7 +683,7 @@ export default function Navbar() {
 
             <div className="rounded-xl bg-ink/70 border border-white/5 p-4 mb-5">
               <p className="text-xs uppercase tracking-wider text-muted font-medium mb-1.5">{lang === 'ur' ? 'انتباہی پیغام' : 'Warning Message'}</p>
-              <p className="text-sm text-parchment/95 leading-relaxed whitespace-pre-wrap">{selectedAlert.message}</p>
+              <p className="text-sm text-parchment/95 leading-relaxed whitespace-pre-wrap">{formatAlertMessage(selectedAlert.message)}</p>
             </div>
 
             <dl className="text-xs text-muted space-y-2 border-t border-white/10 pt-4">

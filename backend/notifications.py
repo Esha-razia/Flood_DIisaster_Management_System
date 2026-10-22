@@ -143,6 +143,27 @@ def now():
 def log(c, record, action, actor):
     c.execute('INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)', (record['id'], action, now(), actor, json.dumps(record)))
 
+def _format_alert_display(alert_dict):
+    if not isinstance(alert_dict, dict):
+        return alert_dict
+    msg = alert_dict.get('message', '')
+    if isinstance(msg, str):
+        import re
+        trimmed = msg.strip()
+        m_unassigned = re.match(r'^(?:🚨\s*)?Rescue Dispatch:\s*Unassigned\s+assigned\s+to\s+(.+)$', trimmed, flags=re.I)
+        if m_unassigned:
+            alert_dict['message'] = f"🚨 Rescue operation initiated in {m_unassigned.group(1).strip()}"
+        else:
+            m_team = re.match(r'^(?:🚨\s*)?Rescue Dispatch:\s*(.+?)\s+assigned\s+to\s+(.+)$', trimmed, flags=re.I)
+            if m_team:
+                team = m_team.group(1).strip()
+                loc = m_team.group(2).strip()
+                if team.lower() == 'unassigned':
+                    alert_dict['message'] = f"🚨 Rescue operation initiated in {loc}"
+                else:
+                    alert_dict['message'] = f"🚨 {team} assigned to rescue operation in {loc}."
+    return alert_dict
+
 def create(message, risk, location, actor='System', source='manual', rainfall=None, recommended_action=None, **kwargs):
     stamp = now()
     record = dict(message=message, risk=risk, risk_level=risk, location=location, status='Active', assigned_worker=None, linked_rescue_op_id=None, created_at=stamp, updated_at=stamp, source=source)
@@ -363,7 +384,7 @@ def register(app):
                 return jsonify(message='A message, location and valid risk level are required'), 400
             return jsonify(create(message.strip(), risk, location.strip(), user['email'])), 201
         with db() as c:
-            records = [json.loads(r['payload']) for r in c.execute('SELECT payload FROM alerts ORDER BY id DESC')]
+            records = [_format_alert_display(json.loads(r['payload'])) for r in c.execute('SELECT payload FROM alerts ORDER BY id DESC')]
         # Only officials may inspect cancelled alerts/history.
         if user.get('role') not in ('admin', 'government_official'):
             records = [r for r in records if r['status'] == 'Active']
@@ -377,7 +398,7 @@ def register(app):
         with db() as c:
             entries = [dict(r) for r in c.execute('SELECT * FROM history ORDER BY id DESC')]
         for entry in entries:
-            entry['alert'] = json.loads(entry.pop('payload'))
+            entry['alert'] = _format_alert_display(json.loads(entry.pop('payload')))
         return jsonify(entries)
 
     @app.route('/alerts/<int:alert_id>', methods=['PUT', 'DELETE'])

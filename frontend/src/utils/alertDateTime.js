@@ -27,3 +27,22 @@ export function formatAlertDateTime(value) {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
   }).format(date);
 }
+
+export function formatAlertMessage(msg) {
+  if (!msg || typeof msg !== 'string') return msg || '';
+  const trimmed = msg.trim();
+  const unassignedMatch = trimmed.match(/^(?:🚨\s*)?Rescue Dispatch:\s*Unassigned\s+assigned\s+to\s+(.+)$/i);
+  if (unassignedMatch) {
+    return `🚨 Rescue operation initiated in ${unassignedMatch[1].trim()}`;
+  }
+  const teamMatch = trimmed.match(/^(?:🚨\s*)?Rescue Dispatch:\s*(.+?)\s+assigned\s+to\s+(.+)$/i);
+  if (teamMatch) {
+    const team = teamMatch[1].trim();
+    const loc = teamMatch[2].trim();
+    if (team.toLowerCase() === 'unassigned') {
+      return `🚨 Rescue operation initiated in ${loc}`;
+    }
+    return `🚨 ${team} assigned to rescue operation in ${loc}.`;
+  }
+  return msg;
+}

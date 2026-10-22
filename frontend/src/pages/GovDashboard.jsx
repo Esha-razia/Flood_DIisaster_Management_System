@@ -6,6 +6,7 @@ import Footer from "../components/Footer";
 import { useLanguage } from "../context/LanguageContext";
 import { API_BASE } from "../config";
 import { getReportImageSource } from "../utils/reportValidation";
+import { formatAlertMessage } from "../utils/alertDateTime";
 
 const SEVERITY_KEY_MAP = { "Low": "lowSeverity", "Medium": "mediumSeverity", "High": "highSeverity" };
 export default function GovDashboard() {
@@ -27,7 +28,7 @@ export default function GovDashboard() {
   const [assignForm, setAssignForm] = useState({ worker: "", description: "" });
   const [showOperationForm, setShowOperationForm] = useState(false);
   const [selectedOperationId, setSelectedOperationId] = useState(null);
-  const [operationFeedback, setOperationFeedback] = useState("");
+  const [operationFeedback, setOperationFeedback] = useState(null);
   const [operationForm, setOperationForm] = useState({
     location: "", description: "", risk_level: "Medium", assigned_team: "Unassigned", worker_names: [], alert_id: ""
   });
@@ -107,9 +108,9 @@ export default function GovDashboard() {
     await Promise.all([fetchRescueWorkers(), fetchAllRescueOps(), fetchAlerts()]);
   };
 
-  const showOperationFeedback = (message) => {
-    setOperationFeedback(message);
-    setTimeout(() => setOperationFeedback(""), 4000);
+  const showOperationFeedback = (message, type = "error") => {
+    setOperationFeedback({ message, type });
+    setTimeout(() => setOperationFeedback(null), 4000);
   };
 
   const handleCreateOperation = async (e) => {
@@ -164,10 +165,10 @@ export default function GovDashboard() {
     if (operationCreated) {
       try {
         await refreshRescueData();
-        showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے بن گیا۔" : "Rescue operation created successfully.");
+        showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے بن گیا۔" : "Rescue operation created successfully.", "success");
       } catch (refreshError) {
         console.error("Rescue operation was saved, but dashboard refresh failed:", refreshError);
-        showOperationFeedback("Rescue operation created successfully. Refresh the page to see the latest data.");
+        showOperationFeedback("Rescue operation created successfully. Refresh the page to see the latest data.", "success");
       }
     }
   };
@@ -204,7 +205,7 @@ export default function GovDashboard() {
       setAssigningAlertId(null);
       setAssignForm({ worker: "", description: "" });
       await refreshRescueData();
-      showOperationFeedback(lang === "ur" ? "ریسکیو ورکر کامیابی سے تفویض کر دیا گیا۔" : "Rescue worker assigned successfully.");
+      showOperationFeedback(lang === "ur" ? "ریسکیو ورکر کامیابی سے تفویض کر دیا گیا۔" : "Rescue worker assigned successfully.", "success");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not assign the rescue worker.");
     } finally {
@@ -222,7 +223,7 @@ export default function GovDashboard() {
       await axios.post(`${API_BASE}/rescue-operations/${operation.id}/workers`, { worker_names: workerNames });
       setManageWorkerPick([]);
       await refreshRescueData();
-      showOperationFeedback(`${workerNames.join(", ")} added to the operation.`);
+      showOperationFeedback(`${workerNames.join(", ")} added to the operation.`, "success");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not add the rescue workers.");
     }
@@ -232,7 +233,7 @@ export default function GovDashboard() {
     try {
       await axios.delete(`${API_BASE}/rescue-operations/${operation.id}/workers`, { params: { name: workerName } });
       await refreshRescueData();
-      showOperationFeedback(`${workerName} removed and is now available.`);
+      showOperationFeedback(`${workerName} removed and is now available.`, "success");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not remove the rescue worker.");
     }
@@ -240,14 +241,31 @@ export default function GovDashboard() {
 
   const handleUpdateOperation = async (operation, changes) => {
     if (operation.status === "Completed") {
-      showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.");
+      showOperationFeedback(lang === "ur" ? "مکمل شدہ آپریشنز میں ترمیم نہیں کی جا سکتی۔" : "Completed operations are read-only.", "error");
       return;
+    }
+
+    if (changes.status === "Completed") {
+      const hasWorkers = Boolean(
+        (operation.worker_names && operation.worker_names.length > 0) ||
+        (operation.workers && operation.workers.length > 0) ||
+        (operation.assigned_team && operation.assigned_team.trim() && operation.assigned_team.trim().toLowerCase() !== "unassigned")
+      );
+      if (!hasWorkers) {
+        showOperationFeedback(
+          lang === "ur"
+            ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔"
+            : "Assign at least one rescue worker before completing this operation.",
+          "error"
+        );
+        return;
+      }
     }
 
     try {
       await axios.put(`${API_BASE}/rescue-operations/${operation.id}/status`, changes);
       await refreshRescueData();
-      showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے اپڈیٹ ہو گیا۔" : "Rescue operation updated successfully.");
+      showOperationFeedback(lang === "ur" ? "ریسکیو آپریشن کامیابی سے اپڈیٹ ہو گیا۔" : "Rescue operation updated successfully.", "success");
     } catch (err) {
       showOperationFeedback(err.response?.data?.message || "Could not update the rescue operation.");
     }
@@ -1008,7 +1026,7 @@ export default function GovDashboard() {
             {uniqueAlerts.filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")).length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
-              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2">
+              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2 table-scrollbar">
                 {uniqueAlerts
                   .filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium"))
                   .slice(0, 10)
@@ -1035,7 +1053,7 @@ export default function GovDashboard() {
                             </span>
                             <span className="text-sm text-white font-medium">{a.location}</span>
                           </div>
-                          <p className="text-sm text-muted">{a.message}</p>
+                          <p className="text-sm text-muted">{formatAlertMessage(a.message)}</p>
                         </div>
                         {isAssigned ? (
                           <span className="text-xs text-white bg-[#0b1f3a] border border-white/20 rounded-full px-3 py-2 shrink-0">
@@ -1138,7 +1156,9 @@ export default function GovDashboard() {
                 {showOperationForm ? t("cancel") : (lang === "ur" ? "+ نیا آپریشن" : "+ New Operation")}
               </button>
             </div>
-            {operationFeedback && <p className="text-sm text-emerald-400 mb-4">✓ {operationFeedback}</p>}
+            {operationFeedback && (operationFeedback.type === "success"
+              ? <p className="text-sm text-emerald-400 mb-4">✓ {operationFeedback.message}</p>
+              : <p className="text-sm text-red-400 mb-4">⚠ {operationFeedback.message}</p>)}
             {showOperationForm && (
               <form onSubmit={handleCreateOperation} className="space-y-3 mb-6 bg-white/5 rounded-xl p-4 border border-white/10">
                 <div className="grid md:grid-cols-2 gap-3">
@@ -1238,16 +1258,39 @@ export default function GovDashboard() {
                       <tr key={op.id} className={`align-top ${op.status === "Completed" ? "bg-white/[0.02]" : ""}`}>
                         <td className="py-2 text-white">{op.location}</td>
                         <td className="py-2">
-                          <select
-                            value={op.status}
-                            onChange={(e) => handleUpdateOperation(op, { status: e.target.value })}
-                            disabled={op.status === "Completed"}
-                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            <option className="bg-[#0b1f3a] text-white" value="Assigned">{lang === "ur" ? "شروع ہوا" : "Started"}</option>
-                            <option className="bg-[#0b1f3a] text-white" value="In Progress">{lang === "ur" ? "جاری ہے" : "In Progress"}</option>
-                            <option className="bg-[#0b1f3a] text-white" value="Completed">{lang === "ur" ? "مکمل" : "Completed"}</option>
-                          </select>
+                          {(() => {
+                            const hasWorkers = Boolean(
+                              (op.worker_names && op.worker_names.length > 0) ||
+                              (op.workers && op.workers.length > 0) ||
+                              (op.assigned_team && op.assigned_team.trim() && op.assigned_team.trim().toLowerCase() !== "unassigned")
+                            );
+                            return (
+                              <div>
+                                <select
+                                  value={op.status}
+                                  onChange={(e) => handleUpdateOperation(op, { status: e.target.value })}
+                                  disabled={op.status === "Completed"}
+                                  className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  <option className="bg-[#0b1f3a] text-white" value="Assigned">{lang === "ur" ? "شروع ہوا" : "Started"}</option>
+                                  <option className="bg-[#0b1f3a] text-white" value="In Progress">{lang === "ur" ? "جاری ہے" : "In Progress"}</option>
+                                  <option
+                                    className="bg-[#0b1f3a] text-white disabled:opacity-50"
+                                    value="Completed"
+                                    disabled={!hasWorkers}
+                                    title={!hasWorkers ? (lang === "ur" ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation.") : undefined}
+                                  >
+                                    {lang === "ur" ? "مکمل" : "Completed"}
+                                  </option>
+                                </select>
+                                {!hasWorkers && op.status !== "Completed" && (
+                                  <p className="text-[10px] text-amber-300/90 mt-1 max-w-[150px] leading-tight" title={lang === "ur" ? "اس آپریشن کو مکمل کرنے سے پہلے کم از کم ایک ریسکیو ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation."}>
+                                    {lang === "ur" ? "مکمل کرنے سے پہلے ورکر تفویض کریں۔" : "Assign at least one rescue worker before completing this operation."}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="py-2">
                           <select
@@ -1464,7 +1507,7 @@ export default function GovDashboard() {
             {advisories.length === 0 ? (
               <p className="text-sm text-muted">{t("noAdvisoriesYet")}</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2 table-scrollbar">
                 {advisories.map((a) => (
                   <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
                     <div className="flex items-start justify-between gap-3">

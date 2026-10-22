@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+﻿from flask import Flask, request, jsonify
 from flask_cors import CORS
 try:
     import pyodbc  # only needed for the optional SQL Server path — if this
@@ -2432,13 +2432,22 @@ def _get_alert_for_link(alert_id):
             linked_operation_id = int(linked_operation_id)
         except (TypeError, ValueError):
             raise ValueError("Related flood alert has an invalid operation link")
-        if any(operation["id"] == linked_operation_id for operation in MEMORY_RESCUE_OPS):
+        if _operation_is_open(linked_operation_id):
             raise ValueError(f"Related flood alert is already linked to rescue operation {linked_operation_id}")
-        if DB_AVAILABLE:
-            cursor.execute("SELECT id FROM rescue_operations WHERE id = ?", (linked_operation_id,))
-            if cursor.fetchone():
-                raise ValueError(f"Related flood alert is already linked to rescue operation {linked_operation_id}")
     return normalized_id, alert
+
+
+def _operation_is_open(operation_id):
+    """True if the operation exists and is not completed (a completed link may be replaced)."""
+    for operation in MEMORY_RESCUE_OPS:
+        if operation["id"] == operation_id:
+            return operation.get("status") != "Completed"
+    if DB_AVAILABLE:
+        cursor.execute("SELECT status FROM rescue_operations WHERE id = ?", (operation_id,))
+        row = cursor.fetchone()
+        if row:
+            return row.status != "Completed"
+    return False
 
 
 def _operation_exists(operation_id):
@@ -2465,7 +2474,7 @@ def _link_alert_to_operation(alert_id, operation_id, assigned_worker):
             raise LookupError("Related flood alert was not found")
         alert = json.loads(row["payload"])
         existing_link = alert.get("linked_rescue_op_id")
-        if existing_link is not None and str(existing_link) != str(operation_id) and _operation_exists(existing_link):
+        if existing_link is not None and str(existing_link) != str(operation_id) and _operation_is_open(int(existing_link)):
             raise ValueError("Related flood alert is already linked to another rescue operation")
         alert["linked_rescue_op_id"] = int(operation_id)
         alert["assigned_worker"] = (
@@ -2510,8 +2519,13 @@ def _create_rescue_op_internal(location, description="", risk_level="Medium", as
             )
             cursor.execute("UPDATE rescue_operations SET checklist = ?, latitude = ?, longitude = ? WHERE id = ?", (json.dumps(op["checklist"]), latitude, longitude, op["id"]))
             if create_dispatch_alert:
+                _team = (op.get("assigned_team") or "").strip()
+                if _team and _team.lower() != "unassigned":
+                    _dispatch_msg = f"🚨 {_team} assigned to rescue operation in {op['location']}."
+                else:
+                    _dispatch_msg = f"🚨 Rescue operation initiated in {op['location']}"
                 dispatch_alert = create_notification(
-                    f"🚨 Rescue Dispatch: {op['assigned_team']} assigned to {op['location']}",
+                    _dispatch_msg,
                     op["risk_level"], op["location"], source="dispatch"
                 )
                 _link_alert_to_operation(dispatch_alert["id"], op["id"], op["assigned_team"])
@@ -2624,6 +2638,14 @@ def update_rescue_operation_status(op_id):
     risk_level = data.get("risk_level")
     if risk_level and risk_level not in ("High", "Medium", "Low"):
         return jsonify({"message": "Invalid risk level"}), 400
+
+    if new_status == "Completed":
+        existing_op = next((o for o in _get_all_rescue_operations() if o["id"] == op_id), None)
+        if not existing_op:
+            return jsonify({"message": "Rescue operation not found"}), 404
+        current_workers = _op_worker_names(existing_op, _active_assignments())
+        if not current_workers:
+            return jsonify({"message": "Assign at least one rescue worker before completing this operation."}), 400
 
     updated_at_value = datetime.now()
     updated_at = str(updated_at_value)
