@@ -34,6 +34,36 @@ export default function Navbar() {
     catch { return {}; }
   });
 
+  const seenKey = `flood-alerts-last-seen:${userKey}`;
+  const [lastSeenTime, setLastSeenTime] = useState(() => {
+    try {
+      const val = localStorage.getItem(seenKey);
+      return val ? Number(val) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const markAllAsSeen = useCallback(() => {
+    const now = Date.now();
+    setLastSeenTime(now);
+    try {
+      localStorage.setItem(seenKey, String(now));
+    } catch {}
+  }, [seenKey]);
+
+  const [sessionLoginTime] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('flood_session_login_time');
+      if (stored) return Number(stored);
+      const now = Date.now();
+      sessionStorage.setItem('flood_session_login_time', String(now));
+      return now;
+    } catch {
+      return Date.now();
+    }
+  });
+
   const dismissedKey = `flood-alerts-dismissed:${userKey}`;
   const [dismissedMap, setDismissedMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem(dismissedKey) || '{}'); }
@@ -47,8 +77,8 @@ export default function Navbar() {
     if (!itemTs) return false;
     const itemTime = parseTimestampMs(itemTs);
     const readTime = readMap[id] ? parseTimestampMs(readMap[id]) : 0;
-    return readTime >= itemTime;
-  }, [readMap]);
+    return readTime >= itemTime || (lastSeenTime > 0 && itemTime <= lastSeenTime);
+  }, [readMap, lastSeenTime]);
 
   // Mark an item as read when user clicks it to open popup
   const markAsRead = useCallback((item) => {
@@ -150,28 +180,69 @@ export default function Navbar() {
     return allNotifications.filter(item => !isItemDismissed(item));
   }, [allNotifications, isItemDismissed]);
 
-  // Current tab = unread only; View All tab = all visible (dismissed excluded)
-  const displayedNotifications = showAllAlerts
-    ? visibleNotifications
-    : visibleNotifications.filter(item => !isItemRead(item));
+  // Current tab = alerts created in current session or by this user; View All = all visible
+  const displayedNotifications = useMemo(() => {
+    if (showAllAlerts) {
+      return visibleNotifications;
+    }
+    const currentEmail = (localStorage.getItem('userEmail') || '').toLowerCase();
+    return visibleNotifications.filter(item => {
+      // 1. Alert created during current login session
+      if (item.timestampMs >= sessionLoginTime) return true;
+      // 2. Alert created by currently logged-in user
+      if (currentEmail && (
+        (item.actor && item.actor.toLowerCase() === currentEmail) ||
+        (item.authorEmail && item.authorEmail.toLowerCase() === currentEmail) ||
+        (item.created_by && item.created_by.toLowerCase() === currentEmail)
+      )) {
+        return true;
+      }
+      return false;
+    });
+  }, [showAllAlerts, visibleNotifications, sessionLoginTime]);
 
-  // Bell dot: only appears when there is genuinely unread notification
-  const hasUnread = visibleNotifications.some(item => !isItemRead(item));
+  // Bell dot: only appears when there is an active alert newer than lastSeenTime
+  const hasUnread = useMemo(() => {
+    return visibleNotifications.some(item => {
+      const itemTs = item.updated_at || item.created_at;
+      const itemTime = item.timestampMs || parseTimestampMs(itemTs);
+      return itemTime > lastSeenTime;
+    });
+  }, [visibleNotifications, lastSeenTime]);
+
+  const panelWasOpen = useRef(false);
+  useEffect(() => {
+    if (showAlertsPanel) {
+      panelWasOpen.current = true;
+    } else if (panelWasOpen.current) {
+      // User just closed the alerts panel: mark all as seen so dot disappears immediately
+      markAllAsSeen();
+      panelWasOpen.current = false;
+    }
+  }, [showAlertsPanel, markAllAsSeen]);
 
   // Outside click & escape for notifications panel
   useEffect(() => {
     if (!showAlertsPanel) return;
     const outside = event => {
-      if (!alertsContainer.current?.contains(event.target)) setShowAlertsPanel(false);
+      if (!alertsContainer.current?.contains(event.target)) {
+        setShowAlertsPanel(false);
+        markAllAsSeen();
+      }
     };
-    const escape = event => { if (event.key === 'Escape') setShowAlertsPanel(false); };
+    const escape = event => {
+      if (event.key === 'Escape') {
+        setShowAlertsPanel(false);
+        markAllAsSeen();
+      }
+    };
     document.addEventListener('pointerdown', outside);
     document.addEventListener('keydown', escape);
     return () => {
       document.removeEventListener('pointerdown', outside);
       document.removeEventListener('keydown', escape);
     };
-  }, [showAlertsPanel]);
+  }, [showAlertsPanel, markAllAsSeen]);
 
   // Escape key for details modals
   useEffect(() => {
@@ -294,6 +365,7 @@ export default function Navbar() {
   };
   const handleLogout = () => {
     ['userRole', 'userName', 'userEmail', 'userId', 'notificationToken'].forEach(key => localStorage.removeItem(key));
+    sessionStorage.removeItem('flood_session_login_time');
     setUserRole(null);
     setUserName(null);
     navigate('/');
@@ -369,9 +441,22 @@ export default function Navbar() {
         {isAuthenticated && userName && (
           <div className="flex items-center gap-3 ml-auto md:ml-4 md:pl-4 md:border-l md:border-white/10">
             <div className="relative" ref={alertsContainer}>
-              <button aria-expanded={showAlertsPanel} onClick={() => setShowAlertsPanel(v => !v)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5" title="Notifications" aria-label="Notifications">
+              <button
+                aria-expanded={showAlertsPanel}
+                onClick={() => {
+                  setShowAlertsPanel(prev => {
+                    if (prev) {
+                      markAllAsSeen();
+                    }
+                    return !prev;
+                  });
+                }}
+                className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5"
+                title="Notifications"
+                aria-label="Notifications"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                {hasUnread && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
+                {(!showAlertsPanel && hasUnread) && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
               </button>
               {showAlertsPanel && (
                 <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
@@ -414,7 +499,11 @@ export default function Navbar() {
                     ) : (
                       <>
                         {displayedNotifications.length === 0 ? (
-                          <p className="text-xs text-muted px-4 py-4">{showAllAlerts ? t('noAlertsOrAdvisories') : t('nothingToShowCleared')}</p>
+                          <p className="text-xs text-muted px-4 py-4">
+                            {showAllAlerts
+                              ? t('noAlertsOrAdvisories')
+                              : (lang === 'ur' ? 'اس سیشن میں کوئی نیا الرٹ نہیں ہے۔ تمام الرٹس دیکھنے کے لیے "View All" پر کلک کریں۔' : 'No recent alerts for this session. Click "View All" to see all alerts.')}
+                          </p>
                         ) : (
                           displayedNotifications.map(item => {
                             const read = isItemRead(item);

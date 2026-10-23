@@ -94,6 +94,7 @@ export default function Login() {
       localStorage.setItem('userName', response.data.name);
       localStorage.setItem('userEmail', response.data.email);
       if (response.data.id) localStorage.setItem('userId', response.data.id);
+      sessionStorage.setItem('flood_session_login_time', String(Date.now()));
       
       // Show success message
       setSuccess(t('loginSuccessRedirect'));

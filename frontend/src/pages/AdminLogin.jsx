@@ -81,6 +81,7 @@ export default function AdminLogin() {
       localStorage.setItem('userName', response.data.name || 'System Admin');
       localStorage.setItem('userEmail', response.data.email || 'admin@example.com');
       if (response.data.id) localStorage.setItem('userId', response.data.id);
+      sessionStorage.setItem('flood_session_login_time', String(Date.now()));
 
       setSuccess(lang === 'ur' ? 'ایڈمنسٹریٹر لاگ ان کامیاب! ری ڈائریکٹ ہو رہا ہے...' : 'Administrator login successful! Redirecting...');
 
