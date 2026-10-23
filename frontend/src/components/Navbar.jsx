@@ -150,8 +150,10 @@ export default function Navbar() {
     return allNotifications.filter(item => !isItemDismissed(item));
   }, [allNotifications, isItemDismissed]);
 
-  // Fix 3: for citizens, displayedNotifications always excludes dismissed; for admin/official showAllAlerts overrides
-  const displayedNotifications = (showAllAlerts && userRole !== 'citizen') ? allNotifications : visibleNotifications;
+  // Current tab = unread only; View All tab = all visible (dismissed excluded)
+  const displayedNotifications = showAllAlerts
+    ? visibleNotifications
+    : visibleNotifications.filter(item => !isItemRead(item));
 
   // Bell dot: only appears when there is genuinely unread notification
   const hasUnread = visibleNotifications.some(item => !isItemRead(item));
@@ -369,7 +371,7 @@ export default function Navbar() {
             <div className="relative" ref={alertsContainer}>
               <button aria-expanded={showAlertsPanel} onClick={() => setShowAlertsPanel(v => !v)} className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted hover:text-parchment hover:bg-white/5" title="Notifications" aria-label="Notifications">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                {(!showAlertsPanel && hasUnread) && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
+                {hasUnread && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-marigold-400"/>}
               </button>
               {showAlertsPanel && (
                 <div className="fixed right-2 top-16 w-[min(24rem,calc(100vw-1rem))] md:absolute md:right-0 md:top-full md:mt-2 rounded-2xl border border-white/10 bg-ink-soft shadow-2xl overflow-hidden">
