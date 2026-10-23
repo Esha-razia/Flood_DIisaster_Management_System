@@ -1,4 +1,4 @@
-﻿from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 try:
     import pyodbc  # only needed for the optional SQL Server path — if this
@@ -3356,6 +3356,8 @@ def create_community_report():
     if field_errors:
         return jsonify(message='Please correct the highlighted fields.', errors=field_errors), 400
     image_url = data.get('imageUrl') or ''
+    if not image_url.strip():
+        return jsonify(message='Please correct the highlighted fields.', errors={'image': 'Please upload an image before submitting your report.'}), 400
     latitude = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
     longitude = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
     if (latitude is None) != (longitude is None):

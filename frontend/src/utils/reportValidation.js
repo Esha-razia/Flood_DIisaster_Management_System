@@ -17,6 +17,8 @@ export function validateReportFields({location = '', description = '', contact =
   else if (!/^\p{L}/u.test(text) || /^[a-z]/.test(text)) errors.description = 'Start the description with a capital letter.';
   if (!/^03\d{9}$/.test(contact.trim())) errors.contact = 'Enter an 11-digit mobile number, e.g. 03001234567.';
   if (!['Low','Medium','High'].includes(severity)) errors.severity = 'Select a severity.';
+  // Image is required for community reports (imagePreview holds the base64 data URL after selection)
+  if (!imagePreview && !imageUrl) errors.image = 'Please upload an image before submitting your report.';
   return errors;
 }
 export function reportImageError(file) {

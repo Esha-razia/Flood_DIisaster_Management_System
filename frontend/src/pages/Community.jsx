@@ -558,7 +558,7 @@ export default function Community() {
                     </div>
 
                     <div className="space-y-4">
-                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} <span className="text-xs font-normal lowercase tracking-normal text-slate-400">({lang === "ur" ? "اختیاری" : "Optional"})</span></p>
+                      <p className="text-sm font-semibold text-muted uppercase tracking-[0.3em]">{t("visualEvidence")} <span className="text-xs font-normal lowercase tracking-normal text-red-400">*{lang === "ur" ? " (ضروری)" : " required"}</span></p>
                       <div
                         onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                         onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
@@ -573,7 +573,7 @@ export default function Community() {
                       >
                         <label className="flex cursor-pointer flex-col items-center justify-center gap-3 text-muted">
                           <span className="text-4xl">📷</span>
-                          <div><span className="font-semibold text-white">{t("dragDropImage")}</span><p className="text-sm text-slate-500">{t("orClickToBrowse")} · JPG, PNG, WebP, GIF · Maximum 50 MB · ({lang === "ur" ? "اختیاری" : "Optional"})</p></div>
+                          <div><span className="font-semibold text-white">{t("dragDropImage")}</span><p className="text-sm text-slate-500">{t("orClickToBrowse")} · JPG, PNG, WebP, GIF · Maximum 50 MB · ({lang === "ur" ? "ضروری" : "Required"})</p></div>
                           <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => handleFileSelect(e.target.files?.[0])} />
                         </label>
                       </div>

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+﻿import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
@@ -106,7 +106,8 @@ export default function Navbar() {
   const allNotifications = useMemo(() => {
     const list = [];
     (recentAlerts || []).forEach(item => {
-      if (item.status === 'Active') {
+      // Fix 2: exclude Low-risk flood alerts from notification panel and unread badge
+      if (item.status === 'Active' && item.risk_level !== 'Low') {
         const ts = item.updated_at || item.created_at;
         list.push({
           ...item,
@@ -144,12 +145,13 @@ export default function Navbar() {
     return deduped;
   }, [recentAlerts, advisoryNotes]);
 
+  // Fix 3: always exclude dismissed notifications for all users
   const visibleNotifications = useMemo(() => {
-    if (userRole !== 'citizen') return allNotifications;
     return allNotifications.filter(item => !isItemDismissed(item));
-  }, [allNotifications, userRole, isItemDismissed]);
+  }, [allNotifications, isItemDismissed]);
 
-  const displayedNotifications = showAllAlerts ? allNotifications : visibleNotifications;
+  // Fix 3: for citizens, displayedNotifications always excludes dismissed; for admin/official showAllAlerts overrides
+  const displayedNotifications = (showAllAlerts && userRole !== 'citizen') ? allNotifications : visibleNotifications;
 
   // Bell dot: only appears when there is genuinely unread notification
   const hasUnread = visibleNotifications.some(item => !isItemRead(item));
