@@ -77,8 +77,8 @@ export default function Navbar() {
     if (!itemTs) return false;
     const itemTime = parseTimestampMs(itemTs);
     const readTime = readMap[id] ? parseTimestampMs(readMap[id]) : 0;
-    return readTime >= itemTime || (lastSeenTime > 0 && itemTime <= lastSeenTime);
-  }, [readMap, lastSeenTime]);
+    return readTime >= itemTime;
+  }, [readMap]);
 
   // Mark an item as read when user clicks it to open popup
   const markAsRead = useCallback((item) => {
@@ -204,11 +204,12 @@ export default function Navbar() {
   // Bell dot: only appears when there is an active alert newer than lastSeenTime
   const hasUnread = useMemo(() => {
     return visibleNotifications.some(item => {
+      if (isItemRead(item)) return false;
       const itemTs = item.updated_at || item.created_at;
       const itemTime = item.timestampMs || parseTimestampMs(itemTs);
       return itemTime > lastSeenTime;
     });
-  }, [visibleNotifications, lastSeenTime]);
+  }, [visibleNotifications, lastSeenTime, isItemRead]);
 
   const panelWasOpen = useRef(false);
   useEffect(() => {
