@@ -11,7 +11,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 import Community from './pages/Community';
 import MapView from './pages/MapView';
-import CheckIn from './pages/CheckIn';
 import ForgotPassword from './pages/ForgotPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import { LanguageProvider } from './context/LanguageContext';
@@ -81,8 +80,6 @@ function App() {
         } />
         <Route path="/community" element={<Community />} />
         <Route path="/map" element={<MapView />} />
-        <Route path="/checkin/:shelterId" element={<CheckIn />} />
-        <Route path="/check-in/:shelterId" element={<CheckIn />} />
         <Route path="/profile" element={
           <ProtectedRoute>
             <Profile />
