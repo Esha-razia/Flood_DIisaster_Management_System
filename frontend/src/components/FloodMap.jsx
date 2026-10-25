@@ -709,14 +709,8 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         const hex = COLOR_HEX[m.category_color] || "#93A0B4";
         const marker = L.marker([m.latitude, m.longitude], { icon: makeDivIcon(hex) });
         const isShelterOrHospital = m.type === "shelter" || m.type === "hospital";
-        const verifiedBadge = isShelterOrHospital
-          ? (m.verified
-              ? `<span style="display:inline-block;margin-top:2px;font-size:11px;color:#3FBDB6;">✓ ${t("verifiedLabel")}</span>`
-              : `<span style="display:inline-block;margin-top:2px;font-size:11px;color:#93A0B4;">${t("unverifiedLabel")}</span>`)
-          : "";
         const details = [
           `<strong>${(lang === "ur" && m.name_ur) ? m.name_ur : (m.name || "")}</strong>`,
-          verifiedBadge,
           m.type === 'community_report' && canEdit ? `<div>${escapeMapText(m.description || '')}</div>${getReportImageSource(m.imageUrl) ? `<img src="${escapeMapText(getReportImageSource(m.imageUrl))}" alt="Incident photo" style="max-width:220px;max-height:140px;margin-top:6px" />` : ''}<a href="/community?report=${m.report_id}" style="display:block;margin-top:8px;color:#3FBDB6">Review report ${escapeMapText(m.trackingId || '')}</a>` : '',
           m.location ? `<div>${m.location}</div>` : "",
           (m.type === "shelter") ? `<div style="opacity:.7">${t("capacityPrefix")}: ${
@@ -734,8 +728,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           .join("");
         const actionButtons = [
           m.contact ? `<a href="tel:${m.contact}" class="fdm-popup-btn" style="text-decoration:none;display:inline-block;">${t("callNowBtn")}</a>` : "",
-          `<button class="fdm-popup-btn fdm-share-btn" data-lat="${m.latitude}" data-lng="${m.longitude}" data-name="${(m.name || "").replace(/"/g, "&quot;")}">${t("shareLocationBtn")}</button>`,
-          (canEdit && isShelterOrHospital) ? `<button class="fdm-popup-btn fdm-verify-btn" style="background:${m.verified ? '#93A0B4' : '#3FBDB6'};">${m.verified ? t("unverifyBtn") : t("verifyBtn")}</button>` : "",
         ].filter(Boolean).join(" ");
         const occupancyControl = (canEdit && m.type === "shelter")
           ? `<div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
@@ -748,32 +740,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         marker.on("popupopen", (e) => {
           setSelectedId(m.id);
           const el = e.popup.getElement();
-          const shareBtn = el?.querySelector(".fdm-share-btn");
-          if (shareBtn) {
-            shareBtn.onclick = () => {
-              const mapsUrl = `https://www.google.com/maps?q=${m.latitude},${m.longitude}`;
-              const text = `${m.name}: ${mapsUrl}`;
-              if (navigator.share) {
-                navigator.share({ title: m.name, text, url: mapsUrl }).catch(() => {});
-              } else {
-                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-              }
-            };
-          }
-          const verifyBtn = el?.querySelector(".fdm-verify-btn");
-          if (verifyBtn) {
-            verifyBtn.onclick = async () => {
-              const rawId = m.id.replace(/^(shelter|hospital)-/, "");
-              const endpoint = m.type === "shelter" ? "shelters" : "hospitals";
-              try {
-                await axios.put(`${API_BASE}/${endpoint}/${rawId}/verify`, { verified: !m.verified });
-                fetchMarkers();
-                map.closePopup();
-              } catch (err) {
-                console.error("Failed to update verification:", err);
-              }
-            };
-          }
           const occBtn = el?.querySelector(".fdm-occupancy-btn");
           if (occBtn) {
             occBtn.onclick = async () => {
@@ -1447,11 +1413,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
                       <div className="min-w-0">
                         <p className="text-sm text-parchment font-medium truncate flex items-center gap-1.5">
                           {(lang === "ur" && m.name_ur) ? m.name_ur : (m.name || "")}
-                          {(m.type === "shelter" || m.type === "hospital") && (
-                            m.verified
-                              ? <span className="text-[10px] text-teal-300 shrink-0">✓</span>
-                              : <span className="text-[10px] text-muted/60 shrink-0" title={t("unverifiedLabel")}>○</span>
-                          )}
                         </p>
                         {m.location && <p className="text-xs text-muted truncate">{m.location}</p>}
                         {(m.status || m.risk_level || m.severity) && (

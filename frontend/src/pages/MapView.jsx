@@ -4,7 +4,7 @@ import Footer from "../components/Footer";
 import FloodMap from "../components/FloodMap";
 import { useLanguage } from "../context/LanguageContext";
 
-const EDIT_ROLES = ["admin", "government_official", "rescue_worker"];
+const EDIT_ROLES = ["admin", "government_official"];
 
 export default function MapView() {
   const { t } = useLanguage();

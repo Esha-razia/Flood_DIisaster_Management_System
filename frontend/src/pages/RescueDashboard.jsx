@@ -767,7 +767,7 @@ export default function RescueDashboard() {
                   </div>
                 </div>
 
-                <FloodMap height={540} canEdit={true} />
+                <FloodMap height={540} canEdit={false} />
               </div>
             </div>
           )}

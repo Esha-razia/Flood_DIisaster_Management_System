@@ -2899,6 +2899,9 @@ def get_shelters():
 @app.route("/shelters", methods=["POST"])
 def create_shelter():
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     name = (data.get("name") or "").strip()
     address = (data.get("address") or "").strip()
     if not name or not address:
@@ -2948,11 +2951,15 @@ def create_shelter():
         MEMORY_SHELTERS.append(shelter)
         MEMORY_SHELTERS.append(shelter)
 
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify(shelter), 201
 
 @app.route("/shelters/<int:shelter_id>", methods=["PUT"])
 def update_shelter(shelter_id):
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     updated = None
     for s in MEMORY_SHELTERS:
         if s["id"] == shelter_id:
@@ -2973,6 +2980,7 @@ def update_shelter(shelter_id):
 
     if not updated and not DB_AVAILABLE:
         return jsonify({"message": "Shelter not found"}), 404
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify(updated or {"id": shelter_id, **data})
 
 @app.route("/shelters/<int:shelter_id>/verify", methods=["PUT"])
@@ -2982,6 +2990,9 @@ def verify_shelter(shelter_id):
     update endpoint so this single flag can never be accidentally wiped out
     by an unrelated edit that doesn't mention it."""
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     verified = bool(data.get("verified", True))
     for s in MEMORY_SHELTERS:
         if s["id"] == shelter_id:
@@ -3016,6 +3027,9 @@ def update_shelter_occupancy(shelter_id):
 
 @app.route("/shelters/<int:shelter_id>", methods=["DELETE"])
 def delete_shelter(shelter_id):
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     MEMORY_SHELTERS[:] = [s for s in MEMORY_SHELTERS if s["id"] != shelter_id]
     if DB_AVAILABLE:
         try:
@@ -3023,6 +3037,7 @@ def delete_shelter(shelter_id):
             conn.commit()
         except Exception as e:
             print("Failed to delete shelter from database:", e)
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify({"message": "Shelter deleted successfully"})
 
 # ---------------- HOSPITALS (FR-08) ----------------
@@ -3068,6 +3083,9 @@ def get_hospitals():
 @app.route("/hospitals", methods=["POST"])
 def create_hospital():
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     name = (data.get("name") or "").strip()
     address = (data.get("address") or "").strip()
     if not name or not address:
@@ -3118,11 +3136,15 @@ def create_hospital():
         hospital["id"] = max([h["id"] for h in MEMORY_HOSPITALS], default=0) + 1
         MEMORY_HOSPITALS.append(hospital)
 
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify(hospital), 201
 
 @app.route("/hospitals/<int:hospital_id>", methods=["PUT"])
 def update_hospital(hospital_id):
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     updated = None
     for h in MEMORY_HOSPITALS:
         if h["id"] == hospital_id:
@@ -3143,6 +3165,7 @@ def update_hospital(hospital_id):
             conn.commit()
         except Exception as e:
             print("Failed to update hospital in database:", e)
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify(updated or {"id": hospital_id})
 
 @app.route("/hospitals/<int:hospital_id>/verify", methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"])
@@ -3150,6 +3173,9 @@ def verify_hospital(hospital_id):
     if request.method == "OPTIONS":
         return jsonify({"ok": True}), 200
     data = request.json or {}
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     verified = bool(data.get("verified", True))
     for h in MEMORY_HOSPITALS:
         if h["id"] == hospital_id:
@@ -3186,6 +3212,9 @@ def update_hospital_occupancy(hospital_id):
 
 @app.route("/hospitals/<int:hospital_id>", methods=["DELETE"])
 def delete_hospital(hospital_id):
+    actor = identity()
+    if actor.get('role') not in ('admin', 'government_official'):
+        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
     MEMORY_HOSPITALS[:] = [h for h in MEMORY_HOSPITALS if h["id"] != hospital_id]
     if DB_AVAILABLE:
         try:
@@ -3193,6 +3222,7 @@ def delete_hospital(hospital_id):
             conn.commit()
         except Exception as e:
             print("Failed to delete hospital from database:", e)
+    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
     return jsonify({"message": "Hospital deleted successfully"})
 
 MEMORY_COMMUNITY_REPORTS = [
