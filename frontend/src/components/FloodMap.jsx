@@ -168,6 +168,18 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const weatherLayerRef = useRef(null);
   const containerRef = useRef(null);
   const sidebarItemRefs = useRef({});
+  const markerInstancesRef = useRef({});
+
+  const userRole = localStorage.getItem("userRole");
+  const userEmail = localStorage.getItem("userEmail");
+  const isCitizen = userRole === "citizen" && Boolean(userEmail);
+
+  useEffect(() => {
+    if (!isCitizen) {
+      setReportMode(false);
+      setReportDraft(null);
+    }
+  }, [isCitizen]);
 
   const [isOffline, setIsOffline] = useState(false);
 
@@ -443,7 +455,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     const map = mapRef.current;
     if (!map) return;
     const handler = async event => {
-      if (!reportMode) return;
+      if (!reportMode || !isCitizen) return;
       const lat = event.latlng.lat, lng = event.latlng.lng;
       const request = ++locationRequest.current;
       setReportMode(false);
@@ -504,13 +516,19 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       const result = await axios.post(`${API_BASE}/community-reports`, {
         authorEmail: email, authorName: name,
         location: reportDraft.location.trim(),
-        imageUrl:reportDraft.imageUrl,
+        imageUrl: reportDraft.imageUrl,
         description: reportDraft.description.trim(),
         severity: reportDraft.severity,
         contact: reportDraft.contact.trim(),
         type: "Flooding",
         latitude: reportDraft.lat,
         longitude: reportDraft.lng,
+        source: "map",
+      }, {
+        headers: {
+          "X-FMS-Actor-Role": "citizen",
+          "X-FMS-Actor-Email": email,
+        }
       });
       setReportReceipt(result.data);
       setReportDraft(null);
@@ -602,6 +620,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     const layer = markersLayerRef.current;
     if (!map || !layer) return;
     layer.clearLayers();
+    markerInstancesRef.current = {};
 
     // Risk-level overlays (FR04-08) — soft colored circles per city
     riskZones.forEach((z) => {
@@ -641,12 +660,29 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         .addTo(layer);
     }
 
-    // Zoomed out (viewing most/all of Pakistan), many markers land close
-    // enough together to visually stack into an unreadable pile of dots —
-    // grouping them into one numbered cluster (like Google/Uber-style maps
-    // do) keeps the view legible; zooming in naturally splits them back out
-    // into individual pins once there's room to tell them apart.
+    // Zoomed out (viewing most/all of Pakistan) clustering vs individual pins
     const cellSizeDeg = mapZoom <= 5 ? 2.5 : mapZoom <= 6 ? 1.2 : mapZoom <= 7 ? 0.6 : mapZoom <= 8 ? 0.25 : 0;
+
+    // Detect overlapping coordinates and assign a small visual dispersion offset so all pins remain clickable
+    const coordCounts = {};
+    visibleMarkers.forEach((m) => {
+      const k = `${Number(m.latitude).toFixed(4)}_${Number(m.longitude).toFixed(4)}`;
+      coordCounts[k] = (coordCounts[k] || 0) + 1;
+    });
+    const coordUsage = {};
+    const getDispCoords = (m) => {
+      const k = `${Number(m.latitude).toFixed(4)}_${Number(m.longitude).toFixed(4)}`;
+      const total = coordCounts[k] || 1;
+      if (total <= 1) return null;
+      const idx = coordUsage[k] || 0;
+      coordUsage[k] = idx + 1;
+      const angle = (2 * Math.PI * idx) / total;
+      const dist = 0.00035; // ~35 meters visual offset so every overlapping pin is distinctly clickable
+      return {
+        lat: Number(m.latitude) + dist * Math.cos(angle),
+        lng: Number(m.longitude) + dist * Math.sin(angle),
+      };
+    };
 
     if (cellSizeDeg > 0) {
       const cells = {};
@@ -657,7 +693,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
 
       Object.values(cells).forEach((members) => {
         if (members.length === 1) {
-          drawSingleMarker(members[0], layer);
+          drawSingleMarker(members[0], layer, getDispCoords(members[0]));
         } else {
           const avgLat = members.reduce((s, m) => s + m.latitude, 0) / members.length;
           const avgLng = members.reduce((s, m) => s + m.longitude, 0) / members.length;
@@ -683,23 +719,22 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         }
       });
     } else {
-      visibleMarkers.forEach((m) => drawSingleMarker(m, layer));
+      visibleMarkers.forEach((m) => drawSingleMarker(m, layer, getDispCoords(m)));
     }
 
-    // Searching zooms the map to the matching result(s) instead of leaving
-    // the view unchanged — one match zooms in and opens its popup, several
-    // matches fit them all in view.
+    // Restore selected facility popup after polling/refresh if still present
+    if (selectedId && markerInstancesRef.current[selectedId]) {
+      markerInstancesRef.current[selectedId].openPopup();
+    }
+
+    // Searching zooms the map to the matching result(s)
     const q = search.trim().toLowerCase();
     if (q && visibleMarkers.length > 0) {
       if (visibleMarkers.length === 1) {
         const m = visibleMarkers[0];
         map.setView([m.latitude, m.longitude], 14, { animate: true });
         setTimeout(() => {
-          layer.eachLayer((l) => {
-            if (l.getLatLng && l.getLatLng().lat === m.latitude && l.getLatLng().lng === m.longitude) {
-              l.openPopup();
-            }
-          });
+          markerInstancesRef.current[m.id]?.openPopup();
         }, 300);
       } else {
         const bounds = visibleMarkers.map((m) => [m.latitude, m.longitude]);
@@ -710,30 +745,38 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
 
   // Renders one normal (non-clustered) pin with its popup — pulled out so
   // both the clustered and unclustered code paths above share it exactly.
-  function drawSingleMarker(m, layer) {
+  function drawSingleMarker(m, layer, customCoords = null) {
         const map = mapRef.current;
         const hex = COLOR_HEX[m.category_color] || "#93A0B4";
-        const marker = L.marker([m.latitude, m.longitude], { icon: makeDivIcon(hex) });
+        const lat = (customCoords && Number.isFinite(customCoords.lat)) ? customCoords.lat : m.latitude;
+        const lng = (customCoords && Number.isFinite(customCoords.lng)) ? customCoords.lng : m.longitude;
+        const marker = L.marker([lat, lng], { icon: makeDivIcon(hex) });
+        marker._markerId = m.id;
+        marker._markerData = m;
+        markerInstancesRef.current[m.id] = marker;
+
         const isShelterOrHospital = m.type === "shelter" || m.type === "hospital";
         const details = [
           `<strong>${(lang === "ur" && m.name_ur) ? m.name_ur : (m.name || "")}</strong>`,
           m.type === 'community_report' && canEdit ? `<div>${escapeMapText(m.description || '')}</div>${getReportImageSource(m.imageUrl) ? `<img src="${escapeMapText(getReportImageSource(m.imageUrl))}" alt="Incident photo" style="max-width:220px;max-height:140px;margin-top:6px" />` : ''}<a href="/community?report=${m.report_id}" style="display:block;margin-top:8px;color:#3FBDB6">Review report ${escapeMapText(m.trackingId || '')}</a>` : '',
-          m.location ? `<div>${m.location}</div>` : "",
+          m.location ? `<div>${escapeMapText(m.location)}</div>` : "",
           (m.type === "shelter") ? `<div style="opacity:.7">${t("capacityPrefix")}: ${
             m.capacity
               ? `${m.capacity}${m.occupancy != null ? ` (${t("occupancyPrefix")}: ${m.occupancy}/${m.capacity})` : ""}`
               : (m.occupancy != null ? `${t("notRecordedLabel")} (${t("occupancyPrefix")}: ${m.occupancy})` : t("notRecordedLabel"))
           }</div>` : "",
+          (m.type === "hospital" && m.services) ? `<div style="opacity:.7">${t("servicesPrefix") || "Services"}: ${escapeMapText(m.services)}</div>` : "",
           m.status ? `<div style="opacity:.7">${t("statusPrefix")}: ${STATUS_VALUE_MAP[m.status] ? t(STATUS_VALUE_MAP[m.status]) : m.status}</div>` : "",
           m.risk_level ? `<div style="opacity:.7">${t("riskPrefix")}: ${RISK_VALUE_MAP[m.risk_level] ? t(RISK_VALUE_MAP[m.risk_level]) : m.risk_level}</div>` : "",
           m.severity ? `<div style="opacity:.7">${t("severityPrefix")}: ${RISK_VALUE_MAP[m.severity] ? t(RISK_VALUE_MAP[m.severity]) : m.severity}</div>` : "",
-          m.reason ? `<div style="opacity:.7">${m.reason}</div>` : "",
+          m.reason ? `<div style="opacity:.7">${escapeMapText(m.reason)}</div>` : "",
           (userLocation && m._distanceKm != null) ? `<div style="opacity:.6;margin-top:4px">${m._distanceKm.toFixed(1)} km ${t("awayLabel")}</div>` : "",
         ]
           .filter(Boolean)
           .join("");
         const actionButtons = [
           m.contact ? `<a href="tel:${m.contact}" class="fdm-popup-btn" style="text-decoration:none;display:inline-block;">${t("callNowBtn")}</a>` : "",
+          (m.type === "shelter" || m.type === "hospital") ? `<button type="button" class="fdm-popup-btn fdm-route-btn">${t("routeBtn")}</button>` : "",
         ].filter(Boolean).join(" ");
         const occupancyControl = (canEdit && m.type === "shelter")
           ? `<div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
@@ -743,9 +786,22 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
              </div>`
           : "";
         marker.bindPopup(`<div style="min-width:150px">${details}<div style="margin-top:6px">${actionButtons}</div>${occupancyControl}</div>`, { className: "fdm-popup" });
+
+        marker.on("click", () => {
+          setSelectedId(m.id);
+        });
+
+        marker.on("popupclose", () => {
+          setSelectedId((prev) => (prev === m.id ? null : prev));
+        });
+
         marker.on("popupopen", (e) => {
           setSelectedId(m.id);
           const el = e.popup.getElement();
+          const routeBtn = el?.querySelector(".fdm-route-btn");
+          if (routeBtn) {
+            routeBtn.onclick = () => routeToDestination(m);
+          }
           const occBtn = el?.querySelector(".fdm-occupancy-btn");
           if (occBtn) {
             occBtn.onclick = async () => {
@@ -759,30 +815,31 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
               }
             };
           }
-        });
 
-        if (canEdit && m.type === "blocked_road") {
-          marker.on("popupopen", () => {
-            const btn = document.createElement("button");
-            btn.textContent = t("markAsCleared");
-            btn.className = "fdm-popup-btn";
-            btn.onclick = async () => {
-              const roadId = m.id.replace("road-", "");
-              await axios.put(`${API_BASE}/blocked-roads/${roadId}`, { status: "Cleared" });
-              fetchMarkers();
-            };
-            marker.getPopup().getElement().querySelector("div").appendChild(btn);
-          });
-        }
+          if (canEdit && m.type === "blocked_road") {
+            const roadDiv = marker.getPopup().getElement()?.querySelector("div");
+            if (roadDiv && !roadDiv.querySelector(".fdm-cleared-btn")) {
+              const btn = document.createElement("button");
+              btn.textContent = t("markAsCleared");
+              btn.className = "fdm-popup-btn fdm-cleared-btn";
+              btn.onclick = async () => {
+                const roadId = m.id.replace("road-", "");
+                await axios.put(`${API_BASE}/blocked-roads/${roadId}`, { status: "Cleared" });
+                fetchMarkers();
+              };
+              roadDiv.appendChild(btn);
+            }
+          }
 
-        if (canEdit && ['shelter','hospital','blocked_road'].includes(m.type)) {
-          marker.on('popupopen', () => {
+          if (canEdit && ['shelter','hospital','blocked_road'].includes(m.type)) {
             const root = marker.getPopup().getElement();
-            if (root.querySelector('.fdm-marker-edit')) return;
+            if (!root) return;
+            root.querySelectorAll('.fdm-marker-edit, .fdm-marker-remove').forEach((b) => b.remove());
             const category = { shelter:'shelters', hospital:'hospitals', blocked_road:'blocked-roads' }[m.type];
-            const recordId = m.id.split('-').pop();
+            const recordId = m.id.substring(m.id.indexOf('-') + 1);
             const edit = document.createElement('button');
-            edit.className = 'fdm-popup-btn fdm-marker-edit'; edit.textContent = 'Update marker';
+            edit.className = 'fdm-popup-btn fdm-marker-edit';
+            edit.textContent = 'Update marker';
             edit.onclick = async () => {
               const name = window.prompt('Name:', m.name || ''); if (name === null) return;
               const address = window.prompt('Location / address:', m.location || ''); if (address === null) return;
@@ -795,15 +852,17 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
                 fetchMarkers();
               } catch (error) { window.alert(error.response?.data?.message || 'Could not update marker.'); }
             };
-            const remove = document.createElement('button'); remove.className='fdm-popup-btn'; remove.textContent='Remove marker';
+            const remove = document.createElement('button');
+            remove.className = 'fdm-popup-btn fdm-marker-remove';
+            remove.textContent = 'Remove marker';
             remove.onclick = async () => {
               if (!window.confirm(`Remove ${m.name}?`)) return;
               try { await axios.delete(`${API_BASE}/${category}/${recordId}`); fetchMarkers(); }
               catch (error) { window.alert(error.response?.data?.message || 'Could not remove marker.'); }
             };
-            root.querySelector('.leaflet-popup-content').append(edit, document.createTextNode(' '), remove);
-          });
-        }
+            root.querySelector('.leaflet-popup-content')?.append(document.createTextNode(' '), edit, document.createTextNode(' '), remove);
+          }
+        });
 
         marker.addTo(layer);
   }
@@ -876,16 +935,20 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
 
   const flyToMarker = (m) => {
     const map = mapRef.current;
-    const layer = markersLayerRef.current;
-    if (!map || !layer) return;
-    map.setView([m.latitude, m.longitude], 15, { animate: true });
+    if (!map || !m) return;
     setSelectedId(m.id);
+    map.setView([m.latitude, m.longitude], Math.max(map.getZoom(), 15), { animate: true });
     setTimeout(() => {
-      layer.eachLayer((l) => {
-        if (l.getLatLng && l.getLatLng().lat === m.latitude && l.getLatLng().lng === m.longitude) {
-          l.openPopup();
-        }
-      });
+      const target = markerInstancesRef.current[m.id];
+      if (target) {
+        target.openPopup();
+      } else {
+        markersLayerRef.current?.eachLayer((l) => {
+          if (l._markerId === m.id) {
+            l.openPopup();
+          }
+        });
+      }
     }, 350);
   };
 
@@ -1170,12 +1233,14 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           </button>
           </>
         )}
-        <button
-          onClick={() => { setReportMode((v) => !v); setMeasuring(false); setAddingRoad(false); setAddingFacility(null); }}
-          className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${reportMode ? "bg-marigold-500 text-ink" : "btn-secondary"}`}
-        >
-          {reportMode ? t("clickMapToReport") : t("reportHereBtn")}
-        </button>
+        {isCitizen && (
+          <button
+            onClick={() => { setReportMode((v) => !v); setMeasuring(false); setAddingRoad(false); setAddingFacility(null); }}
+            className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${reportMode ? "bg-marigold-500 text-ink" : "btn-secondary"}`}
+          >
+            {reportMode ? t("clickMapToReport") : t("reportHereBtn")}
+          </button>
+        )}
         <button
           onClick={() => { setMeasuring((v) => !v); setMeasurePoints([]); setReportMode(false); setAddingRoad(false); setAddingFacility(null); }}
           className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${measuring ? "bg-teal-500 text-ink" : "btn-secondary"}`}
@@ -1258,7 +1323,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         <button type="button" className="float-right ml-3" aria-label="Close report confirmation" onClick={() => setReportReceipt(null)}>×</button>
       </div>}
       {locationError && <p className="fdm-no-print px-4 py-2 text-xs text-red-300">{locationError}</p>}
-      {reportDraft && (
+      {isCitizen && reportDraft && (
         <div className="fdm-no-print px-4 py-3 bg-marigold-500/10 border-b border-marigold-500/20 space-y-2">
           <p className="text-xs text-marigold-200 font-semibold">{t("quickReportTitle")}</p>
           <div className="grid sm:grid-cols-2 gap-2">

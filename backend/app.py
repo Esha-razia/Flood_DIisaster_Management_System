@@ -3438,6 +3438,13 @@ def get_community_stats():
 @app.route("/community-reports", methods=["POST"])
 def create_community_report():
     data = request.json or {}
+    if data.get("source") == "map":
+        from notifications import identity
+        actor = identity()
+        actor_role = (actor.get("role") or request.headers.get("X-FMS-Actor-Role", "")).strip().lower()
+        actor_email = (actor.get("email") or request.headers.get("X-FMS-Actor-Email", "")).strip().lower()
+        if actor_role != "citizen" or not actor_email:
+            return jsonify(message="Only logged-in citizens may report incidents directly from the map."), 403
     location = (data.get("location") or "").strip()
     description = (data.get("description") or "").strip()
     contact = (data.get("contact") or "").strip()
