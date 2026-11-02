@@ -105,32 +105,8 @@ def db():
     global _seed_checked
     if not globals().get('_seed_checked'):
         _seed_checked = True
-        try:
-            with connection:
-                active_count = 0
-                for row in connection.execute('SELECT payload FROM alerts').fetchall():
-                    try:
-                        rec = json.loads(row['payload'])
-                        if rec.get('status') == 'Active' and (rec.get('risk_level') in ('High', 'Medium') or rec.get('risk') in ('High', 'Medium')):
-                            active_count += 1
-                    except Exception:
-                        pass
-
-                if active_count == 0:
-                    stamp = now()
-                    for item in DEFAULT_SEED_ALERTS:
-                        record = dict(item)
-                        record['created_at'] = stamp
-                        record['updated_at'] = stamp
-                        cur = connection.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',))
-                        record['id'] = cur.lastrowid
-                        connection.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(record), record['id']))
-                        connection.execute(
-                            'INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)',
-                            (record['id'], 'created', stamp, 'System', json.dumps(record))
-                        )
-        except Exception:
-            pass
+        # Note: Auto-seeding of hardcoded demo alerts is disabled.
+        # Only genuine alerts created through AI predictions or official dispatches are persisted.
     try:
         with connection:
             yield connection
@@ -274,17 +250,35 @@ def create_advisory_notification(advisory):
 
 def list_advisory_notifications(email):
     def work(conn, cur):
-        cur.execute(
-            'SELECT n.advisory_id, n.title, n.message, n.region, n.issued_by, n.created_at, r.read_at '
-            'FROM advisory_notifications n LEFT JOIN advisory_notification_reads r '
-            'ON r.advisory_id = n.advisory_id AND r.email = ? ORDER BY n.created_at DESC, n.advisory_id DESC',
-            (email,),
-        )
-        return [
-            {'advisory_id': r['advisory_id'], 'title': r['title'], 'message': r['message'], 'region': r['region'],
-             'issued_by': r['issued_by'], 'created_at': str(r['created_at']), 'read_at': r['read_at'], 'read': bool(r['read_at'])}
-            for r in cur.fetchall()
-        ]
+        try:
+            cur.execute(
+                'SELECT n.advisory_id, n.title, n.message, n.region, n.issued_by, n.created_at, r.read_at, '
+                'COALESCE(a.status, "Active") AS status '
+                'FROM advisory_notifications n '
+                'LEFT JOIN advisory_notification_reads r ON r.advisory_id = n.advisory_id AND r.email = ? '
+                'LEFT JOIN advisories a ON a.id = n.advisory_id '
+                'ORDER BY n.created_at DESC, n.advisory_id DESC',
+                (email,),
+            )
+            return [
+                {'advisory_id': r['advisory_id'], 'title': r['title'], 'message': r['message'], 'region': r['region'],
+                 'issued_by': r['issued_by'], 'created_at': str(r['created_at']), 'read_at': r['read_at'],
+                 'read': bool(r['read_at']), 'status': r['status'] or 'Active'}
+                for r in cur.fetchall()
+            ]
+        except Exception:
+            cur.execute(
+                'SELECT n.advisory_id, n.title, n.message, n.region, n.issued_by, n.created_at, r.read_at '
+                'FROM advisory_notifications n LEFT JOIN advisory_notification_reads r '
+                'ON r.advisory_id = n.advisory_id AND r.email = ? ORDER BY n.created_at DESC, n.advisory_id DESC',
+                (email,),
+            )
+            return [
+                {'advisory_id': r['advisory_id'], 'title': r['title'], 'message': r['message'], 'region': r['region'],
+                 'issued_by': r['issued_by'], 'created_at': str(r['created_at']), 'read_at': r['read_at'],
+                 'read': bool(r['read_at']), 'status': 'Active'}
+                for r in cur.fetchall()
+            ]
     return _storage_call(work)
 
 def mark_advisory_read(email, advisory_id):
@@ -339,7 +333,8 @@ def register(app):
                     'issued_by': a.get('issued_by', 'Government Official'),
                     'created_at': str(a.get('created_at', '')),
                     'read_at': now() if is_read else None,
-                    'read': is_read
+                    'read': is_read,
+                    'status': a.get('status', 'Active'),
                 })
         except Exception:
             pass

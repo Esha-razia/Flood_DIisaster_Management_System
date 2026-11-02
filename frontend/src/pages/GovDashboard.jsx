@@ -62,12 +62,16 @@ export default function GovDashboard() {
     } catch (err) { console.error(err); }
   };
 
+  const [reportActionError, setReportActionError] = useState(null);
   const updateCommunityReport = async (reportId, status) => {
     try {
       const res = await axios.put(`${API_BASE}/community-reports/${reportId}/status`, { status });
       setCommunityReports((reports) => reports.map((report) => report.id === reportId ? res.data : report));
+      setReportActionError(null);
     } catch (err) {
-      console.error("Failed to update citizen report:", err);
+      const errorMsg = err.response?.data?.message || "Could not update the report.";
+      setReportActionError({ id: reportId, message: errorMsg });
+      showOperationFeedback(errorMsg);
     }
   };
 
@@ -179,18 +183,14 @@ export default function GovDashboard() {
     setAssignmentSubmittingId(alertItem.id);
     try {
       const linkedOperation = getAlertOperation(alertItem);
-      if (linkedOperation) {
-        if (multiWorkerEnabled) {
-          await axios.post(`${API_BASE}/rescue-operations/${linkedOperation.id}/workers`, {
+      const existingOpId = linkedOperation?.id || alertItem.linked_rescue_op_id;
+      if (existingOpId) {
+        if (multiWorkerEnabled && linkedOperation) {
+          await axios.post(`${API_BASE}/rescue-operations/${existingOpId}/workers`, {
             worker_names: [assignForm.worker],
           });
         } else {
-          const hasTeam = linkedOperation.assigned_team && linkedOperation.assigned_team !== "Unassigned";
-          if (hasTeam) {
-            showOperationFeedback("Adding more workers is pending database migration approval.");
-            return;
-          }
-          await axios.put(`${API_BASE}/rescue-operations/${linkedOperation.id}/status`, {
+          await axios.put(`${API_BASE}/rescue-operations/${existingOpId}/status`, {
             assigned_team: assignForm.worker,
           });
         }
@@ -198,7 +198,7 @@ export default function GovDashboard() {
         await axios.post(`${API_BASE}/rescue-operations`, {
           location: alertItem.location,
           description: assignForm.description.trim() || `Response to alert: ${alertItem.message}`,
-          risk_level: alertItem.risk_level || alertItem.risk || "Medium",
+          risk_level: alertItem.risk_level || alertItem.risk || "High",
           assigned_team: assignForm.worker,
           alert_id: alertItem.id,
         });
@@ -377,7 +377,7 @@ export default function GovDashboard() {
   const handleWithdrawAdvisory = async (id) => {
     if (!confirm(t("confirmWithdrawAdvisory"))) return;
     try {
-      await axios.delete(`${API_BASE}/advisories/${id}`);
+      await axios.put(`${API_BASE}/advisories/${id}/withdraw`).catch(() => axios.delete(`${API_BASE}/advisories/${id}`));
       fetchAdvisories();
     } catch (err) { console.error(err); }
   };
@@ -996,21 +996,48 @@ export default function GovDashboard() {
                               </button>
                               {report.status !== "Resolved" && (
                                 <>
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCommunityReport(report.id, "Action Taken")}
-                                    className="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap"
-                                  >
-                                    {lang === "ur" ? "کارروائی کی گئی" : "Action taken"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => updateCommunityReport(report.id, "Resolved")}
-                                    className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
-                                  >
-                                    {lang === "ur" ? "حل کریں" : "Resolve"}
-                                  </button>
+                                  {report.status === "Submitted" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateCommunityReport(report.id, "Action Taken")}
+                                      className="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap"
+                                    >
+                                      {lang === "ur" ? "کارروائی کی گئی" : "Action taken"}
+                                    </button>
+                                  )}
+                                  {(() => {
+                                    const linkedOp = allRescueOps.find((op) => String(op.id) === String(report.linked_rescue_op_id));
+                                    const isOpCompleted = linkedOp?.status === "Completed";
+                                    const canResolve = report.status === "Action Taken" && isOpCompleted;
+                                    const resolveBlockedMsg = lang === "ur"
+                                      ? "اس رپورٹ کو حل کرنے سے پہلے منسلک ریسکیو آپریشن مکمل کریں۔"
+                                      : "Complete the linked rescue operation before resolving this report.";
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!canResolve) {
+                                            showOperationFeedback(resolveBlockedMsg);
+                                            return;
+                                          }
+                                          updateCommunityReport(report.id, "Resolved");
+                                        }}
+                                        disabled={!canResolve}
+                                        title={!canResolve ? resolveBlockedMsg : ""}
+                                        className={`text-xs py-1.5 px-3 whitespace-nowrap rounded-lg transition font-medium ${
+                                          canResolve
+                                            ? "btn-primary"
+                                            : "bg-white/5 border border-white/10 text-muted/60 cursor-not-allowed opacity-60"
+                                        }`}
+                                      >
+                                        {lang === "ur" ? "حل کریں" : "Resolve"}
+                                      </button>
+                                    );
+                                  })()}
                                 </>
+                              )}
+                              {reportActionError?.id === report.id && (
+                                <p className="text-[11px] text-red-400 font-medium mt-1">⚠ {reportActionError.message}</p>
                               )}
                             </div>
                           </td>
@@ -1069,12 +1096,12 @@ export default function GovDashboard() {
             <p className="eyebrow text-red-400 mb-2">{t("emergencyResponse")}</p>
             <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
             <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
-            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium")).length === 0 ? (
+            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && (a.risk_level || a.risk) === "High").length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
               <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2 table-scrollbar">
                 {uniqueAlerts
-                  .filter((a) => a.status !== "Cancelled" && ((a.risk_level || a.risk) === "High" || (a.risk_level || a.risk) === "Medium"))
+                  .filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && (a.risk_level || a.risk) === "High")
                   .slice(0, 10)
                   .map((a) => {
                     const linkedOperation = getAlertOperation(a);
@@ -1323,16 +1350,15 @@ export default function GovDashboard() {
                           )}
                         </td>
                         <td className="py-2">
-                          <select
-                            value={op.risk_level || "Medium"}
-                            onChange={(e) => handleUpdateOperation(op, { risk_level: e.target.value })}
-                            disabled={op.status === "Completed"}
-                            className="bg-[#0b1f3a] border border-white/20 rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            <option className="bg-[#0b1f3a] text-white" value="High">High</option>
-                            <option className="bg-[#0b1f3a] text-white" value="Medium">Medium</option>
-                            <option className="bg-[#0b1f3a] text-white" value="Low">Low</option>
-                          </select>
+                          <span className={`inline-block text-xs px-2.5 py-1 rounded-full border font-medium ${
+                            (op.risk_level || "Medium") === "High"
+                              ? "border-red-400/40 bg-red-400/10 text-red-300"
+                              : (op.risk_level || "Medium") === "Medium"
+                                ? "border-yellow-400/40 bg-yellow-400/10 text-yellow-300"
+                                : "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                          }`}>
+                            {t(SEVERITY_KEY_MAP[op.risk_level] || op.risk_level || "Medium")}
+                          </span>
                         </td>
                         <td className="py-2">
                           {(() => {
@@ -1542,11 +1568,24 @@ export default function GovDashboard() {
                   <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h4 className="font-semibold text-white">{a.title}</h4>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-white">{a.title}</h4>
+                          {a.status === "Withdrawn" ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                              {lang === "ur" ? "واپس لی گئی" : "Withdrawn"}
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              {lang === "ur" ? "فعال" : "Active"}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted mt-1">{a.message}</p>
                         <p className="text-xs text-muted mt-2">{a.region} · {new Date(a.created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</p>
                       </div>
-                      <button onClick={() => handleWithdrawAdvisory(a.id)} className="text-xs text-red-400 hover:text-red-300 shrink-0">{t("withdraw")}</button>
+                      {a.status !== "Withdrawn" && (
+                        <button onClick={() => handleWithdrawAdvisory(a.id)} className="text-xs text-red-400 hover:text-red-300 shrink-0">{t("withdraw")}</button>
+                      )}
                     </div>
                   </div>
                 ))}

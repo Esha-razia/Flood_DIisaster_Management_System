@@ -369,7 +369,8 @@ def initialize_sqlite_db(cursor, conn):
       message TEXT,
       region TEXT,
       issued_by TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT DEFAULT 'Active'
     );
     """)
     cursor.execute("""
@@ -577,7 +578,8 @@ def initialize_postgresql_db(cursor, conn):
       message TEXT,
       region TEXT,
       issued_by TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      status VARCHAR(50) DEFAULT 'Active'
     );
     """)
     cursor.execute("""
@@ -911,6 +913,13 @@ if DB_AVAILABLE:
                 cursor.execute("ALTER TABLE community_reports ADD COLUMN latitude REAL")
             if "longitude" not in report_cols:
                 cursor.execute("ALTER TABLE community_reports ADD COLUMN longitude REAL")
+            advisory_cols = {row[1] for row in cursor.execute("PRAGMA table_info(advisories)").fetchall()}
+            if "status" not in advisory_cols:
+                cursor.execute("ALTER TABLE advisories ADD COLUMN status TEXT DEFAULT 'Active'")
+            try:
+                cursor.execute("UPDATE advisories SET status = 'Active' WHERE status IS NULL OR status = ''")
+            except Exception:
+                pass
             conn.commit()
         elif DB_TYPE in ("postgresql", "sql_server"):
             for col, coltype, default in [("occupancy", "INTEGER", "0"), ("capacity", "INTEGER", "50"), ("verified", "INTEGER", "0")]:
@@ -925,6 +934,16 @@ if DB_AVAILABLE:
                     conn.commit()
                 except Exception:
                     pass
+            try:
+                cursor.execute("ALTER TABLE advisories ADD COLUMN status VARCHAR(50) DEFAULT 'Active'")
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                cursor.execute("UPDATE advisories SET status = 'Active' WHERE status IS NULL OR status = ''")
+                conn.commit()
+            except Exception:
+                pass
             if DB_TYPE == "sql_server":
                 try:
                     cursor.execute("IF COL_LENGTH('predictions', 'shap_contributions') IS NULL ALTER TABLE predictions ADD shap_contributions NVARCHAR(MAX)")
@@ -3530,6 +3549,18 @@ def update_community_report_status(report_id):
                 "notes": row.notes, "createdAt": row.created_at.isoformat() if row.created_at else None,
                 "confirmedBy": [],
             }
+            if new_status == "Resolved":
+                if r.get("status") == "Submitted":
+                    return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
+                linked_id = r.get("linked_rescue_op_id")
+                if linked_id:
+                    cursor.execute("SELECT status FROM rescue_operations WHERE id = ?", (linked_id,))
+                    op_row = cursor.fetchone()
+                    if op_row and op_row.status != "Completed":
+                        return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
+                elif r.get("status") != "Action Taken":
+                    return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
+
             r["status"] = new_status
             linked_op = None
 
@@ -3563,6 +3594,16 @@ def update_community_report_status(report_id):
 
     for r in MEMORY_COMMUNITY_REPORTS:
         if r["id"] == report_id:
+            if new_status == "Resolved":
+                if r.get("status") == "Submitted":
+                    return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
+                linked_id = r.get("linked_rescue_op_id")
+                if linked_id:
+                    op = next((o for o in MEMORY_RESCUE_OPS if o["id"] == linked_id), None)
+                    if op and op.get("status") != "Completed":
+                        return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
+                elif r.get("status") != "Action Taken":
+                    return jsonify({"message": "Complete the linked rescue operation before resolving this report."}), 400
             r["status"] = new_status
             if new_status == "Action Taken" and not r.get("linked_rescue_op_id"):
                 try:
@@ -3960,6 +4001,7 @@ MEMORY_ADVISORIES = [
         "region": "Sindh & Lower Indus Basin",
         "issued_by": "National Disaster Management Authority",
         "created_at": "2026-10-21 14:30:00",
+        "status": "Active",
     },
     {
         "id": 2,
@@ -3968,6 +4010,7 @@ MEMORY_ADVISORIES = [
         "region": "Southern Punjab",
         "issued_by": "Provincial Disaster Management Authority",
         "created_at": "2026-10-21 16:45:00",
+        "status": "Active",
     }
 ]
 
@@ -4404,10 +4447,30 @@ def delete_team(team_id):
         return jsonify({"message": "Team not found"}), 404
     return jsonify({"message": "Team deleted"})
 
+def _withdraw_advisory_internal(advisory_id):
+    updated = False
+    for a in MEMORY_ADVISORIES:
+        if a["id"] == advisory_id:
+            a["status"] = "Withdrawn"
+            updated = True
+    if DB_AVAILABLE:
+        try:
+            cursor.execute("UPDATE advisories SET status = 'Withdrawn' WHERE id = ?", (advisory_id,))
+            conn.commit()
+            try:
+                cursor.execute("UPDATE advisory_notifications SET status = 'Withdrawn' WHERE advisory_id = ?", (advisory_id,))
+                conn.commit()
+            except Exception:
+                pass
+            updated = True
+        except Exception as db_error:
+            log_event("error", f"Failed to mark advisory as withdrawn in database: {db_error}")
+    return updated
+
 @app.route("/advisories", methods=["GET"])
 def get_advisories():
-    all_advisories = list(MEMORY_ADVISORIES)
-    seen_ids = {a["id"] for a in all_advisories}
+    all_advisories = []
+    seen_ids = set()
 
     if DB_AVAILABLE:
         try:
@@ -4417,13 +4480,30 @@ def get_advisories():
                 if row_id in seen_ids:
                     continue
                 all_advisories.append({
-                    "id": row_id, "title": getattr(row, "title", None), "message": getattr(row, "message", None),
-                    "region": getattr(row, "region", None), "issued_by": getattr(row, "issued_by", None),
+                    "id": row_id,
+                    "title": getattr(row, "title", None),
+                    "message": getattr(row, "message", None),
+                    "region": getattr(row, "region", None),
+                    "issued_by": getattr(row, "issued_by", None),
                     "created_at": str(getattr(row, "created_at", None)),
+                    "status": getattr(row, "status", None) or "Active",
                 })
                 seen_ids.add(row_id)
         except Exception as e:
-            log_event("error", f"Failed to fetch advisories: {e}")
+            log_event("error", f"Failed to fetch advisories from database: {e}")
+
+    # Fallback to in-memory advisories only if no database records exist
+    if not all_advisories:
+        for a in MEMORY_ADVISORIES:
+            all_advisories.append({
+                "id": a["id"],
+                "title": a["title"],
+                "message": a["message"],
+                "region": a.get("region"),
+                "issued_by": a.get("issued_by"),
+                "created_at": str(a.get("created_at")),
+                "status": a.get("status", "Active"),
+            })
 
     all_advisories.sort(key=lambda a: a["created_at"], reverse=True)
     return jsonify(all_advisories)
@@ -4441,16 +4521,23 @@ def create_advisory():
         "region": data.get("region", "All regions"),
         "issued_by": data.get("issued_by", "Government Official"),
         "created_at": str(datetime.now()),
+        "status": "Active",
     }
     MEMORY_ADVISORIES.append(advisory)
     saved_to_db = False
 
     if DB_AVAILABLE:
         try:
-            cursor.execute(
-                "INSERT INTO advisories (title, message, region, issued_by, created_at) VALUES (?, ?, ?, ?, ?)",
-                (advisory["title"], advisory["message"], advisory["region"], advisory["issued_by"], advisory["created_at"])
-            )
+            try:
+                cursor.execute(
+                    "INSERT INTO advisories (title, message, region, issued_by, created_at, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (advisory["title"], advisory["message"], advisory["region"], advisory["issued_by"], advisory["created_at"], "Active")
+                )
+            except Exception:
+                cursor.execute(
+                    "INSERT INTO advisories (title, message, region, issued_by, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (advisory["title"], advisory["message"], advisory["region"], advisory["issued_by"], advisory["created_at"])
+                )
             conn.commit()
             cursor.execute("SELECT id FROM advisories WHERE title = ? AND created_at = ? ORDER BY id DESC", (advisory["title"], advisory["created_at"]))
             row = cursor.fetchone()
@@ -4480,14 +4567,13 @@ def create_advisory():
 
 @app.route("/advisories/<int:advisory_id>", methods=["DELETE"])
 def delete_advisory(advisory_id):
-    MEMORY_ADVISORIES[:] = [a for a in MEMORY_ADVISORIES if a["id"] != advisory_id]
-    if DB_AVAILABLE:
-        try:
-            cursor.execute("DELETE FROM advisories WHERE id = ?", (advisory_id,))
-            conn.commit()
-        except Exception as db_error:
-            log_event("error", f"Failed to delete advisory from database: {db_error}")
-    return jsonify({"message": "Advisory withdrawn"})
+    _withdraw_advisory_internal(advisory_id)
+    return jsonify({"message": "Advisory withdrawn", "id": advisory_id, "status": "Withdrawn"})
+
+@app.route("/advisories/<int:advisory_id>/withdraw", methods=["PUT", "POST"])
+def withdraw_advisory(advisory_id):
+    _withdraw_advisory_internal(advisory_id)
+    return jsonify({"message": "Advisory withdrawn", "id": advisory_id, "status": "Withdrawn"})
 
 # ---------------- RESOURCE GAP ANALYSIS (Government Official) ----------------
 @app.route("/admin/seasonal-trend", methods=["GET"])

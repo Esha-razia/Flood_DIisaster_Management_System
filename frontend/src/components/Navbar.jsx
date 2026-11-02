@@ -150,12 +150,15 @@ export default function Navbar() {
     });
     (advisoryNotes || []).forEach(item => {
       const ts = item.updated_at || item.created_at;
+      const isWithdrawn = item.status === 'Withdrawn' || item.withdrawn === true;
       list.push({
         ...item,
         type: 'advisory',
         uniqueId: `advisory-${item.advisory_id || item.id}`,
         timestamp: ts,
-        timestampMs: parseTimestampMs(ts)
+        timestampMs: parseTimestampMs(ts),
+        withdrawn: isWithdrawn,
+        status: isWithdrawn ? 'Withdrawn' : (item.status || 'Active')
       });
     });
 
@@ -187,6 +190,10 @@ export default function Navbar() {
     }
     const currentEmail = (localStorage.getItem('userEmail') || '').toLowerCase();
     return visibleNotifications.filter(item => {
+      // Withdrawn advisories should never appear as active notifications
+      if (item.type === 'advisory' && (item.withdrawn || item.status === 'Withdrawn')) {
+        return false;
+      }
       // 1. Alert created during current login session
       if (item.timestampMs >= sessionLoginTime) return true;
       // 2. Alert created by currently logged-in user
@@ -204,6 +211,9 @@ export default function Navbar() {
   // Bell dot: only appears when there is an active alert newer than lastSeenTime
   const hasUnread = useMemo(() => {
     return visibleNotifications.some(item => {
+      if (item.type === 'advisory' && (item.withdrawn || item.status === 'Withdrawn')) {
+        return false;
+      }
       if (isItemRead(item)) return false;
       const itemTs = item.updated_at || item.created_at;
       const itemTime = item.timestampMs || parseTimestampMs(itemTs);
@@ -301,6 +311,7 @@ export default function Navbar() {
               issued_by: a.issued_by,
               created_at: a.created_at,
               read: false,
+              status: a.status || 'Active',
             }));
             setAdvisoryNotes(list);
           }
@@ -315,6 +326,7 @@ export default function Navbar() {
               issued_by: a.issued_by,
               created_at: a.created_at,
               read: false,
+              status: a.status || 'Active',
             }));
             setAdvisoryNotes(list);
           } catch {
@@ -520,9 +532,15 @@ export default function Navbar() {
                                 >
                                   <div className="flex items-center justify-between gap-2 mb-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="text-[10px] font-mono-data uppercase tracking-wider px-2 py-0.5 rounded-full border border-marigold-500/40 text-marigold-300 font-semibold bg-marigold-500/10">
-                                        {t('publicAdvisory')}
-                                      </span>
+                                      {item.withdrawn || item.status === 'Withdrawn' ? (
+                                        <span className="text-[10px] font-mono-data uppercase tracking-wider px-2 py-0.5 rounded-full border border-red-500/40 text-red-300 font-semibold bg-red-500/10">
+                                          {lang === 'ur' ? 'واپس لی گئی' : 'Withdrawn'}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-mono-data uppercase tracking-wider px-2 py-0.5 rounded-full border border-marigold-500/40 text-marigold-300 font-semibold bg-marigold-500/10">
+                                          {t('publicAdvisory')}
+                                        </span>
+                                      )}
                                       {!read ? (
                                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-marigold-300">
                                           <span className="w-1.5 h-1.5 rounded-full bg-marigold-400"></span>
@@ -832,9 +850,15 @@ export default function Navbar() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
-              <span className="text-[10px] font-mono-data uppercase tracking-widest px-2.5 py-1 rounded-full border border-marigold-500/40 text-marigold-300 font-bold bg-marigold-500/10">
-                {t('publicAdvisory')}
-              </span>
+              {selectedAdvisoryModal.withdrawn || selectedAdvisoryModal.status === 'Withdrawn' ? (
+                <span className="text-[10px] font-mono-data uppercase tracking-widest px-2.5 py-1 rounded-full border border-red-500/40 text-red-300 font-bold bg-red-500/10">
+                  {lang === 'ur' ? 'واپس لی گئی' : 'Withdrawn'}
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono-data uppercase tracking-widest px-2.5 py-1 rounded-full border border-marigold-500/40 text-marigold-300 font-bold bg-marigold-500/10">
+                  {t('publicAdvisory')}
+                </span>
+              )}
               <button
                 type="button"
                 aria-label="Close dialog"

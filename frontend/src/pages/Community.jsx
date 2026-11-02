@@ -169,11 +169,13 @@ export default function Community() {
         axios.get(`${API_BASE}/advisory-notifications`).then((r) => r.data || []).catch(() => []),
       ]);
       if (!active) return;
-      const liveIds = new Set(live.map((a) => String(a.id)));
-      const withdrawn = notified
-        .filter((n) => !liveIds.has(String(n.advisory_id)))
-        .map((n) => ({ id: n.advisory_id, title: n.title, message: n.message, region: n.region, issued_by: n.issued_by, created_at: n.created_at, withdrawn: true }));
-      const all = [...live.map((a) => ({ ...a, withdrawn: false })), ...withdrawn];
+      // Filter out any withdrawn advisories so they NEVER appear in the active Community list
+      const activeLive = live.filter((a) => a.status !== "Withdrawn");
+      const activeIds = new Set(activeLive.map((a) => String(a.id)));
+      const activeNotified = notified
+        .filter((n) => !activeIds.has(String(n.advisory_id)) && n.status !== "Withdrawn")
+        .map((n) => ({ id: n.advisory_id, title: n.title, message: n.message, region: n.region, issued_by: n.issued_by, created_at: n.created_at, status: "Active" }));
+      const all = [...activeLive, ...activeNotified];
       all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setAdvisories(all);
     };
