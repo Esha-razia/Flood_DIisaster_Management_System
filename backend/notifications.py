@@ -105,8 +105,25 @@ def db():
     global _seed_checked
     if not globals().get('_seed_checked'):
         _seed_checked = True
-        # Note: Auto-seeding of hardcoded demo alerts is disabled.
-        # Only genuine alerts created through AI predictions or official dispatches are persisted.
+        try:
+            with connection:
+                cur = connection.execute('SELECT COUNT(*) FROM alerts')
+                count = cur.fetchone()[0]
+                if count == 0:
+                    stamp = now()
+                    for item in DEFAULT_SEED_ALERTS:
+                        record = dict(item)
+                        record['created_at'] = stamp
+                        record['updated_at'] = stamp
+                        cur = connection.execute('INSERT INTO alerts (payload) VALUES (?)', ('{}',))
+                        record['id'] = cur.lastrowid
+                        connection.execute('UPDATE alerts SET payload=? WHERE id=?', (json.dumps(record), record['id']))
+                        connection.execute(
+                            'INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)',
+                            (record['id'], 'created', stamp, 'System', json.dumps(record))
+                        )
+        except Exception as seed_err:
+            pass
     try:
         with connection:
             yield connection
