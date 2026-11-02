@@ -542,23 +542,6 @@ export default function RescueDashboard() {
                       🌐 {lang === "ur" ? `تمام آپریشنز (${totalActive})` : `All Operations (${totalActive})`}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted font-medium">{lang === "ur" ? "خطرے کی ترجیح:" : "Risk Priority:"}</span>
-                    {["All", "High", "Medium", "Low"].map((level) => (
-                      <button
-                        key={level}
-                        onClick={() => setRiskFilter(level)}
-                        className={`text-xs px-3 py-1 rounded-full border font-semibold transition-colors ${
-                          riskFilter === level
-                            ? "bg-teal-500/25 border-teal-500 text-teal-300"
-                            : "bg-white/5 border-white/10 text-muted hover:border-white/20"
-                        }`}
-                      >
-                        {level === "High" ? (lang === "ur" ? "🔴 زیادہ" : "🔴 High") : level === "Medium" ? (lang === "ur" ? "🟡 درمیانہ" : "🟡 Medium") : level === "Low" ? (lang === "ur" ? "🟢 کم" : "🟢 Low") : (lang === "ur" ? "تمام خطرات" : "All Risks")}
-                      </button>
-                    ))}
-                  </div>
-
                   <div className="flex items-center gap-2 pl-3 border-l border-white/10">
                     <span className="text-xs text-muted font-medium">{lang === "ur" ? "حیثیت:" : "Status:"}</span>
                     {["All", "Assigned", "In Progress"].map((st) => (
@@ -665,7 +648,8 @@ export default function RescueDashboard() {
                               {op.risk_level === "High" ? (lang === "ur" ? "🔴 زیادہ خطرہ ترجیح" : "🔴 High Risk Priority") : op.risk_level === "Medium" ? (lang === "ur" ? "🟡 درمیانہ خطرہ" : "🟡 Medium Risk") : (lang === "ur" ? "🟢 کم خطرہ" : "🟢 Low Risk")}
                             </span>
 
-                            {/* Prioritize dropdown on card */}
+                            {/* Prioritize dropdown on card — only for assigned rescue worker */}
+                            {assignedToMe && (
                             <div className="flex items-center gap-1 ml-auto">
                               <span className="text-[10px] text-muted">{lang === "ur" ? "ترجیح:" : "Priority:"}</span>
                               <select
@@ -679,6 +663,7 @@ export default function RescueDashboard() {
                                 <option value="Low" className="bg-ink text-green-300">{lang === "ur" ? "🟢 کم خطرہ" : "🟢 Low Risk"}</option>
                               </select>
                             </div>
+                            )}
                           </div>
 
                           {/* Description & Team Assignment */}
@@ -699,7 +684,8 @@ export default function RescueDashboard() {
                             </div>
                           )}
 
-                          {/* Add Note Input */}
+                          {/* Add Note Input — only for assigned rescue worker */}
+                          {assignedToMe && (
                           <div className="flex items-center gap-2 mt-3">
                             <input
                               value={noteInputs[op.id] || ""}
@@ -713,9 +699,11 @@ export default function RescueDashboard() {
                               className="btn-secondary text-xs py-1.5 px-3 shrink-0"
                             >{lang === "ur" ? "اپڈیٹ بھیجیں" : "Post Update"}</button>
                           </div>
+                          )}
                         </div>
 
-                        {/* Status Action Buttons */}
+                        {/* Status Action Buttons — complete/print only for assigned rescue worker */}
+                        {assignedToMe ? (
                         <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
                           {/* Mark Completed */}
                           <button
@@ -728,6 +716,13 @@ export default function RescueDashboard() {
                             className="text-xs text-muted hover:text-teal-300 transition-colors py-1"
                           >{lang === "ur" ? "🖨️ رپورٹ پرنٹ کریں" : "🖨️ Print Report"}</button>
                         </div>
+                        ) : (
+                        <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
+                          <span className="text-xs text-muted italic px-3 py-2">
+                            {lang === "ur" ? "👁️ صرف مشاہدہ" : "👁️ View Only"}
+                          </span>
+                        </div>
+                        )}
                       </div>
                     </div>
                     );
