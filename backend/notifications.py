@@ -435,7 +435,7 @@ def register(app):
             records = [_format_alert_display(json.loads(r['payload'])) for r in c.execute('SELECT payload FROM alerts ORDER BY id DESC')]
         # Only officials may inspect cancelled alerts/history.
         if user.get('role') not in ('admin', 'government_official'):
-            records = [r for r in records if r['status'] == 'Active']
+            records = [r for r in records if r.get('status') != 'Cancelled']
         location = request.args.get('location', '').strip().lower()
         return jsonify([r for r in records if not location or location in r['location'].lower()])
 

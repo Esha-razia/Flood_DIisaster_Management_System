@@ -341,6 +341,12 @@ export default function GovDashboard() {
     fetchSeasonalTrend();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === "emergency") {
+      refreshRescueData();
+    }
+  }, [activeTab]);
+
   const fetchAdvisories = async () => {
     try {
       const res = await axios.get(`${API_BASE}/advisories`);
