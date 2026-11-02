@@ -26,6 +26,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from feature_engineering import build_feature_vector, SUPPORTED_CITIES
 from city_coordinates import resolve_coordinates, MAP_CITIES
+from notifications import identity
 
 
 def _load_local_env():
