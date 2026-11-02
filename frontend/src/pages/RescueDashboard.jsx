@@ -648,22 +648,7 @@ export default function RescueDashboard() {
                               {op.risk_level === "High" ? (lang === "ur" ? "🔴 زیادہ خطرہ ترجیح" : "🔴 High Risk Priority") : op.risk_level === "Medium" ? (lang === "ur" ? "🟡 درمیانہ خطرہ" : "🟡 Medium Risk") : (lang === "ur" ? "🟢 کم خطرہ" : "🟢 Low Risk")}
                             </span>
 
-                            {/* Prioritize dropdown on card — only for assigned rescue worker */}
-                            {assignedToMe && (
-                            <div className="flex items-center gap-1 ml-auto">
-                              <span className="text-[10px] text-muted">{lang === "ur" ? "ترجیح:" : "Priority:"}</span>
-                              <select
-                                value={op.risk_level || "Medium"}
-                                onChange={(e) => handleReprioritizeRisk(op.id, e.target.value)}
-                                className="text-[11px] bg-white/5 border border-white/20 rounded px-2 py-0.5 text-muted hover:text-white focus:outline-none"
-                                title="Reprioritize operation risk level"
-                              >
-                                <option value="High" className="bg-ink text-red-300">{lang === "ur" ? "🔴 زیادہ خطرہ" : "🔴 High Risk"}</option>
-                                <option value="Medium" className="bg-ink text-yellow-300">{lang === "ur" ? "🟡 درمیانہ خطرہ" : "🟡 Medium Risk"}</option>
-                                <option value="Low" className="bg-ink text-green-300">{lang === "ur" ? "🟢 کم خطرہ" : "🟢 Low Risk"}</option>
-                              </select>
-                            </div>
-                            )}
+
                           </div>
 
                           {/* Description & Team Assignment */}
@@ -703,7 +688,7 @@ export default function RescueDashboard() {
                         </div>
 
                         {/* Status Action Buttons — complete/print only for assigned rescue worker */}
-                        {assignedToMe ? (
+                        {assignedToMe && (
                         <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
                           {/* Mark Completed */}
                           <button
@@ -715,12 +700,6 @@ export default function RescueDashboard() {
                             onClick={() => handlePrintOperation(op)}
                             className="text-xs text-muted hover:text-teal-300 transition-colors py-1"
                           >{lang === "ur" ? "🖨️ رپورٹ پرنٹ کریں" : "🖨️ Print Report"}</button>
-                        </div>
-                        ) : (
-                        <div className="flex md:flex-col items-center md:items-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/10">
-                          <span className="text-xs text-muted italic px-3 py-2">
-                            {lang === "ur" ? "👁️ صرف مشاہدہ" : "👁️ View Only"}
-                          </span>
                         </div>
                         )}
                       </div>

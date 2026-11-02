@@ -212,7 +212,7 @@ export default function AdminLogin() {
                     to="/login"
                     className="text-sm text-teal-400 hover:text-teal-300 transition-colors"
                   >
-                    ← {lang === 'ur' ? 'شہری اور اسٹاف سائن ان پر واپس جائیں' : 'Return to Citizen & Staff Sign In'}
+                    ← {lang === 'ur' ? 'شہری اور ریسکیو ورکرز سائن ان پر واپس جائیں' : 'Return to Citizen & rescue workers Sign In'}
                   </Link>
                 </div>
               </form>
