@@ -476,9 +476,10 @@ export default function GovDashboard() {
   }, [alerts]);
 
   const getAlertOperation = (alert) => allRescueOps.find((operation) =>
-      alert.linked_rescue_op_id !== undefined &&
-      alert.linked_rescue_op_id !== null &&
-      String(operation.id) === String(alert.linked_rescue_op_id)
+    (alert.linked_rescue_op_id != null &&
+      String(operation.id) === String(alert.linked_rescue_op_id)) ||
+    (operation.alert_id != null &&
+      String(operation.alert_id) === String(alert.id))
   );
 
   const activeWorkerNames = useMemo(() => new Set(
@@ -1102,12 +1103,12 @@ export default function GovDashboard() {
             <p className="eyebrow text-red-400 mb-2">{t("emergencyResponse")}</p>
             <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
             <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
-            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ((a.risk_level || a.risk || "").toLowerCase() === "high")).length === 0 ? (
+            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ["high", "medium"].includes((a.risk_level || a.risk || "").toLowerCase())).length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
               <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2 table-scrollbar">
                 {uniqueAlerts
-                  .filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ((a.risk_level || a.risk || "").toLowerCase() === "high"))
+                  .filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ["high", "medium"].includes((a.risk_level || a.risk || "").toLowerCase()))
                   .slice(0, 10)
                   .map((a) => {
                     const linkedOperation = getAlertOperation(a);
@@ -1121,7 +1122,11 @@ export default function GovDashboard() {
                         : assignedWorker
                           ? `Assigned to ${assignedWorker}`
                           : "Pending";
-                    const isAssigned = Boolean(assignedWorker);
+                    const opStatus = linkedOperation?.status || a.status;
+                    const isCompleted = opStatus === "Completed" || a.status === "Completed";
+                    const isInProgress = opStatus === "In Progress";
+                    const isAssigned = Boolean(assignedWorker) || opStatus === "Assigned";
+                    const isActionable = !isCompleted && !isAssigned && !isInProgress;
                     return (
                     <div key={a.id} className="bg-white/[0.03] rounded-xl p-4 border border-white/10">
                       <div className="flex items-start justify-between gap-3">
@@ -1134,9 +1139,17 @@ export default function GovDashboard() {
                           </div>
                           <p className="text-sm text-muted">{formatAlertMessage(a.message)}</p>
                         </div>
-                        {isAssigned ? (
+                        {isCompleted ? (
+                          <span className="text-xs text-emerald-300 bg-emerald-900/30 border border-emerald-500/30 rounded-full px-3 py-2 shrink-0">
+                            ✓ {lang === "ur" ? "مکمل" : "Completed"}
+                          </span>
+                        ) : isInProgress ? (
+                          <span className="text-xs text-amber-300 bg-amber-900/30 border border-amber-500/30 rounded-full px-3 py-2 shrink-0">
+                            🔄 {lang === "ur" ? "جاری ہے" : "In Progress"}
+                          </span>
+                        ) : isAssigned ? (
                           <span className="text-xs text-white bg-[#0b1f3a] border border-white/20 rounded-full px-3 py-2 shrink-0">
-                            {linkedOperation?.status === "Assigned" ? `✓ ${t("assignedTo")} ${assignedWorker}` : alertStatus}
+                            ✓ {t("assignedTo")} {assignedWorker || (lang === "ur" ? "ریسکیو ورکر" : "Rescue Worker")}
                           </span>
                         ) : (
                           <button
@@ -1151,7 +1164,7 @@ export default function GovDashboard() {
                           </button>
                         )}
                       </div>
-                      {!isAssigned && assigningAlertId === a.id && (
+                      {isActionable && assigningAlertId === a.id && (
                         <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
                           <select
                             value={assignForm.worker}

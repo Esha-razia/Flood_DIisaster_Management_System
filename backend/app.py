@@ -2509,6 +2509,9 @@ def _link_alert_to_operation(alert_id, operation_id, assigned_worker):
         alert["assigned_worker"] = (
             assigned_worker if assigned_worker and assigned_worker != "Unassigned" else None
         )
+        # Mark alert as Assigned so the frontend shows correct status
+        if alert.get("status") not in ("Completed", "Cancelled"):
+            alert["status"] = "Assigned"
         alert["updated_at"] = datetime.now().isoformat()
         notification_connection.execute(
             "UPDATE alerts SET payload = ? WHERE id = ?",
@@ -2771,6 +2774,26 @@ def update_rescue_operation_status(op_id):
     for r in MEMORY_COMMUNITY_REPORTS:
         if new_status and r.get("linked_rescue_op_id") == op_id:
             r["status"] = target_report_status
+
+    # Sync status back to the linked flood alert in notification_db
+    if new_status:
+        try:
+            with notification_db() as ndb:
+                alert_rows = ndb.execute("SELECT id, payload FROM alerts").fetchall()
+                for arow in alert_rows:
+                    try:
+                        ap = json.loads(arow["payload"])
+                    except Exception:
+                        continue
+                    if str(ap.get("linked_rescue_op_id")) == str(op_id):
+                        ap["status"] = new_status
+                        ap["updated_at"] = datetime.now().isoformat()
+                        ndb.execute(
+                            "UPDATE alerts SET payload = ? WHERE id = ?",
+                            (json.dumps(ap), arow["id"]),
+                        )
+        except Exception as alert_sync_err:
+            log_event("warning", f"Alert status sync failed for op {op_id}: {alert_sync_err}")
 
     if result is None:
         return jsonify({"message": "Rescue operation not found"}), 404

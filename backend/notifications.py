@@ -431,29 +431,6 @@ def register(app):
                 return jsonify(message='A message, location and valid risk level are required'), 400
             return jsonify(create(message.strip(), risk, location.strip(), user['email'])), 201
 
-        # Sync genuine high-risk predictions from main database into alerts if missing
-        info = _main_db_provider() if _main_db_provider else None
-        if info and info[0]:
-            try:
-                conn, db_type = info
-                cur = conn.cursor()
-                cur.execute("SELECT id, location, risk, rainfall, created_at FROM predictions WHERE LOWER(risk) = 'high' ORDER BY id DESC")
-                pred_rows = cur.fetchall()
-                if pred_rows:
-                    with db() as c:
-                        existing_msgs = {json.loads(r['payload']).get('message', '') for r in c.execute('SELECT payload FROM alerts').fetchall()}
-                        for prow in pred_rows:
-                            ploc = _row_val(prow, 'location', 1, '')
-                            prain = _row_val(prow, 'rainfall', 3, 0)
-                            pmsg = f"High flood risk detected in {ploc}. Immediate evacuation recommended. Rainfall: {prain}mm."
-                            if pmsg not in existing_msgs:
-                                stamp = _row_val(prow, 'created_at', 4, None)
-                                stamp_str = stamp.isoformat() if hasattr(stamp, 'isoformat') else str(stamp or now())
-                                create(pmsg, "High", ploc, actor="System", source="automatic", rainfall=prain, created_at=stamp_str)
-                                existing_msgs.add(pmsg)
-            except Exception:
-                pass
-
         with db() as c:
             records = [_format_alert_display(json.loads(r['payload'])) for r in c.execute('SELECT payload FROM alerts ORDER BY id DESC')]
         # Only officials may inspect cancelled alerts/history.
