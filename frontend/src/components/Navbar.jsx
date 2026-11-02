@@ -149,6 +149,9 @@ export default function Navbar() {
       }
     });
     (advisoryNotes || []).forEach(item => {
+      if (String(item.advisory_id || item.id) === '1' || String(item.title || '').toLowerCase().includes('indus basin river surge')) {
+        return;
+      }
       const ts = item.updated_at || item.created_at;
       const isWithdrawn = item.status === 'Withdrawn' || item.withdrawn === true;
       list.push({
@@ -190,13 +193,15 @@ export default function Navbar() {
     }
     const currentEmail = (localStorage.getItem('userEmail') || '').toLowerCase();
     return visibleNotifications.filter(item => {
-      // Withdrawn advisories should never appear as active notifications
-      if (item.type === 'advisory' && (item.withdrawn || item.status === 'Withdrawn')) {
-        return false;
+      // Public advisories: broadcast to all citizens
+      if (item.type === 'advisory') {
+        if (item.withdrawn || item.status === 'Withdrawn') {
+          return false;
+        }
+        return true;
       }
-      // 1. Alert created during current login session
+      // Operational flood alerts:
       if (item.timestampMs >= sessionLoginTime) return true;
-      // 2. Alert created by currently logged-in user
       if (currentEmail && (
         (item.actor && item.actor.toLowerCase() === currentEmail) ||
         (item.authorEmail && item.authorEmail.toLowerCase() === currentEmail) ||
@@ -211,8 +216,9 @@ export default function Navbar() {
   // Bell dot: only appears when there is an active alert newer than lastSeenTime
   const hasUnread = useMemo(() => {
     return visibleNotifications.some(item => {
-      if (item.type === 'advisory' && (item.withdrawn || item.status === 'Withdrawn')) {
-        return false;
+      if (item.type === 'advisory') {
+        if (item.withdrawn || item.status === 'Withdrawn') return false;
+        return !isItemRead(item);
       }
       if (isItemRead(item)) return false;
       const itemTs = item.updated_at || item.created_at;
@@ -289,7 +295,7 @@ export default function Navbar() {
         setHistory(result.data);
       }
       setError('');
-      if (userRole === 'citizen') {
+      if (userRole === 'citizen' || !userRole || userRole === 'guest') {
         try {
           const notesRes = await axios.get(`${API_BASE}/advisory-notifications`, {
             headers: {
@@ -299,35 +305,42 @@ export default function Navbar() {
             timeout: 6000
           });
           const fetchedNotes = Array.isArray(notesRes.data) ? notesRes.data : [];
-          if (fetchedNotes.length > 0) {
-            setAdvisoryNotes(fetchedNotes);
+          const filteredNotes = fetchedNotes.filter(
+            (a) => String(a.advisory_id || a.id) !== '1' && !String(a.title || '').toLowerCase().includes('indus basin river surge')
+          );
+          if (filteredNotes.length > 0) {
+            setAdvisoryNotes(filteredNotes);
           } else {
             const advRes = await axios.get(`${API_BASE}/advisories`, { timeout: 6000 });
-            const list = (advRes.data || []).map((a) => ({
-              advisory_id: a.id,
-              title: a.title,
-              message: a.message,
-              region: a.region,
-              issued_by: a.issued_by,
-              created_at: a.created_at,
-              read: false,
-              status: a.status || 'Active',
-            }));
+            const list = (advRes.data || [])
+              .filter((a) => String(a.id) !== '1' && !String(a.title || '').toLowerCase().includes('indus basin river surge'))
+              .map((a) => ({
+                advisory_id: a.id,
+                title: a.title,
+                message: a.message,
+                region: a.region,
+                issued_by: a.issued_by,
+                created_at: a.created_at,
+                read: false,
+                status: a.status || 'Active',
+              }));
             setAdvisoryNotes(list);
           }
         } catch {
           try {
             const advRes = await axios.get(`${API_BASE}/advisories`, { timeout: 6000 });
-            const list = (advRes.data || []).map((a) => ({
-              advisory_id: a.id,
-              title: a.title,
-              message: a.message,
-              region: a.region,
-              issued_by: a.issued_by,
-              created_at: a.created_at,
-              read: false,
-              status: a.status || 'Active',
-            }));
+            const list = (advRes.data || [])
+              .filter((a) => String(a.id) !== '1' && !String(a.title || '').toLowerCase().includes('indus basin river surge'))
+              .map((a) => ({
+                advisory_id: a.id,
+                title: a.title,
+                message: a.message,
+                region: a.region,
+                issued_by: a.issued_by,
+                created_at: a.created_at,
+                read: false,
+                status: a.status || 'Active',
+              }));
             setAdvisoryNotes(list);
           } catch {
             setAdvisoryNotes([]);

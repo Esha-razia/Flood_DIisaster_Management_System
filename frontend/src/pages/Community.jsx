@@ -169,11 +169,17 @@ export default function Community() {
         axios.get(`${API_BASE}/advisory-notifications`).then((r) => r.data || []).catch(() => []),
       ]);
       if (!active) return;
-      // Filter out any withdrawn advisories so they NEVER appear in the active Community list
-      const activeLive = live.filter((a) => a.status !== "Withdrawn");
+      // Safe display-only exclusion for demo advisory ID 1 ("Public Monsoon Flood Advisory — Indus Basin River Surge")
+      const isIndusBasinDemo = (a) => (
+        String(a.id || a.advisory_id) === "1" ||
+        String(a.title || "").toLowerCase().includes("indus basin river surge")
+      );
+
+      // Filter out any withdrawn advisories and the demo Indus Basin advisory so only genuine advisories appear
+      const activeLive = live.filter((a) => a.status !== "Withdrawn" && !isIndusBasinDemo(a));
       const activeIds = new Set(activeLive.map((a) => String(a.id)));
       const activeNotified = notified
-        .filter((n) => !activeIds.has(String(n.advisory_id)) && n.status !== "Withdrawn")
+        .filter((n) => !activeIds.has(String(n.advisory_id)) && n.status !== "Withdrawn" && !isIndusBasinDemo(n))
         .map((n) => ({ id: n.advisory_id, title: n.title, message: n.message, region: n.region, issued_by: n.issued_by, created_at: n.created_at, status: "Active" }));
       const all = [...activeLive, ...activeNotified];
       all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));

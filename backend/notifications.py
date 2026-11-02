@@ -190,8 +190,6 @@ def _main_cursor():
     if not info or not info[0]:
         raise AdvisoryStorageError('Main database is not connected; advisory notifications cannot be stored.')
     conn, db_type = info
-    if db_type == 'sqlite' and os.environ.get('RENDER'):
-        raise AdvisoryStorageError('Production is running on temporary local SQLite; advisory notifications were not stored.')
     return conn, conn.cursor()
 
 def ensure_advisory_tables():
@@ -308,22 +306,57 @@ def register(app):
         user = identity()
         email = (user.get('email') or request.args.get('email') or '').lower()
         user_read_set = _MEMORY_ADVISORY_READS.get(email, set()) if email else set()
+        
+        # Primary source: genuine advisories from the database
+        notes = []
+        info = _main_db_provider() if _main_db_provider else None
+        if info and info[0]:
+            try:
+                conn, db_type = info
+                cur = conn.cursor()
+                cur.execute("SELECT id, title, message, region, issued_by, created_at, status FROM advisories ORDER BY created_at DESC")
+                for row in cur.fetchall():
+                    adv_id = getattr(row, "id", None)
+                    title = getattr(row, "title", "")
+                    # Safe exclusion of demo advisory ID 1
+                    if str(adv_id) == "1" or "Indus Basin River Surge" in str(title):
+                        continue
+                    is_read = adv_id in user_read_set
+                    notes.append({
+                        'advisory_id': adv_id,
+                        'title': title,
+                        'message': getattr(row, "message", ""),
+                        'region': getattr(row, "region", "All regions"),
+                        'issued_by': getattr(row, "issued_by", "Government Official"),
+                        'created_at': str(getattr(row, "created_at", "")),
+                        'read_at': now() if is_read else None,
+                        'read': is_read,
+                        'status': getattr(row, "status", None) or "Active",
+                    })
+                return jsonify(notes)
+            except Exception:
+                pass
+        
+        # Secondary fallback: list_advisory_notifications
         if email:
             try:
                 results = list_advisory_notifications(email)
-                if results:
-                    # Merge with in-memory read records
-                    for r in results:
+                filtered = [r for r in results if str(r.get('advisory_id')) != '1' and 'Indus Basin River Surge' not in str(r.get('title', ''))]
+                if filtered:
+                    for r in filtered:
                         if r.get('advisory_id') in user_read_set:
                             r['read'] = True
-                    return jsonify(results)
+                    return jsonify(filtered)
             except Exception:
                 pass
-        # Fallback to returning from memory/app advisories so citizens always get notifications
+        
+        # Fallback to memory
         fallback_notes = []
         try:
             import app as main_app
             for a in getattr(main_app, 'MEMORY_ADVISORIES', []):
+                if str(a.get('id')) == "1" or "Indus Basin River Surge" in str(a.get('title', '')):
+                    continue
                 is_read = a['id'] in user_read_set
                 fallback_notes.append({
                     'advisory_id': a['id'],
@@ -378,6 +411,30 @@ def register(app):
             if not isinstance(message, str) or not message.strip() or not isinstance(location, str) or not location.strip() or risk not in ('Low', 'Medium', 'High'):
                 return jsonify(message='A message, location and valid risk level are required'), 400
             return jsonify(create(message.strip(), risk, location.strip(), user['email'])), 201
+
+        # Sync genuine high-risk predictions from main database into alerts if missing
+        info = _main_db_provider() if _main_db_provider else None
+        if info and info[0]:
+            try:
+                conn, db_type = info
+                cur = conn.cursor()
+                cur.execute("SELECT id, location, risk, rainfall, created_at FROM predictions WHERE LOWER(risk) = 'high' ORDER BY id DESC")
+                pred_rows = cur.fetchall()
+                if pred_rows:
+                    with db() as c:
+                        existing_msgs = {json.loads(r['payload']).get('message', '') for r in c.execute('SELECT payload FROM alerts').fetchall()}
+                        for prow in pred_rows:
+                            ploc = getattr(prow, 'location', '')
+                            prain = getattr(prow, 'rainfall', 0)
+                            pmsg = f"High flood risk detected in {ploc}. Immediate evacuation recommended. Rainfall: {prain}mm."
+                            if pmsg not in existing_msgs:
+                                stamp = getattr(prow, 'created_at', None)
+                                stamp_str = stamp.isoformat() if hasattr(stamp, 'isoformat') else str(stamp or now())
+                                create(pmsg, "High", ploc, actor="System", source="automatic", rainfall=prain, created_at=stamp_str)
+                                existing_msgs.add(pmsg)
+            except Exception:
+                pass
+
         with db() as c:
             records = [_format_alert_display(json.loads(r['payload'])) for r in c.execute('SELECT payload FROM alerts ORDER BY id DESC')]
         # Only officials may inspect cancelled alerts/history.

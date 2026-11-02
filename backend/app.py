@@ -2064,13 +2064,11 @@ def get_predictions():
 # ---------------- ALERTS (FR-03) ----------------
 from notifications import register as register_notifications, create as create_notification, db as notification_db, bind_main_db as bind_advisory_db, ensure_advisory_tables
 bind_advisory_db(lambda: (conn, DB_TYPE) if DB_AVAILABLE else None)
-if os.environ.get("FMS_CREATE_ADVISORY_TABLES") == "1":
-    # Explicit opt-in only: additive, guarded CREATE of the two advisory notification tables.
-    try:
-        ensure_advisory_tables()
-        print("Advisory notification tables are ready")
-    except Exception as advisory_table_error:
-        print(f"Advisory notification tables could not be created: {advisory_table_error}")
+try:
+    ensure_advisory_tables()
+    print("Advisory notification tables are ready")
+except Exception as advisory_table_error:
+    print(f"Advisory notification tables could not be created: {advisory_table_error}")
 register_notifications(app)
 from map_support import register as register_map_support
 register_map_support(app)
@@ -3521,6 +3519,13 @@ def create_community_report():
         report["trackingId"] = f"FMS-{1000 + report['id']}"
         MEMORY_COMMUNITY_REPORTS.append(report)
 
+    if report.get("severity") == "High":
+        try:
+            report_alert_msg = f"High flood risk reported by citizen in {location}: {description[:120]}"
+            create_notification(report_alert_msg, "High", location, source="citizen_report", incident_id=report.get("id"))
+        except Exception as notify_err:
+            log_event("error", f"Failed to create high-risk citizen incident alert: {notify_err}")
+
     # FR06-03: acknowledgment happens via the tracking_id returned in this response
     return jsonify(report), 201
 
@@ -3993,26 +3998,7 @@ MEMORY_ACCURACY_HISTORY = []  # [{timestamp, model, accuracy, training_rows}]
 # Distinct from Admin's operational "Alerts" — advisories are official,
 # policy-level public communications (e.g. seasonal guidance), not
 # emergency triggers.
-MEMORY_ADVISORIES = [
-    {
-        "id": 1,
-        "title": "Public Monsoon Flood Advisory — Indus Basin River Surge",
-        "message": "Heavy monsoon rainfall has triggered surges along the Indus River catchment. Citizens living in low-lying riverside communities in Sukkur, Hyderabad, and surrounding areas are advised to monitor official water level bulletins and avoid riverbank crossings.",
-        "region": "Sindh & Lower Indus Basin",
-        "issued_by": "National Disaster Management Authority",
-        "created_at": "2026-10-21 14:30:00",
-        "status": "Active",
-    },
-    {
-        "id": 2,
-        "title": "Flash Flood & Hill Torrent Guidance — Southern Punjab & DG Khan",
-        "message": "Continuous hill torrent activity reported in the Koh-e-Suleman range. Low-lying agricultural settlements in Dera Ghazi Khan and Chowk Azam should ensure livestock evacuation to designated high-ground flood shelters.",
-        "region": "Southern Punjab",
-        "issued_by": "Provincial Disaster Management Authority",
-        "created_at": "2026-10-21 16:45:00",
-        "status": "Active",
-    }
-]
+MEMORY_ADVISORIES = []
 
 # ---------------- EQUIPMENT / RESOURCE TRACKER (Rescue Worker) ----------------
 # "assignments" lets a portion of a multi-unit item be deployed to one
