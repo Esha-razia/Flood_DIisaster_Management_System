@@ -36,6 +36,10 @@ export default function AdminDashboard() {
   const currentLoggedInEmail = (localStorage.getItem("userEmail") || "").toLowerCase().trim();
   const currentLoggedInId = localStorage.getItem("userId");
   const currentUserName = localStorage.getItem("userName") || "System Administrator";
+  const adminHeaders = {
+    'X-FMS-Actor-Role': 'admin',
+    'X-FMS-Actor-Email': currentLoggedInEmail || 'admin@example.com'
+  };
 
   // Core Data States
   const [users, setUsers] = useState([]);
@@ -770,7 +774,7 @@ export default function AdminDashboard() {
         address,
         capacity,
         contact
-      });
+      }, { headers: adminHeaders });
       setShowShelterForm(false);
       setNewShelter({ name: "", address: "", capacity: "", contact: "" });
       fetchShelters();
@@ -825,7 +829,7 @@ export default function AdminDashboard() {
         address,
         capacity,
         contact
-      });
+      }, { headers: adminHeaders });
       setEditingShelter(null);
       fetchShelters();
       showNotification(lang === "ur" ? "کیمپ کامیابی سے اپڈیٹ ہو گیا!" : "Shelter updated successfully!");
@@ -837,7 +841,7 @@ export default function AdminDashboard() {
   const handleDeleteShelter = async (id) => {
     if (!confirm("Delete this shelter record?")) return;
     try {
-      await axios.delete(`${API_BASE}/shelters/${id}`);
+      await axios.delete(`${API_BASE}/shelters/${id}`, { headers: adminHeaders });
       fetchShelters();
       showNotification(lang === "ur" ? "کیمپ کا ریکارڈ خارج کر دیا گیا۔" : "Shelter deleted.");
     } catch (err) {
@@ -899,7 +903,7 @@ export default function AdminDashboard() {
         address,
         contact,
         services
-      });
+      }, { headers: adminHeaders });
       setShowHospitalForm(false);
       setNewHospital({ name: "", address: "", contact: "", services: "" });
       fetchHospitals();
@@ -948,7 +952,7 @@ export default function AdminDashboard() {
       return;
     }
     try {
-      await axios.put(`${API_BASE}/hospitals/${editingHospital.id}`, editingHospital);
+      await axios.put(`${API_BASE}/hospitals/${editingHospital.id}`, editingHospital, { headers: adminHeaders });
       setEditingHospital(null);
       fetchHospitals();
       showNotification(lang === "ur" ? "ہسپتال کامیابی سے اپڈیٹ ہو گیا!" : "Hospital updated successfully!");
@@ -960,7 +964,7 @@ export default function AdminDashboard() {
   const handleDeleteHospital = async (id) => {
     if (!confirm("Delete this hospital record?")) return;
     try {
-      await axios.delete(`${API_BASE}/hospitals/${id}`);
+      await axios.delete(`${API_BASE}/hospitals/${id}`, { headers: adminHeaders });
       fetchHospitals();
       showNotification(lang === "ur" ? "ہسپتال کا ریکارڈ خارج کر دیا گیا۔" : "Hospital deleted.");
     } catch (err) {

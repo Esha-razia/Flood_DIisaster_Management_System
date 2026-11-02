@@ -395,7 +395,13 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       if (!name?.trim()) return;
       const location = await lookupLocation(event.latlng.lat, event.latlng.lng);
       try {
-        await axios.post(`${API_BASE}/${category === 'shelter' ? 'shelters' : 'hospitals'}`, { name:name.trim(), address:location, latitude:event.latlng.lat, longitude:event.latlng.lng });
+        const userRole = localStorage.getItem('userRole') || 'admin';
+        const userEmail = localStorage.getItem('userEmail') || 'admin@example.com';
+        await axios.post(
+          `${API_BASE}/${category === 'shelter' ? 'shelters' : 'hospitals'}`,
+          { name: name.trim(), address: location, latitude: event.latlng.lat, longitude: event.latlng.lng },
+          { headers: { 'X-FMS-Actor-Role': userRole, 'X-FMS-Actor-Email': userEmail } }
+        );
         fetchMarkers();
       } catch (error) { window.alert(error.response?.data?.message || 'Could not add marker.'); }
     };
