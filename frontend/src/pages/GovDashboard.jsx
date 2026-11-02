@@ -443,7 +443,13 @@ export default function GovDashboard() {
 
   const fetchAlerts = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/alerts`, { timeout: 8000 });
+      const res = await axios.get(`${API_BASE}/alerts`, {
+        headers: {
+          "X-FMS-Actor-Role": "government_official",
+          "X-FMS-Actor-Email": localStorage.getItem("userEmail") || "",
+        },
+        timeout: 8000,
+      });
       const data = res.data || [];
       setAlerts((prev) => {
         if (data.length === 0 && prev.length > 0) {
@@ -1096,12 +1102,12 @@ export default function GovDashboard() {
             <p className="eyebrow text-red-400 mb-2">{t("emergencyResponse")}</p>
             <h2 className="font-display text-2xl text-parchment mb-2">{t("highRiskAlerts")}</h2>
             <p className="text-sm text-muted mb-4">{t("highRiskAlertsDesc")}</p>
-            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && (a.risk_level || a.risk) === "High").length === 0 ? (
+            {uniqueAlerts.filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ((a.risk_level || a.risk || "").toLowerCase() === "high")).length === 0 ? (
               <p className="text-sm text-muted">{t("noActiveAlerts")}</p>
             ) : (
               <div className="space-y-3 max-h-[460px] overflow-y-auto pr-2 table-scrollbar">
                 {uniqueAlerts
-                  .filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && (a.risk_level || a.risk) === "High")
+                  .filter((a) => a.status !== "Cancelled" && a.source !== "dispatch" && ((a.risk_level || a.risk || "").toLowerCase() === "high"))
                   .slice(0, 10)
                   .map((a) => {
                     const linkedOperation = getAlertOperation(a);

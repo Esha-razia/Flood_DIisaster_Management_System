@@ -119,6 +119,25 @@ def now():
 def log(c, record, action, actor):
     c.execute('INSERT INTO history (alert_id, action, timestamp, actor, payload) VALUES (?, ?, ?, ?, ?)', (record['id'], action, now(), actor, json.dumps(record)))
 
+def _row_val(row, key, idx=None, default=None):
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    if hasattr(row, key):
+        val = getattr(row, key)
+        if val is not None:
+            return val
+    if isinstance(row, (tuple, list)) and idx is not None and len(row) > idx:
+        return row[idx]
+    try:
+        val = row[key]
+        if val is not None:
+            return val
+    except Exception:
+        pass
+    return default
+
 def _format_alert_display(alert_dict):
     if not isinstance(alert_dict, dict):
         return alert_dict
@@ -316,22 +335,22 @@ def register(app):
                 cur = conn.cursor()
                 cur.execute("SELECT id, title, message, region, issued_by, created_at, status FROM advisories ORDER BY created_at DESC")
                 for row in cur.fetchall():
-                    adv_id = getattr(row, "id", None)
-                    title = getattr(row, "title", "")
+                    adv_id = _row_val(row, "id", 0)
+                    title = _row_val(row, "title", 1, "")
                     # Safe exclusion of demo advisory ID 1
-                    if str(adv_id) == "1" or "Indus Basin River Surge" in str(title):
+                    if str(adv_id) == "1" or "indus basin river surge" in str(title).lower():
                         continue
                     is_read = adv_id in user_read_set
                     notes.append({
                         'advisory_id': adv_id,
                         'title': title,
-                        'message': getattr(row, "message", ""),
-                        'region': getattr(row, "region", "All regions"),
-                        'issued_by': getattr(row, "issued_by", "Government Official"),
-                        'created_at': str(getattr(row, "created_at", "")),
+                        'message': _row_val(row, "message", 2, ""),
+                        'region': _row_val(row, "region", 3, "All regions"),
+                        'issued_by': _row_val(row, "issued_by", 4, "Government Official"),
+                        'created_at': str(_row_val(row, "created_at", 5, "")),
                         'read_at': now() if is_read else None,
                         'read': is_read,
-                        'status': getattr(row, "status", None) or "Active",
+                        'status': _row_val(row, "status", 6, "Active") or "Active",
                     })
                 return jsonify(notes)
             except Exception:
@@ -377,7 +396,7 @@ def register(app):
     def advisory_notification_read(advisory_id):
         user = identity()
         email = (user.get('email') or request.args.get('email') or '').lower()
-        if user.get('role') != 'citizen' or not email:
+        if user.get('role') not in ('citizen', 'guest', '') and not email:
             return jsonify(message='Citizen sign-in required'), 403
         if email not in _MEMORY_ADVISORY_READS:
             _MEMORY_ADVISORY_READS[email] = set()
@@ -424,11 +443,11 @@ def register(app):
                     with db() as c:
                         existing_msgs = {json.loads(r['payload']).get('message', '') for r in c.execute('SELECT payload FROM alerts').fetchall()}
                         for prow in pred_rows:
-                            ploc = getattr(prow, 'location', '')
-                            prain = getattr(prow, 'rainfall', 0)
+                            ploc = _row_val(prow, 'location', 1, '')
+                            prain = _row_val(prow, 'rainfall', 3, 0)
                             pmsg = f"High flood risk detected in {ploc}. Immediate evacuation recommended. Rainfall: {prain}mm."
                             if pmsg not in existing_msgs:
-                                stamp = getattr(prow, 'created_at', None)
+                                stamp = _row_val(prow, 'created_at', 4, None)
                                 stamp_str = stamp.isoformat() if hasattr(stamp, 'isoformat') else str(stamp or now())
                                 create(pmsg, "High", ploc, actor="System", source="automatic", rainfall=prain, created_at=stamp_str)
                                 existing_msgs.add(pmsg)
