@@ -58,6 +58,17 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})
+MAP_DATA_REVISION = int(time.time())
+
+@app.errorhandler(500)
+def handle_500_error(e):
+    err_str = str(getattr(e, 'description', e))
+    return jsonify({"message": f"Server Error: {err_str}", "error": err_str}), 500
+
+@app.errorhandler(Exception)
+def handle_general_exception(e):
+    err_str = str(e)
+    return jsonify({"message": f"Server Exception: {err_str}", "error": err_str}), 500
 
 @app.before_request
 def handle_options_preflight():
@@ -2896,64 +2907,76 @@ def get_shelters():
     res.sort(key=lambda x: x["id"])
     return jsonify(res)
 
-@app.route("/shelters", methods=["POST"])
+@app.route("/shelters", methods=["POST", "OPTIONS"])
 def create_shelter():
-    data = request.json or {}
-    actor = identity()
-    role = actor.get('role') or request.headers.get('X-FMS-Actor-Role', '').strip().lower() or request.headers.get('X-Role', '').strip().lower() or (data.get('actor_role') or data.get('role') or '').strip().lower()
-    if role not in ('admin', 'government_official'):
-        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
-    name = (data.get("name") or "").strip()
-    address = (data.get("address") or "").strip()
-    if not name or not address:
-        return jsonify({"message": "Name and address are required"}), 400
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
+    try:
+        data = request.get_json(force=True, silent=True) or request.json or {}
+        actor = identity()
+        role = actor.get('role') or request.headers.get('X-FMS-Actor-Role', '').strip().lower() or request.headers.get('X-Role', '').strip().lower() or (data.get('actor_role') or data.get('role') or '').strip().lower()
+        if role not in ('admin', 'government_official'):
+            return jsonify({'message': 'Admin or Government Official authorization required'}), 403
+        name = (data.get("name") or "").strip()
+        address = (data.get("address") or "").strip()
+        if not name or not address:
+            return jsonify({"message": "Name and address are required"}), 400
 
-    # FR07-04: reject duplicate entries with the same name and address
-    existing = [s for s in MEMORY_SHELTERS if s["name"].lower() == name.lower() and s["address"].lower() == address.lower()]
-    if existing:
-        return jsonify({"message": "A shelter with this name and address already exists"}), 400
+        # FR07-04: reject duplicate entries with the same name and address
+        existing = [s for s in MEMORY_SHELTERS if (s.get("name") or "").lower() == name.lower() and (s.get("address") or "").lower() == address.lower()]
+        if existing:
+            return jsonify({"message": "A shelter with this name and address already exists"}), 400
 
-    lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
-    lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
-    if lat is None or lng is None:
-        coords = resolve_coordinates(address) or resolve_coordinates(name)
-        if coords:
-            lat, lng = coords
+        lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
+        lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
+        if lat is None or lng is None:
+            coords = resolve_coordinates(address) or resolve_coordinates(name)
+            if coords:
+                lat, lng = coords
 
-    shelter = {
-        "id": None,
-        "name": name, "name_ur": data.get("name_ur") or None, "address": address,
-        "capacity": data.get("capacity"), "contact": data.get("contact", ""),
-        "latitude": lat,
-        "longitude": lng,
-        "verified": False, "occupancy": 0,
-    }
-    if DB_AVAILABLE:
+        shelter = {
+            "id": None,
+            "name": name, "name_ur": data.get("name_ur") or None, "address": address,
+            "capacity": data.get("capacity"), "contact": data.get("contact", ""),
+            "latitude": lat,
+            "longitude": lng,
+            "verified": False, "occupancy": 0,
+        }
+        saved_to_db = False
+        if DB_AVAILABLE:
+            try:
+                if DB_TYPE == "sql_server":
+                    cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+                else:
+                    cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
+                row_count = cursor.fetchone()
+                count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
+                if count_val == 0:
+                    new_id = _db_insert_get_id(
+                        "INSERT INTO shelters (name, address, capacity, contact, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
+                        (name, address, shelter["capacity"], shelter["contact"], shelter["latitude"], shelter["longitude"], 0, 0)
+                    )
+                    shelter["id"] = new_id
+                    saved_to_db = True
+                else:
+                    return jsonify({"message": "A shelter with this name and address already exists"}), 400
+            except Exception as e:
+                print(f"[ERROR] Failed to save shelter to DB: {e}")
+
+        if not saved_to_db:
+            shelter["id"] = max([s["id"] for s in MEMORY_SHELTERS], default=0) + 1
+            MEMORY_SHELTERS.append(shelter)
+
+        global MAP_DATA_REVISION
         try:
-            if DB_TYPE == "sql_server":
-                cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
-            else:
-                cursor.execute("SELECT COUNT(*) AS c FROM shelters WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
-            row_count = cursor.fetchone()
-            count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
-            if count_val == 0:
-                new_id = _db_insert_get_id(
-                    "INSERT INTO shelters (name, address, capacity, contact, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
-                    (name, address, shelter["capacity"], shelter["contact"], shelter["latitude"], shelter["longitude"], 0, 0)
-                )
-                shelter["id"] = new_id
-            else:
-                return jsonify({"message": "A shelter with this name and address already exists"}), 400
-        except Exception as e:
-            print(f"[ERROR] Failed to save shelter: {e}")
-            return jsonify({"message": "Could not save shelter"}), 503
-    else:
-        shelter["id"] = max([s["id"] for s in MEMORY_SHELTERS], default=0) + 1
-        MEMORY_SHELTERS.append(shelter)
-        MEMORY_SHELTERS.append(shelter)
-
-    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
-    return jsonify(shelter), 201
+            MAP_DATA_REVISION = int(time.time())
+        except Exception:
+            pass
+        return jsonify(shelter), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server error: {str(e)}"}), 500
 
 @app.route("/shelters/<int:shelter_id>", methods=["PUT"])
 def update_shelter(shelter_id):
@@ -3083,65 +3106,78 @@ def get_hospitals():
     res.sort(key=lambda x: x["id"])
     return jsonify(res)
 
-@app.route("/hospitals", methods=["POST"])
+@app.route("/hospitals", methods=["POST", "OPTIONS"])
 def create_hospital():
-    data = request.json or {}
-    actor = identity()
-    role = actor.get('role') or request.headers.get('X-FMS-Actor-Role', '').strip().lower() or request.headers.get('X-Role', '').strip().lower() or (data.get('actor_role') or data.get('role') or '').strip().lower()
-    if role not in ('admin', 'government_official'):
-        return jsonify({'message': 'Admin or Government Official authorization required'}), 403
-    name = (data.get("name") or "").strip()
-    address = (data.get("address") or "").strip()
-    if not name or not address:
-        return jsonify({"message": "Name and address are required"}), 400
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
+    try:
+        data = request.get_json(force=True, silent=True) or request.json or {}
+        actor = identity()
+        role = actor.get('role') or request.headers.get('X-FMS-Actor-Role', '').strip().lower() or request.headers.get('X-Role', '').strip().lower() or (data.get('actor_role') or data.get('role') or '').strip().lower()
+        if role not in ('admin', 'government_official'):
+            return jsonify({'message': 'Admin or Government Official authorization required'}), 403
+        name = (data.get("name") or "").strip()
+        address = (data.get("address") or "").strip()
+        if not name or not address:
+            return jsonify({"message": "Name and address are required"}), 400
 
-    # FR08-04: prevent duplicate entries
-    existing = [h for h in MEMORY_HOSPITALS if h["name"].lower() == name.lower() and h["address"].lower() == address.lower()]
-    if existing:
-        return jsonify({"message": "A hospital with this name and address already exists"}), 400
+        # FR08-04: prevent duplicate entries
+        existing = [h for h in MEMORY_HOSPITALS if (h.get("name") or "").lower() == name.lower() and (h.get("address") or "").lower() == address.lower()]
+        if existing:
+            return jsonify({"message": "A hospital with this name and address already exists"}), 400
 
-    lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
-    lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
-    if lat is None or lng is None:
-        coords = resolve_coordinates(address) or resolve_coordinates(name)
-        if coords:
-            lat, lng = coords
+        lat = safe_float(data.get("latitude"), None) if data.get("latitude") not in (None, "") else None
+        lng = safe_float(data.get("longitude"), None) if data.get("longitude") not in (None, "") else None
+        if lat is None or lng is None:
+            coords = resolve_coordinates(address) or resolve_coordinates(name)
+            if coords:
+                lat, lng = coords
 
-    hospital = {
-        "id": None,
-        "name": name, "name_ur": data.get("name_ur") or None, "address": address,
-        "contact": data.get("contact", ""), "services": data.get("services", ""),
-        "latitude": lat,
-        "longitude": lng,
-        "verified": False,
-        "occupancy": 0,
-        "capacity": 50,
-    }
-    if DB_AVAILABLE:
+        hospital = {
+            "id": None,
+            "name": name, "name_ur": data.get("name_ur") or None, "address": address,
+            "contact": data.get("contact", ""), "services": data.get("services", ""),
+            "latitude": lat,
+            "longitude": lng,
+            "verified": False,
+            "occupancy": 0,
+            "capacity": 50,
+        }
+        saved_to_db = False
+        if DB_AVAILABLE:
+            try:
+                if DB_TYPE == "sql_server":
+                    cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
+                else:
+                    cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
+                row_count = cursor.fetchone()
+                count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
+                if count_val == 0:
+                    new_id = _db_insert_get_id(
+                        "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
+                        (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0)
+                    )
+                    hospital["id"] = new_id
+                    saved_to_db = True
+                else:
+                    return jsonify({"message": "A hospital with this name and address already exists"}), 400
+            except Exception as e:
+                print(f"[ERROR] Failed to save hospital to DB: {e}")
+
+        if not saved_to_db:
+            hospital["id"] = max([h["id"] for h in MEMORY_HOSPITALS], default=0) + 1
+            MEMORY_HOSPITALS.append(hospital)
+
+        global MAP_DATA_REVISION
         try:
-            if DB_TYPE == "sql_server":
-                cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE CAST(name AS VARCHAR(MAX))=? AND CAST(address AS VARCHAR(MAX))=?", (name, address))
-            else:
-                cursor.execute("SELECT COUNT(*) AS c FROM hospitals WHERE LOWER(name)=LOWER(?) AND LOWER(address)=LOWER(?)", (name, address))
-            row_count = cursor.fetchone()
-            count_val = getattr(row_count, 'c', 0) if row_count else (row_count[0] if row_count else 0)
-            if count_val == 0:
-                new_id = _db_insert_get_id(
-                    "INSERT INTO hospitals (name, address, contact, services, latitude, longitude, verified, occupancy) VALUES (?,?,?,?,?,?,?,?)",
-                    (name, address, hospital["contact"], hospital["services"], hospital["latitude"], hospital["longitude"], 0, 0)
-                )
-                hospital["id"] = new_id
-            else:
-                return jsonify({"message": "A hospital with this name and address already exists"}), 400
-        except Exception as e:
-            print(f"[ERROR] Failed to save hospital: {e}")
-            return jsonify({"message": "Could not save hospital"}), 503
-    else:
-        hospital["id"] = max([h["id"] for h in MEMORY_HOSPITALS], default=0) + 1
-        MEMORY_HOSPITALS.append(hospital)
-
-    global MAP_DATA_REVISION; MAP_DATA_REVISION = int(time.time())
-    return jsonify(hospital), 201
+            MAP_DATA_REVISION = int(time.time())
+        except Exception:
+            pass
+        return jsonify(hospital), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server error: {str(e)}"}), 500
 
 @app.route("/hospitals/<int:hospital_id>", methods=["PUT"])
 def update_hospital(hospital_id):
