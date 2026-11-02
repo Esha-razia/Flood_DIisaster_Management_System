@@ -1,4 +1,4 @@
-const CACHE_NAME = "flood-dms-v2"; // bumped so old browsers discard the stale/bad cache from the buggy version
+const CACHE_NAME = "flood-dms-v3"; // bumped so old browsers discard the stale/bad cache from the buggy version
 const APP_SHELL = ["/", "/manifest.json", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

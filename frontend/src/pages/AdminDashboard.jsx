@@ -773,14 +773,17 @@ export default function AdminDashboard() {
         name,
         address,
         capacity,
-        contact
+        contact,
+        role: 'admin',
+        actor_role: 'admin'
       }, { headers: adminHeaders });
       setShowShelterForm(false);
       setNewShelter({ name: "", address: "", capacity: "", contact: "" });
       fetchShelters();
       showNotification(lang === "ur" ? "امدادی کیمپ رجسٹر ہو گیا!" : "Emergency Shelter registered!");
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to create shelter.");
+      const msg = err.response?.data?.message || err.response?.data?.error || (err.response ? `HTTP ${err.response.status}` : err.message);
+      alert(msg || "Failed to create shelter.");
     }
   };
 
@@ -902,14 +905,17 @@ export default function AdminDashboard() {
         name,
         address,
         contact,
-        services
+        services,
+        role: 'admin',
+        actor_role: 'admin'
       }, { headers: adminHeaders });
       setShowHospitalForm(false);
       setNewHospital({ name: "", address: "", contact: "", services: "" });
       fetchHospitals();
       showNotification(lang === "ur" ? "ہنگامی ہسپتال رجسٹر ہو گیا!" : "Emergency Hospital registered!");
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to create hospital.");
+      const msg = err.response?.data?.message || err.response?.data?.error || (err.response ? `HTTP ${err.response.status}` : err.message);
+      alert(msg || "Failed to create hospital.");
     }
   };
 
