@@ -960,7 +960,7 @@ export default function GovDashboard() {
               <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
               <div className="overflow-x-hidden max-h-[440px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
-                <table className="w-full text-left text-sm">
+                <table className="w-full table-fixed text-left text-sm">
                   <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
                     <tr className="border-b border-white/20 text-muted text-xs">
                       <th className="py-3.5 px-3 font-semibold text-left w-[14%]">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
