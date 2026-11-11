@@ -1115,14 +1115,14 @@ export default function AdminDashboard() {
 
   // All navigation tabs in one combined list (shown in expanded grid)
     const allNavTabs = [
-    { id: 'overview',     label: lang === 'ur' ? 'کمانڈ سینٹر' : 'Command Center',       icon: '🌐',  badge: null },
-    { id: 'users',        label: lang === 'ur' ? 'صارفین کے اکاؤنٹس' : 'User Accounts',        icon: '👥',  badge: filteredUsers.length },
-    { id: 'reports',      label: lang === 'ur' ? 'شہری رپورٹس' : 'Citizen Reports',      icon: '📢',  badge: pendingReportsCount },
-    { id: 'shelters',     label: lang === 'ur' ? 'امدادی کیمپ' : 'Relief Shelters',      icon: '🏢',  badge: shelters.length },
-    { id: 'hospitals',    label: lang === 'ur' ? 'ہنگامی ہسپتال' : 'Emergency Hospitals',  icon: '🏥',  badge: hospitals.length },
-    { id: 'alerts',       label: lang === 'ur' ? 'ہنگامی الرٹس' : 'Emergency Flood Alerts', icon: '🚨',  badge: activeAlertsCount },
-    { id: 'rescue',       label: lang === 'ur' ? 'زمینی آپریشنز' : 'Ground Operations',    icon: '⚡',  badge: activeOpsCount },
-    { id: 'predictions',  label: lang === 'ur' ? 'AI ماڈل اور تجزیات' : 'AI Model & Analytics', icon: '🤖',  badge: predictions.length || null },
+    { id: 'overview',     label: lang === 'ur' ? 'کمانڈ سینٹر' : 'Command Center',       icon: '🌐' },
+    { id: 'users',        label: lang === 'ur' ? 'صارفین کے اکاؤنٹس' : 'User Accounts',        icon: '👥' },
+    { id: 'reports',      label: lang === 'ur' ? 'شہری رپورٹس' : 'Citizen Reports',      icon: '📢' },
+    { id: 'shelters',     label: lang === 'ur' ? 'امدادی کیمپ' : 'Relief Shelters',      icon: '🏢' },
+    { id: 'hospitals',    label: lang === 'ur' ? 'ہنگامی ہسپتال' : 'Emergency Hospitals',  icon: '🏥' },
+    { id: 'alerts',       label: lang === 'ur' ? 'ہنگامی الرٹس' : 'Emergency Flood Alerts', icon: '🚨' },
+    { id: 'rescue',       label: lang === 'ur' ? 'زمینی آپریشنز' : 'Ground Operations',    icon: '⚡' },
+    { id: 'predictions',  label: lang === 'ur' ? 'AI ماڈل اور تجزیات' : 'AI Model & Analytics', icon: '🤖' },
   ];
 
   // For backward compat keep these (used elsewhere in component)
@@ -1186,25 +1186,14 @@ export default function AdminDashboard() {
                     <button
                       key={tab.id}
                       onClick={() => { setActiveSection(tab.id); setDropdownOpen(false); }}
-                      className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer transition-all ${
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer transition-all ${
                         isActive
                           ? 'bg-[#f59e0b] text-slate-950 shadow-lg shadow-amber-500/20'
                           : 'bg-[#131b2a] text-slate-300 hover:text-white hover:bg-[#1a2538] border border-slate-800/60'
                       }`}
                     >
-                      <div className="flex items-center gap-3 truncate">
-                        <span className="text-base shrink-0">{tab.icon}</span>
-                        <span className="truncate">{tab.label}</span>
-                      </div>
-                      {tab.badge != null && tab.badge > 0 && (
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0 ml-2 ${
-                          isActive
-                            ? 'bg-slate-950/20 text-slate-950'
-                            : 'bg-slate-800/90 text-slate-300 border border-slate-700/50'
-                        }`}>
-                          {tab.badge}
-                        </span>
-                      )}
+                      <span className="text-base shrink-0">{tab.icon}</span>
+                      <span className="truncate">{tab.label}</span>
                     </button>
                   );
                 })}
