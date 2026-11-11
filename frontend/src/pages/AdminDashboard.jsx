@@ -1625,7 +1625,7 @@ export default function AdminDashboard() {
                   }`}
                 >
                   <span>⚡ Active Alerts</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-xs">{activeAlertsList.length}</span>
+                  
                 </button>
                 <button
                   onClick={() => setAlertTab("history")}
@@ -1634,7 +1634,7 @@ export default function AdminDashboard() {
                   }`}
                 >
                   <span>📜 Alert History Log</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-xs">{alertHistoryList.length}</span>
+                  
                 </button>
               </div>
 
@@ -1777,7 +1777,7 @@ export default function AdminDashboard() {
                   }`}
                 >
                   <span>⚡ Active Missions</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-xs">{activeRescueOps.length}</span>
+                  
                 </button>
                 <button
                   onClick={() => setRescueActiveTab("history")}
@@ -1786,7 +1786,7 @@ export default function AdminDashboard() {
                   }`}
                 >
                   <span>📜 Past Missions Log</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-xs">{pastRescueOps.length}</span>
+                  
                 </button>
               </div>
 

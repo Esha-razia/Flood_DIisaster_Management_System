@@ -899,31 +899,31 @@ export default function GovDashboard() {
                 {t("showingXofYPredictions").replace("{x}", filteredPredictions.length).replace("{y}", predictions.length)}
               </div>
             </div>
-            <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
-              <table className="w-full text-left">
-                <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
-                  <tr className="border-b border-white/20">
-                    <th className="pb-3 text-muted">{t("dateLabel")}</th>
-                    <th className="pb-3 text-muted">{t("location2")}</th>
-                    <th className="pb-3 text-muted">{t("riskLabel")}</th>
-                    <th className="pb-3 text-muted">{t("confidence")}</th>
-                    <th className="pb-3 text-muted">{t("rainfallLabel")}</th>
-                                        <th className="pb-3 text-muted">{t("temperature")}</th>
+            <div className="overflow-x-auto max-h-[380px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
+                  <tr className="border-b border-white/20 text-muted text-xs">
+                    <th className="py-3 px-4 font-semibold text-left">{t("dateLabel")}</th>
+                    <th className="py-3 px-4 font-semibold text-left">{t("location2")}</th>
+                    <th className="py-3 px-4 font-semibold text-center">{t("riskLabel")}</th>
+                    <th className="py-3 px-4 font-semibold text-center">{t("confidence")}</th>
+                    <th className="py-3 px-4 font-semibold text-center">{t("rainfallLabel")}</th>
+                    <th className="py-3 px-4 font-semibold text-center">{t("temperature")}</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-white/10">
                   {filteredPredictions.map((pred, index) => (
-                    <tr key={index} className="border-b border-white/10">
-                      <td className="py-3 text-muted">{new Date(pred.created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
-                      <td className="py-3 text-muted">{pred.location}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRiskBgColor(pred.risk)}`}>
+                    <tr key={index} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3 px-4 text-muted whitespace-nowrap">{new Date(pred.created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</td>
+                      <td className="py-3 px-4 text-white font-medium">{pred.location}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold inline-block ${getRiskBgColor(pred.risk)}`}>
                           {pred.risk}
                         </span>
                       </td>
-                      <td className="py-3 text-muted">{(pred.confidence * 100).toFixed(1)}%</td>
-                      <td className="py-3 text-muted">{pred.input_data?.rainfall || "N/A"} mm</td>
-                                            <td className="py-3 text-muted">{pred.input_data?.temperature || "N/A"}°C</td>
+                      <td className="py-3 px-4 text-center text-muted font-mono">{(pred.confidence * 100).toFixed(1)}%</td>
+                      <td className="py-3 px-4 text-center text-muted">{pred.input_data?.rainfall || "N/A"} mm</td>
+                      <td className="py-3 px-4 text-center text-muted">{pred.input_data?.temperature || "N/A"}°C</td>
                     </tr>
                   ))}
                 </tbody>
@@ -959,26 +959,26 @@ export default function GovDashboard() {
             {filteredCommunityReports.length === 0 ? (
               <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
-              <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
+              <div className="overflow-x-auto max-h-[440px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
                 <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-[#071326] z-10">
-                    <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-3 pr-4 font-semibold">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
-                      <th className="pb-3 pr-4 font-semibold">{lang === "ur" ? "مقام" : "Location"}</th>
-                      <th className="pb-3 pr-4 font-semibold">{lang === "ur" ? "شدت" : "Severity"}</th>
-                      <th className="pb-3 pr-4 font-semibold">{lang === "ur" ? "حیثیت" : "Status"}</th>
-                      <th className="pb-3 pr-4 font-semibold">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
-                      <th className="pb-3 font-semibold text-right">{lang === "ur" ? "اقدامات" : "Actions"}</th>
+                  <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
+                    <tr className="border-b border-white/20 text-muted text-xs">
+                      <th className="py-3.5 px-4 font-semibold whitespace-nowrap text-left">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
+                      <th className="py-3.5 px-4 font-semibold min-w-[180px] text-left">{lang === "ur" ? "مقام" : "Location"}</th>
+                      <th className="py-3.5 px-4 font-semibold whitespace-nowrap text-center">{lang === "ur" ? "شدت" : "Severity"}</th>
+                      <th className="py-3.5 px-4 font-semibold whitespace-nowrap text-center">{lang === "ur" ? "حیثیت" : "Status"}</th>
+                      <th className="py-3.5 px-4 font-semibold whitespace-nowrap text-left">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
+                      <th className="py-3.5 px-4 font-semibold whitespace-nowrap text-right">{lang === "ur" ? "اقدامات" : "Actions"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {filteredCommunityReports.map((report) => (
                       <Fragment key={report.id}>
                         <tr className="hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3 pr-4 text-white font-mono text-xs whitespace-nowrap">{report.trackingId}</td>
-                          <td className="py-3 pr-4 text-muted max-w-[220px] break-words">{report.location}</td>
-                          <td className="py-3 pr-4 text-muted whitespace-nowrap">
-                            <span className={`rounded-full border px-2.5 py-1 text-xs ${
+                          <td className="py-3.5 px-4 text-white font-mono text-xs whitespace-nowrap font-medium">{report.trackingId}</td>
+                          <td className="py-3.5 px-4 text-white font-medium max-w-[220px] break-words">{report.location}</td>
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold inline-block ${
                               report.severity === "High"
                                 ? "border-red-400/40 bg-red-400/10 text-red-300"
                                 : report.severity === "Medium"
@@ -988,8 +988,8 @@ export default function GovDashboard() {
                               {report.severity}
                             </span>
                           </td>
-                          <td className="py-3 pr-4 whitespace-nowrap">
-                            <span className={`rounded-full border px-2.5 py-1 text-xs ${
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold inline-block ${
                               report.status === "Resolved"
                                 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
                                 : report.status === "Action Taken"
@@ -997,8 +997,8 @@ export default function GovDashboard() {
                                   : "border-amber-400/30 bg-amber-400/10 text-amber-300"
                             }`}>{report.status}</span>
                           </td>
-                          <td className="py-3 pr-4 text-muted whitespace-nowrap">{report.authorName || report.authorEmail || "Citizen"}</td>
-                          <td className="py-3 whitespace-nowrap text-right">
+                          <td className="py-3.5 px-4 text-muted whitespace-nowrap text-sm">{report.authorName || report.authorEmail || "Citizen"}</td>
+                          <td className="py-3.5 px-4 whitespace-nowrap text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
@@ -1213,23 +1213,23 @@ export default function GovDashboard() {
             {rescueWorkers.length === 0 ? (
               <p className="text-sm text-muted">{t("noRescueWorkersYet")}</p>
             ) : (
-              <div className="overflow-x-auto max-h-[280px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
+              <div className="overflow-x-auto max-h-[320px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
                 <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
-                    <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-2">{t("name")}</th>
-                      <th className="pb-2">{t("email")}</th>
-                      <th className="pb-2">{t("status")}</th>
-                      <th className="pb-2">{lang === "ur" ? "دستیابی" : "Availability"}</th>
+                  <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
+                    <tr className="border-b border-white/20 text-muted text-xs">
+                      <th className="py-3 px-4 font-semibold">{t("name")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("email")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("status")}</th>
+                      <th className="py-3 px-4 font-semibold">{lang === "ur" ? "دستیابی" : "Availability"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {rescueWorkers.map((worker) => (
-                      <tr key={worker.id}>
-                        <td className="py-2 text-white">{worker.name}</td>
-                        <td className="py-2 text-muted">{worker.email}</td>
-                        <td className="py-2 text-teal-300">{worker.status === "Active" ? t("active") : t("inactive")}</td>
-                        <td className="py-2">
+                      <tr key={worker.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3 px-4 text-white font-medium">{worker.name}</td>
+                        <td className="py-3 px-4 text-muted font-mono text-xs">{worker.email}</td>
+                        <td className="py-3 px-4 text-teal-300 font-semibold">{worker.status === "Active" ? t("active") : t("inactive")}</td>
+                        <td className="py-3 px-4">
                           <span className={activeWorkerNames.has(worker.name.toLowerCase()) ? "text-amber-300" : "text-emerald-300"}>
                             {activeWorkerNames.has(worker.name.toLowerCase()) ? (lang === "ur" ? "مصروف" : "Busy") : (lang === "ur" ? "دستیاب" : "Available")}
                           </span>
@@ -1339,23 +1339,23 @@ export default function GovDashboard() {
                 {displayedOperations.length === 0 ? (
                   <p className="text-sm text-muted">{lang === "ur" ? "اس ویو میں کوئی آپریشن موجود نہیں ہے۔" : "No operations in this view."}</p>
                 ) : (
-                  <div className="overflow-x-auto max-h-[360px] overflow-y-auto rounded-xl border border-white/10 p-2 table-scrollbar">
+                  <div className="overflow-x-auto max-h-[380px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
                     <table className="w-full text-left text-sm">
-                      <thead className="sticky top-0 bg-[#071326] z-10 shadow-sm">
-                        <tr className="border-b border-white/20 text-muted">
-                      <th className="pb-2">{t("location2")}</th>
-                      <th className="pb-2">{t("statusLabel")}</th>
-                      <th className="pb-2">{t("riskLabel")}</th>
-                      <th className="pb-2">{t("teamLabel")}</th>
-                      <th className="pb-2">{t("updatedLabel")}</th>
-                      <th className="pb-2">Actions</th>
+                      <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
+                        <tr className="border-b border-white/20 text-muted text-xs">
+                      <th className="py-3 px-4 font-semibold">{t("location2")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("statusLabel")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("riskLabel")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("teamLabel")}</th>
+                      <th className="py-3 px-4 font-semibold">{t("updatedLabel")}</th>
+                      <th className="py-3 px-4 font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {displayedOperations.map((op) => (
-                      <tr key={op.id} className={`align-top ${op.status === "Completed" ? "bg-white/[0.02]" : ""}`}>
-                        <td className="py-2 text-white">{op.location}</td>
-                        <td className="py-2">
+                      <tr key={op.id} className={`align-top hover:bg-white/[0.02] transition-colors ${op.status === "Completed" ? "bg-white/[0.02]" : ""}`}>
+                        <td className="py-3 px-4 text-white font-medium">{op.location}</td>
+                        <td className="py-3 px-4">
                           <select
                             value={op.status}
                             onChange={(e) => handleOperationStatusChange(op, e.target.value)}
