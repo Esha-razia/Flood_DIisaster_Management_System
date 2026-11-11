@@ -788,25 +788,25 @@ export default function RescueDashboard() {
                   <table className="w-full table-fixed text-left text-sm">
                     <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
                       <tr className="border-b border-white/20 text-muted text-xs">
-                        <th className="py-3 px-2 text-center w-[8%] font-semibold">{lang === "ur" ? "آئی ڈی" : "ID"}</th>
-                        <th className="py-3 px-3 text-left w-[26%] font-semibold">{t("location")}</th>
-                        <th className="py-3 px-2 text-center w-[13%] font-semibold">{lang === "ur" ? "خطرے کی ترجیح" : "Risk Priority"}</th>
-                        <th className="py-3 px-3 text-left w-[15%] font-semibold">{lang === "ur" ? "تفویض ٹیم" : "Assigned Team"}</th>
-                        <th className="py-3 px-2 text-center w-[8%] font-semibold">{lang === "ur" ? "بچائے گئے" : "Rescued"}</th>
-                        <th className="py-3 px-2.5 text-left w-[12%] font-semibold">{lang === "ur" ? "وسائل" : "Resources"}</th>
-                        <th className="py-3 px-2 text-center w-[9%] font-semibold">{lang === "ur" ? "تاریخ" : "Date"}</th>
-                        <th className="py-3 px-2 text-center w-[9%] font-semibold">{t("actions")}</th>
+                        <th className="py-3 px-2 text-center w-[7%] font-semibold">{lang === "ur" ? "آئی ڈی" : "ID"}</th>
+                        <th className="py-3 px-3 text-left w-[21%] font-semibold">{t("location")}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{lang === "ur" ? "خطرے کی ترجیح" : "Risk Priority"}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{lang === "ur" ? "تفویض ٹیم" : "Assigned Team"}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{lang === "ur" ? "بچائے گئے" : "Rescued"}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{lang === "ur" ? "وسائل" : "Resources"}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{lang === "ur" ? "تاریخ" : "Date"}</th>
+                        <th className="py-3 px-2 text-center w-[12%] font-semibold">{t("actions")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/10">
                       {pastOperations.map((op) => (
                         <tr key={op.id} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3 px-2 text-muted text-xs font-mono text-center">#{op.id}</td>
-                          <td className="py-3 px-3 min-w-0">
+                          <td className="py-3.5 px-2 text-muted text-xs font-mono text-center">#{op.id}</td>
+                          <td className="py-3.5 px-3 min-w-0">
                             <div className="font-semibold text-white truncate" title={op.location}>{op.location}</div>
                             {op.description && <div className="text-xs text-muted truncate" title={op.description}>{op.description}</div>}
                           </td>
-                          <td className="py-3 px-2 text-center whitespace-nowrap">
+                          <td className="py-3.5 px-2 text-center whitespace-nowrap">
                             <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold inline-block ${
                               op.risk_level === "High" ? "bg-red-500/20 text-red-300 border-red-500/40" :
                               op.risk_level === "Medium" ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/40" :
@@ -815,23 +815,23 @@ export default function RescueDashboard() {
                               {op.risk_level || "Medium"}
                             </span>
                           </td>
-                          <td className="py-3 px-3 min-w-0">
+                          <td className="py-3.5 px-2 text-center min-w-0">
                             <div className="text-muted text-sm truncate" title={op.assigned_team || "Unassigned"}>
                               {op.assigned_team || "Unassigned"}
                             </div>
                           </td>
-                          <td className="py-3 px-2 text-center font-bold text-emerald-400">
+                          <td className="py-3.5 px-2 text-center font-bold text-emerald-400">
                             {op.people_rescued || 0}
                           </td>
-                          <td className="py-3 px-2.5 min-w-0">
+                          <td className="py-3.5 px-2 text-center min-w-0">
                             <div className="text-xs text-muted truncate" title={op.resources_used || "—"}>
                               {op.resources_used || "—"}
                             </div>
                           </td>
-                          <td className="py-3 px-2 text-center text-xs text-muted font-mono whitespace-nowrap">
+                          <td className="py-3.5 px-2 text-center text-xs text-muted font-mono whitespace-nowrap">
                             {op.completed_at ? new Date(op.completed_at).toLocaleDateString() : "—"}
                           </td>
-                          <td className="py-3 px-2 text-center">
+                          <td className="py-3.5 px-2 text-center whitespace-nowrap">
                             <button
                               onClick={() => handlePrintOperation(op)}
                               className="text-xs px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-teal-300 border border-white/10 transition-colors inline-flex items-center gap-1 justify-center whitespace-nowrap shadow-sm"
