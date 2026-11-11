@@ -960,24 +960,32 @@ export default function GovDashboard() {
               <p className="text-sm text-muted">{lang === "ur" ? "کوئی شہری رپورٹ منتخب کردہ فلٹرز سے مطابقت نہیں رکھتی۔" : "No citizen reports match the selected filters."}</p>
             ) : (
               <div className="overflow-x-hidden max-h-[440px] overflow-y-auto rounded-xl border border-white/10 table-scrollbar custom-scroll">
-                <table className="w-full table-fixed text-left text-sm">
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col style={{ width: "16.666%" }} />
+                    <col style={{ width: "16.666%" }} />
+                    <col style={{ width: "16.666%" }} />
+                    <col style={{ width: "16.666%" }} />
+                    <col style={{ width: "16.666%" }} />
+                    <col style={{ width: "16.666%" }} />
+                  </colgroup>
                   <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
                     <tr className="border-b border-white/20 text-muted text-xs">
-                      <th className="py-3.5 px-3 font-semibold text-left w-[12%]">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-left w-[18%]">{lang === "ur" ? "مقام" : "Location"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-center w-[12%]">{lang === "ur" ? "شدت" : "Severity"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-center w-[14%]">{lang === "ur" ? "حیثیت" : "Status"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-left w-[26%]">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-center w-[18%]">{lang === "ur" ? "اقدامات" : "Actions"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "مقام" : "Location"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "شدت" : "Severity"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "حیثیت" : "Status"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
+                      <th className="py-3.5 px-2 font-semibold text-center w-[16.666%]" style={{ width: "16.666%" }}>{lang === "ur" ? "اقدامات" : "Actions"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
                     {filteredCommunityReports.map((report) => (
                       <Fragment key={report.id}>
                         <tr className="hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3.5 px-3 text-white font-mono text-xs font-medium truncate">{report.trackingId}</td>
-                          <td className="py-3.5 px-3 text-white font-medium truncate" title={report.location}>{report.location}</td>
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3.5 px-2 text-center text-white font-mono text-xs font-medium truncate" style={{ width: "16.666%" }}>{report.trackingId}</td>
+                          <td className="py-3.5 px-2 text-center text-white font-medium truncate" title={report.location} style={{ width: "16.666%" }}>{report.location}</td>
+                          <td className="py-3.5 px-2 text-center" style={{ width: "16.666%" }}>
                             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold inline-block ${
                               report.severity === "High"
                                 ? "border-red-400/40 bg-red-400/10 text-red-300"
@@ -988,7 +996,7 @@ export default function GovDashboard() {
                               {report.severity}
                             </span>
                           </td>
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3.5 px-2 text-center" style={{ width: "16.666%" }}>
                             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold inline-block ${
                               report.status === "Resolved"
                                 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
@@ -997,9 +1005,9 @@ export default function GovDashboard() {
                                   : "border-amber-400/30 bg-amber-400/10 text-amber-300"
                             }`}>{report.status}</span>
                           </td>
-                          <td className="py-3.5 px-3 text-muted text-sm truncate">{report.authorName || report.authorEmail || "Citizen"}</td>
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center justify-center gap-2 flex-wrap">
+                          <td className="py-3.5 px-2 text-center text-muted text-sm truncate" style={{ width: "16.666%" }}>{report.authorName || report.authorEmail || "Citizen"}</td>
+                          <td className="py-3.5 px-2 text-center" style={{ width: "16.666%" }}>
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
                               <button
                                 type="button"
                                 onClick={() => setExpandedReportId((current) => current === report.id ? null : report.id)}
