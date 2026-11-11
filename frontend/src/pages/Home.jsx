@@ -99,10 +99,7 @@ function HeroSlider({ slides, t }) {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-4">
-          <Link to="/register" className="btn-primary">{t("createAccount")}</Link>
-          <Link to="/login" className="btn-secondary">{t("signIn")}</Link>
-        </div>
+
       </div>
 
       <div className="relative hidden lg:block">
@@ -116,10 +113,8 @@ export default function Home() {
   const { t, lang } = useLanguage();
   const [networkStats, setNetworkStats] = useState(null);
   const [liveSlide, setLiveSlide] = useState(null);
-  const [advisories, setAdvisories] = useState([]);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/advisories`).then((res) => setAdvisories((res.data || []).slice(0, 1))).catch(() => {});
     Promise.all([
       axios.get(`${API_BASE}/shelters`).catch(() => ({ data: [] })),
       axios.get(`${API_BASE}/hospitals`).catch(() => ({ data: [] })),
@@ -199,22 +194,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── PUBLIC ADVISORIES ── */}
-      {advisories.length > 0 && (
-        <section className="py-10 border-b border-white/5">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="rounded-2xl border border-marigold-500/30 bg-gradient-to-r from-marigold-500/10 to-teal-500/5 p-6 flex flex-col md:flex-row md:items-center gap-4 justify-between">
-              <div className="min-w-0">
-                <p className="eyebrow text-marigold-400 mb-2">{t("publicAdvisories")} · {t("latest")}</p>
-                <h3 className="font-display text-xl text-parchment mb-1 truncate">{advisories[0].title}</h3>
-                <p className="text-sm text-muted leading-relaxed line-clamp-2">{advisories[0].message}</p>
-                <p className="text-xs text-muted mt-2">{advisories[0].region} · {new Date(advisories[0].created_at).toLocaleDateString(lang === "ur" ? "ur-PK" : undefined)}</p>
-              </div>
-              <Link to="/community#public-advisories" className="shrink-0 px-5 py-2 text-sm font-semibold rounded-full text-ink bg-gradient-to-r from-marigold-400 to-marigold-500 hover:brightness-110">{t("viewAll")}</Link>
-            </div>
-          </div>
-        </section>
-      )}
+
 
       {/* ── HISTORICAL CONTEXT ── */}
       <section className="py-20 border-b border-white/5 bg-white/[0.02]">

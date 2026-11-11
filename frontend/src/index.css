@@ -225,22 +225,27 @@
 
 
 /* Custom visible scrollbar for data tables and lists */
-.table-scrollbar {
+.table-scrollbar,
+.custom-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(45, 212, 191, 0.4) rgba(255, 255, 255, 0.04);
 }
-.table-scrollbar::-webkit-scrollbar {
+.table-scrollbar::-webkit-scrollbar,
+.custom-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-.table-scrollbar::-webkit-scrollbar-track {
+.table-scrollbar::-webkit-scrollbar-track,
+.custom-scroll::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 9999px;
 }
-.table-scrollbar::-webkit-scrollbar-thumb {
+.table-scrollbar::-webkit-scrollbar-thumb,
+.custom-scroll::-webkit-scrollbar-thumb {
   background: rgba(45, 212, 191, 0.4);
   border-radius: 9999px;
 }
-.table-scrollbar::-webkit-scrollbar-thumb:hover {
+.table-scrollbar::-webkit-scrollbar-thumb:hover,
+.custom-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(45, 212, 191, 0.7);
 }

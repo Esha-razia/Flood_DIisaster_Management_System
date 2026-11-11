@@ -1506,7 +1506,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Managed User Accounts ({filteredUsers.length})</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Create users, assign roles (Citizen, Rescue Worker, Government Official), toggle active status, or delete accounts.
                   </p>
                 </div>
@@ -1516,20 +1516,20 @@ export default function AdminDashboard() {
                     placeholder="Search users..."
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 sm:w-48"
+                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 sm:w-56"
                   />
                   <button
                     onClick={() => setShowCreateUser(true)}
-                    className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
+                    className="btn-primary text-sm py-2 px-4 whitespace-nowrap"
                   >
                     + Create User
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-800 custom-scroll">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-800/60 text-slate-400 border-b border-slate-800">
+              <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-slate-800 table-scrollbar custom-scroll pr-1">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-800 text-slate-300 border-b border-slate-700 shadow-sm">
                     <tr>
                       <th className="py-3 px-4">User</th>
                       <th className="py-3 px-4">Email</th>
@@ -1556,12 +1556,12 @@ export default function AdminDashboard() {
                             </td>
                             <td className="py-3 px-4 text-slate-400 font-mono">{user.email}</td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${getRoleBadge(user.role)}`}>
+                              <span className={`px-2 py-0.5 rounded-full border text-xs font-semibold ${getRoleBadge(user.role)}`}>
                                 {user.role}
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
                                 isActive ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-red-500/20 text-red-300 border-red-500/40"
                               }`}>
                                 {isActive ? "Active" : "Inactive"}
@@ -1570,20 +1570,20 @@ export default function AdminDashboard() {
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 {user.role === 'government_official' && (user.email || '').toLowerCase().trim() === 'govofficial@gmail.com' ? (
-                                  <span className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
+                                  <span className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
                                     🔒 System Official
                                   </span>
                                 ) : (
                                   <>
                                     <button
                                       onClick={() => handleToggleUserStatus(user)}
-                                      className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 transition-colors"
+                                      className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 transition-colors"
                                     >
                                       {isActive ? "Deactivate" : "Activate"}
                                     </button>
                                     <button
                                       onClick={() => handleDeleteUser(user.id)}
-                                      className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                      className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
                                     >
                                       Delete
                                     </button>
@@ -1611,7 +1611,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Emergency Flood Alerts</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Trigger emergency broadcasts, update active notices, or review complete timestamped alert history.
                   </p>
                 </div>
@@ -1621,7 +1621,7 @@ export default function AdminDashboard() {
                     setNewAlert({ message: "", location: "", risk: "High" });
                     setShowAlertModal(true);
                   }}
-                  className="btn-primary text-xs py-2 px-4 shadow-lg shadow-red-600/20 bg-red-600 hover:bg-red-500"
+                  className="btn-primary text-sm py-2 px-4 shadow-lg shadow-red-600/20 bg-red-600 hover:bg-red-500"
                 >
                   + Trigger Emergency Alert 🚨
                 </button>
@@ -1631,21 +1631,21 @@ export default function AdminDashboard() {
               <div className="flex gap-2 border-b border-slate-800 pb-1 mb-4">
                 <button
                   onClick={() => setAlertTab("active")}
-                  className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
                     alertTab === "active" ? "bg-slate-800 text-teal-300 border-b-2 border-teal-400" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <span>⚡ Active Alerts</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-[10px]">{activeAlertsList.length}</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-xs">{activeAlertsList.length}</span>
                 </button>
                 <button
                   onClick={() => setAlertTab("history")}
-                  className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
                     alertTab === "history" ? "bg-slate-800 text-teal-300 border-b-2 border-teal-400" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <span>📜 Alert History Log</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-[10px]">{alertHistoryList.length}</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-xs">{alertHistoryList.length}</span>
                 </button>
               </div>
 
@@ -1653,22 +1653,23 @@ export default function AdminDashboard() {
               {alertTab === "active" && (
                 <div>
                   {activeAlertsList.length === 0 ? (
-                    <div className="py-10 text-center text-slate-500 text-xs border border-slate-800 rounded-xl">
+                    <div className="py-10 text-center text-slate-500 text-sm border border-slate-800 rounded-xl">
                       No emergency alerts currently active. Click "+ Trigger Emergency Alert" to broadcast.
                     </div>
                   ) : (
-                    <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="max-h-[520px] overflow-y-auto pr-1.5 table-scrollbar custom-scroll">
+                      <div className="grid sm:grid-cols-2 gap-3">
                       {activeAlertsList.map((a, idx) => (
                         <div key={`act-alert-${a.id}-${idx}`} className="bg-red-950/20 border border-red-500/30 rounded-xl p-4 flex flex-col justify-between gap-3">
                           <div>
                             <div className="flex justify-between items-start gap-2">
-                              <h3 className="font-semibold text-white text-sm">📍 {a.location}</h3>
-                              <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${getRiskColor(a.risk_level || a.risk)} bg-slate-900 border border-slate-800`}>
+                              <h3 className="font-semibold text-white text-base">📍 {a.location}</h3>
+                              <span className={`px-2 py-0.5 rounded-full font-bold text-xs ${getRiskColor(a.risk_level || a.risk)} bg-slate-900 border border-slate-800`}>
                                 {a.risk_level || a.risk || "High"} Risk
                               </span>
                             </div>
-                            <p className="text-xs text-slate-200 mt-2 bg-slate-900/60 p-2.5 rounded-lg">{a.message}</p>
-                            <div className="text-[10px] text-slate-400 font-mono mt-2">
+                            <p className="text-sm text-slate-200 mt-2 bg-slate-900/60 p-2.5 rounded-lg">{a.message}</p>
+                            <div className="text-xs text-slate-400 font-mono mt-2">
                               Triggered: {formatAlertDateTime(a.created_at || a.timestamp)}
                             </div>
                           </div>
@@ -1676,19 +1677,20 @@ export default function AdminDashboard() {
                           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                             <button
                               onClick={() => handleEditAlert(a)}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition-colors"
+                              className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition-colors"
                             >
                               ✏️ Update Alert
                             </button>
                             <button
                               onClick={() => handleCancelAlert(a.id)}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white transition-colors"
+                              className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white transition-colors"
                             >
                               🚫 Cancel Alert
                             </button>
                           </div>
                         </div>
                       ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1696,9 +1698,9 @@ export default function AdminDashboard() {
 
               {/* Alert History */}
               {alertTab === "history" && (
-                <div className="overflow-x-auto rounded-xl border border-slate-800 custom-scroll">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-800/60 text-slate-400 border-b border-slate-800">
+                <div className="overflow-x-auto max-h-[480px] overflow-y-auto rounded-xl border border-slate-800 table-scrollbar custom-scroll pr-1">
+                  <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-800 text-slate-300 border-b border-slate-700 shadow-sm">
                       <tr>
                         <th className="py-2.5 px-3">Location</th>
                         <th className="py-2.5 px-3">Severity</th>
@@ -1722,7 +1724,7 @@ export default function AdminDashboard() {
                             </td>
                             <td className="py-2.5 px-3 text-slate-300 max-w-xs truncate">{a.message}</td>
                             <td className="py-2.5 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${
                                 a.status === "Cancelled" ? "bg-red-500/20 text-red-300 border-red-500/40" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                               }`}>
                                 {a.status || "Active"}
@@ -1757,20 +1759,20 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Rescue Coordination Center</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Create & assign rescue missions, monitor live statuses, log SITREPs, and export reporting logs.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowCreateRescueModal(true)}
-                    className="btn-primary text-xs py-1.5 px-3"
+                    className="btn-primary text-sm py-2 px-3.5"
                   >
                     + Create & Assign Operation
                   </button>
                   <button
                     onClick={exportPastOperationsCSV}
-                    className="btn-secondary text-xs py-1.5 px-3"
+                    className="btn-secondary text-sm py-2 px-3.5"
                   >
                     Export CSV Log 📥
                   </button>
@@ -1781,21 +1783,21 @@ export default function AdminDashboard() {
               <div className="flex gap-2 border-b border-slate-800 pb-1 mb-4">
                 <button
                   onClick={() => setRescueActiveTab("active")}
-                  className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
                     rescueActiveTab === "active" ? "bg-slate-800 text-teal-300 border-b-2 border-teal-400" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <span>⚡ Active Missions</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-[10px]">{activeRescueOps.length}</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-teal-200 text-xs">{activeRescueOps.length}</span>
                 </button>
                 <button
                   onClick={() => setRescueActiveTab("history")}
-                  className={`px-3.5 py-2 rounded-t-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                  className={`px-4 py-2.5 rounded-t-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
                     rescueActiveTab === "history" ? "bg-slate-800 text-teal-300 border-b-2 border-teal-400" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <span>📜 Past Missions Log</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-[10px]">{pastRescueOps.length}</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-slate-300 text-xs">{pastRescueOps.length}</span>
                 </button>
               </div>
 
@@ -1810,7 +1812,7 @@ export default function AdminDashboard() {
                         <button
                           key={level}
                           onClick={() => setRescueRiskFilter(level)}
-                          className={`px-2.5 py-0.5 rounded-full border text-[11px] ${
+                          className={`px-2.5 py-0.5 rounded-full border text-xs ${
                             rescueRiskFilter === level ? "bg-teal-500/25 border-teal-500 text-teal-300" : "border-slate-700 text-slate-400"
                           }`}
                         >
@@ -1824,7 +1826,7 @@ export default function AdminDashboard() {
                         <button
                           key={st}
                           onClick={() => setRescueStatusFilter(st)}
-                          className={`px-2.5 py-0.5 rounded-full border text-[11px] ${
+                          className={`px-2.5 py-0.5 rounded-full border text-xs ${
                             rescueStatusFilter === st ? "bg-teal-500/25 border-teal-500 text-teal-300" : "border-slate-700 text-slate-400"
                           }`}
                         >
@@ -1836,11 +1838,12 @@ export default function AdminDashboard() {
 
                   {/* Cards */}
                   {activeRescueOps.length === 0 ? (
-                    <div className="py-10 text-center text-slate-500 text-xs border border-slate-800 rounded-xl">
+                    <div className="py-10 text-center text-slate-500 text-sm border border-slate-800 rounded-xl">
                       No active rescue operations matching current filters.
                     </div>
                   ) : (
-                    <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="max-h-[520px] overflow-y-auto pr-1.5 table-scrollbar custom-scroll">
+                      <div className="grid sm:grid-cols-2 gap-3">
                       {activeRescueOps.map((op, idx) => {
                         const updateLog = Array.isArray(op.update_log) ? op.update_log : JSON.parse(op.update_log || "[]");
                         return (
@@ -1848,13 +1851,13 @@ export default function AdminDashboard() {
                             <div>
                               <div className="flex justify-between items-start gap-2">
                                 <div>
-                                  <h3 className="font-semibold text-white text-sm">📍 {op.location}</h3>
-                                  <p className="text-xs text-slate-400 mt-0.5">Assigned to: <strong className="text-teal-300">{op.assigned_team}</strong></p>
+                                  <h3 className="font-semibold text-white text-base">📍 {op.location}</h3>
+                                  <p className="text-sm text-slate-400 mt-0.5">Assigned to: <strong className="text-teal-300">{op.assigned_team}</strong></p>
                                 </div>
                                 <select
                                   value={op.risk_level || "Medium"}
                                   onChange={(e) => handleReprioritizeRescueRisk(op.id, e.target.value)}
-                                  className="bg-slate-900 border border-slate-700 text-[11px] rounded px-2 py-0.5 text-white"
+                                  className="bg-slate-900 border border-slate-700 text-xs rounded px-2.5 py-1 text-white"
                                 >
                                   <option value="High">🔴 High</option>
                                   <option value="Medium">🟡 Medium</option>
@@ -1863,11 +1866,11 @@ export default function AdminDashboard() {
                               </div>
 
                               {op.description && (
-                                <p className="text-xs text-slate-300 mt-2 bg-slate-900/60 p-2.5 rounded-lg">{op.description}</p>
+                                <p className="text-sm text-slate-300 mt-2 bg-slate-900/60 p-2.5 rounded-lg">{op.description}</p>
                               )}
 
                               {updateLog.length > 0 && (
-                                <div className="mt-2 text-[11px] text-slate-400 truncate">
+                                <div className="mt-2 text-xs text-slate-400 truncate">
                                   <span className="font-semibold text-white">Latest SITREP:</span> "{updateLog[updateLog.length - 1].note}"
                                 </div>
                               )}
@@ -1880,11 +1883,11 @@ export default function AdminDashboard() {
                                   placeholder="Log SITREP note..."
                                   value={rescueNoteInputs[op.id] || ""}
                                   onChange={(e) => setRescueNoteInputs(p => ({ ...p, [op.id]: e.target.value }))}
-                                  className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white flex-1 focus:outline-none focus:border-teal-500"
+                                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white flex-1 focus:outline-none focus:border-teal-500"
                                 />
                                 <button
                                   onClick={() => handleAddRescueNote(op.id)}
-                                  className="btn-secondary text-xs py-1 px-2.5"
+                                  className="btn-secondary text-xs sm:text-sm py-1.5 px-3"
                                 >
                                   Post
                                 </button>
@@ -1895,14 +1898,14 @@ export default function AdminDashboard() {
                                   {op.status !== "In Progress" && (
                                     <button
                                       onClick={() => handleUpdateRescueStatus(op.id, "In Progress")}
-                                      className="text-xs px-2.5 py-1 rounded-lg bg-teal-500/20 text-teal-300 hover:bg-teal-500/30 font-medium"
+                                      className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-teal-500/20 text-teal-300 hover:bg-teal-500/30 font-medium"
                                     >
                                       In Progress
                                     </button>
                                   )}
                                   <button
                                     onClick={() => handleUpdateRescueStatus(op.id, "Completed")}
-                                    className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50 font-medium"
+                                    className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50 font-medium"
                                   >
                                     Mark Completed ✅
                                   </button>
@@ -1927,6 +1930,7 @@ export default function AdminDashboard() {
                           </div>
                         );
                       })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1940,7 +1944,7 @@ export default function AdminDashboard() {
                       value={rescueHistorySearch}
                       onChange={(e) => setRescueHistorySearch(e.target.value)}
                       placeholder="Search past missions..."
-                      className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white sm:w-64 focus:outline-none focus:border-teal-500"
+                      className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white sm:w-64 focus:outline-none focus:border-teal-500"
                     />
                     <div className="flex items-center gap-1 text-xs">
                       <span className="text-slate-400">Risk:</span>
@@ -1948,7 +1952,7 @@ export default function AdminDashboard() {
                         <button
                           key={level}
                           onClick={() => setRescueHistoryRiskFilter(level)}
-                          className={`px-2 py-0.5 rounded-full border text-[11px] ${
+                          className={`px-2.5 py-0.5 rounded-full border text-xs ${
                             rescueHistoryRiskFilter === level ? "bg-teal-500/25 border-teal-500 text-teal-300" : "border-slate-700 text-slate-400"
                           }`}
                         >
@@ -1958,9 +1962,9 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto rounded-xl border border-slate-800 custom-scroll">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-800/60 text-slate-400 border-b border-slate-800">
+                  <div className="overflow-x-auto max-h-[480px] overflow-y-auto rounded-xl border border-slate-800 table-scrollbar custom-scroll pr-1">
+                    <table className="w-full text-left text-sm">
+                      <thead className="sticky top-0 z-10 bg-slate-800 text-slate-300 border-b border-slate-700 shadow-sm">
                         <tr>
                           <th className="py-2.5 px-3">Location</th>
                           <th className="py-2.5 px-3">Priority</th>
@@ -1990,7 +1994,7 @@ export default function AdminDashboard() {
                               <td className="py-2.5 px-3 text-right">
                                 <button
                                   onClick={() => handlePrintRescueOperation(op)}
-                                  className="text-xs px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                                  className="text-xs sm:text-sm px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
                                 >
                                   🖨️ Print
                                 </button>
@@ -2016,7 +2020,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Citizen Incident Reports ({filteredCommunityReports.length})</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Review public incident submissions with photos, assign teams, update status, or convert to alerts.
                   </p>
                 </div>
@@ -2026,12 +2030,12 @@ export default function AdminDashboard() {
                     placeholder="Search reports..."
                     value={reportSearch}
                     onChange={(e) => setReportSearch(e.target.value)}
-                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 sm:w-44 focus:outline-none focus:border-teal-500"
+                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 sm:w-52 focus:outline-none focus:border-teal-500"
                   />
                   <select
                     value={reportStatusFilter}
                     onChange={(e) => setReportStatusFilter(e.target.value)}
-                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
                   >
                     <option value="All">All Statuses</option>
                     <option value="Submitted">Submitted</option>
@@ -2042,20 +2046,21 @@ export default function AdminDashboard() {
               </div>
 
               {filteredCommunityReports.length === 0 ? (
-                <div className="py-10 text-center text-slate-500 text-xs border border-slate-800 rounded-xl">
+                <div className="py-10 text-center text-slate-500 text-sm border border-slate-800 rounded-xl">
                   No citizen reports found.
                 </div>
               ) : (
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="max-h-[550px] overflow-y-auto pr-1.5 table-scrollbar custom-scroll">
+                  <div className="grid sm:grid-cols-2 gap-3">
                   {filteredCommunityReports.map((report, idx) => (
                     <div key={`comm-rep-${report.id}-${idx}`} className="bg-slate-800/40 p-4 rounded-xl border border-slate-800 hover:border-teal-500/30 transition-all flex flex-col justify-between gap-3">
                       <div>
                         <div className="flex justify-between items-start gap-2">
                           <div>
-                            <h3 className="font-semibold text-white text-sm">📍 {report.location}</h3>
-                            <p className="text-xs text-slate-400 mt-0.5">Submitted by: <span className="text-slate-200">{report.authorName || report.author_name || "Citizen"}</span></p>
+                            <h3 className="font-semibold text-white text-base">📍 {report.location}</h3>
+                            <p className="text-sm text-slate-400 mt-0.5">Submitted by: <span className="text-slate-200">{report.authorName || report.author_name || "Citizen"}</span></p>
                           </div>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                             report.status === "Resolved" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" :
                             report.status === "Action Taken" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
                             report.status === "Under Review" ? "bg-amber-500/20 text-amber-300 border-amber-500/40" :
@@ -2065,7 +2070,7 @@ export default function AdminDashboard() {
                           </span>
                         </div>
 
-                        <p className="text-xs text-slate-300 mt-2 bg-slate-900/60 p-2.5 rounded-lg whitespace-pre-wrap">{report.description}</p>
+                        <p className="text-sm text-slate-300 mt-2 bg-slate-900/60 p-2.5 rounded-lg whitespace-pre-wrap">{report.description}</p>
 
                         {/* Image Preview */}
                         {report.photo_url && (
@@ -2084,7 +2089,7 @@ export default function AdminDashboard() {
                           {report.status !== "Action Taken" && report.status !== "Resolved" && (
                             <button
                               onClick={() => setAssigningReportId(assigningReportId === report.id ? null : report.id)}
-                              className="text-[11px] px-2 py-0.5 rounded-lg bg-teal-500/20 text-teal-300 hover:bg-teal-500/30"
+                              className="text-xs px-2.5 py-1 rounded-lg bg-teal-500/20 text-teal-300 hover:bg-teal-500/30"
                             >
                               Dispatch Team
                             </button>
@@ -2093,7 +2098,7 @@ export default function AdminDashboard() {
                           {report.status !== "Resolved" && (
                             <button
                               onClick={() => handleReportStatus(report.id, "Resolved")}
-                              className="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                              className="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
                             >
                               Mark Resolved ✅
                             </button>
@@ -2103,14 +2108,14 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleConvertToAlert(report)}
-                            className="text-[11px] px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                            className="text-xs px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30"
                             title="Convert to Emergency Alert"
                           >
                             Convert to Alert 🚨
                           </button>
                           <button
                             onClick={() => handleDeleteReport(report.id)}
-                            className="text-[11px] px-1.5 py-0.5 rounded-lg bg-slate-800 text-red-400 hover:bg-red-500/20"
+                            className="text-xs px-2 py-1 rounded-lg bg-slate-800 text-red-400 hover:bg-red-500/20"
                           >
                             ✕
                           </button>
@@ -2143,6 +2148,7 @@ export default function AdminDashboard() {
                       )}
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -2158,7 +2164,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Emergency Relief Shelters ({filteredShelters.length})</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Add, update, or remove disaster relief shelters with automatic duplicate verification.
                   </p>
                 </div>
@@ -2168,11 +2174,11 @@ export default function AdminDashboard() {
                     placeholder="Search shelters..."
                     value={shelterSearch}
                     onChange={(e) => setShelterSearch(e.target.value)}
-                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white sm:w-48 focus:outline-none focus:border-teal-500"
+                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white sm:w-56 focus:outline-none focus:border-teal-500"
                   />
                   <button
                     onClick={() => setShowShelterForm(v => !v)}
-                    className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
+                    className="btn-primary text-sm py-2 px-4 whitespace-nowrap"
                   >
                     {showShelterForm ? "Cancel" : "+ Add Shelter"}
                   </button>
@@ -2218,28 +2224,29 @@ export default function AdminDashboard() {
               )}
 
               {/* Grid */}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredShelters.length === 0 ? (
-                  <div className="col-span-full py-8 text-center text-slate-500 text-xs">No registered shelters found.</div>
-                ) : (
+              <div className="max-h-[500px] overflow-y-auto pr-1.5 table-scrollbar custom-scroll">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredShelters.length === 0 ? (
+                    <div className="col-span-full py-8 text-center text-slate-500 text-sm">No registered shelters found.</div>
+                  ) : (
                   filteredShelters.map((s, idx) => (
                     <div key={`shelt-${s.id}-${idx}`} className="bg-slate-800/40 rounded-xl p-3.5 border border-slate-800 hover:border-teal-500/40 transition-all flex flex-col justify-between gap-2 shadow-sm">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-white text-sm truncate">{s.name}</h4>
-                          <p className="text-xs text-slate-400 truncate mt-0.5">📍 {s.address}</p>
+                          <h4 className="font-semibold text-white text-base truncate">{s.name}</h4>
+                          <p className="text-sm text-slate-400 truncate mt-0.5">📍 {s.address}</p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => setEditingShelter({ ...s })}
-                            className="text-xs text-amber-300 hover:text-white px-2 py-0.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20"
+                            className="text-xs sm:text-sm text-amber-300 hover:text-white px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20"
                             title="Edit Shelter"
                           >
                             ✏️ Edit
                           </button>
                           <button
                             onClick={() => handleDeleteShelter(s.id)}
-                            className="text-red-400 hover:text-red-300 text-xs px-2 py-0.5 rounded-lg bg-red-500/10 hover:bg-red-500/20"
+                            className="text-red-400 hover:text-red-300 text-xs sm:text-sm px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20"
                             title="Delete Shelter"
                           >
                             ✕
@@ -2253,6 +2260,7 @@ export default function AdminDashboard() {
                     </div>
                   ))
                 )}
+                </div>
               </div>
             </div>
           </div>
@@ -2267,7 +2275,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Registered Emergency Hospitals ({filteredHospitals.length})</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Add, update, or remove emergency medical centers with duplicate verification.
                   </p>
                 </div>
@@ -2277,11 +2285,11 @@ export default function AdminDashboard() {
                     placeholder="Search hospitals..."
                     value={hospitalSearch}
                     onChange={(e) => setHospitalSearch(e.target.value)}
-                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white sm:w-48 focus:outline-none focus:border-teal-500"
+                    className="bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white sm:w-56 focus:outline-none focus:border-teal-500"
                   />
                   <button
                     onClick={() => setShowHospitalForm(v => !v)}
-                    className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap"
+                    className="btn-primary text-sm py-2 px-4 whitespace-nowrap"
                   >
                     {showHospitalForm ? "Cancel" : "+ Add Hospital"}
                   </button>
@@ -2326,28 +2334,29 @@ export default function AdminDashboard() {
               )}
 
               {/* Grid */}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredHospitals.length === 0 ? (
-                  <div className="col-span-full py-8 text-center text-slate-500 text-xs">No registered hospitals found.</div>
-                ) : (
+              <div className="max-h-[500px] overflow-y-auto pr-1.5 table-scrollbar custom-scroll">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredHospitals.length === 0 ? (
+                    <div className="col-span-full py-8 text-center text-slate-500 text-sm">No registered hospitals found.</div>
+                  ) : (
                   filteredHospitals.map((h, idx) => (
                     <div key={`hosp-${h.id}-${idx}`} className="bg-slate-800/40 rounded-xl p-3.5 border border-slate-800 hover:border-emerald-500/40 transition-all flex flex-col justify-between gap-2 shadow-sm">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-white text-sm truncate">{h.name}</h4>
-                          <p className="text-xs text-slate-400 truncate mt-0.5">📍 {h.address}</p>
+                          <h4 className="font-semibold text-white text-base truncate">{h.name}</h4>
+                          <p className="text-sm text-slate-400 truncate mt-0.5">📍 {h.address}</p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => setEditingHospital({ ...h })}
-                            className="text-xs text-amber-300 hover:text-white px-2 py-0.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20"
+                            className="text-xs sm:text-sm text-amber-300 hover:text-white px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20"
                             title="Edit Hospital"
                           >
                             ✏️ Edit
                           </button>
                           <button
                             onClick={() => handleDeleteHospital(h.id)}
-                            className="text-red-400 hover:text-red-300 text-xs px-2 py-0.5 rounded-lg bg-red-500/10 hover:bg-red-500/20"
+                            className="text-red-400 hover:text-red-300 text-xs sm:text-sm px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20"
                             title="Delete Hospital"
                           >
                             ✕
@@ -2361,6 +2370,7 @@ export default function AdminDashboard() {
                     </div>
                   ))
                 )}
+                </div>
               </div>
             </div>
           </div>
@@ -2418,11 +2428,11 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">Historical Flood Predictions ({filteredPredictions.length})</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-sm text-slate-400 mt-1">
                     Filter predictions by date range or risk level, inspect SHAP feature attributions, and export CSV reports.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
                   <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
                     <span className="text-slate-400">From:</span>
                     <input
@@ -2461,16 +2471,16 @@ export default function AdminDashboard() {
                   )}
                   <button
                     onClick={downloadPredictionsCSV}
-                    className="btn-secondary text-xs py-1 px-2.5"
+                    className="btn-secondary text-xs sm:text-sm py-1.5 px-3"
                   >
                     Export CSV 📥
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto max-h-[480px] overflow-y-auto rounded-xl border border-slate-800 custom-scroll">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-800 sticky top-0 z-10 text-slate-400 border-b border-slate-800 shadow-sm">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto rounded-xl border border-slate-800 table-scrollbar custom-scroll pr-1">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-800 text-slate-300 border-b border-slate-700 shadow-sm">
                     <tr>
                       <th className="py-2.5 px-3">Location</th>
                       <th className="py-2.5 px-3">Risk Level</th>
@@ -2500,7 +2510,7 @@ export default function AdminDashboard() {
                           <td className="py-2.5 px-3 text-right">
                             <button
                               onClick={() => setSelectedPredictionXAI(p)}
-                              className="text-xs px-2 py-0.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 font-medium transition-colors"
+                              className="text-xs sm:text-sm px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 font-medium transition-colors"
                               title="Inspect SHAP feature attributions"
                             >
                               🔍 XAI (SHAP)
@@ -3029,9 +3039,9 @@ export default function AdminDashboard() {
             {selectedPredictionXAI.shap_contributions && selectedPredictionXAI.shap_contributions.length > 0 && (
               <div className="mb-4">
                 <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Feature Attribution Breakdown</h4>
-                <div className="border border-slate-800 rounded-xl overflow-hidden">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-800/80 text-slate-400">
+                <div className="border border-slate-800 rounded-xl overflow-x-auto max-h-[300px] overflow-y-auto table-scrollbar custom-scroll">
+                  <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-800 text-slate-300 shadow-sm">
                       <tr>
                         <th className="p-2.5">Feature Factor</th>
                         <th className="p-2.5">Recorded Value</th>
