@@ -963,12 +963,12 @@ export default function GovDashboard() {
                 <table className="w-full table-fixed text-left text-sm">
                   <thead className="sticky top-0 bg-[#071326] z-10 shadow-md">
                     <tr className="border-b border-white/20 text-muted text-xs">
-                      <th className="py-3.5 px-3 font-semibold text-left w-[14%]">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-left w-[22%]">{lang === "ur" ? "مقام" : "Location"}</th>
+                      <th className="py-3.5 px-3 font-semibold text-left w-[12%]">{lang === "ur" ? "ٹریکنگ آئی ڈی" : "Tracking ID"}</th>
+                      <th className="py-3.5 px-3 font-semibold text-left w-[18%]">{lang === "ur" ? "مقام" : "Location"}</th>
                       <th className="py-3.5 px-3 font-semibold text-center w-[12%]">{lang === "ur" ? "شدت" : "Severity"}</th>
                       <th className="py-3.5 px-3 font-semibold text-center w-[14%]">{lang === "ur" ? "حیثیت" : "Status"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-left w-[18%]">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
-                      <th className="py-3.5 px-3 font-semibold text-center w-[20%]">{lang === "ur" ? "اقدامات" : "Actions"}</th>
+                      <th className="py-3.5 px-3 font-semibold text-left w-[26%]">{lang === "ur" ? "ارسال کنندہ" : "Submitted by"}</th>
+                      <th className="py-3.5 px-3 font-semibold text-center w-[18%]">{lang === "ur" ? "اقدامات" : "Actions"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
