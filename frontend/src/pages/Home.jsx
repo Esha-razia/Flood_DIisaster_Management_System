@@ -228,9 +228,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted mt-6">
-            {t("floodsFootnote")}
-          </p>
         </div>
       </section>
 
