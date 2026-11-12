@@ -1404,7 +1404,7 @@ export default function AdminDashboard() {
                     <h3 className="text-sm font-bold text-white">Relief Shelters</h3>
                   </div>
                   <button onClick={() => setActiveSection('shelters')} className="text-xs text-emerald-400 hover:text-emerald-300">
-                    View ({shelters.length}) →
+                    View →
                   </button>
                 </div>
                 <div className="space-y-2.5">
@@ -1433,7 +1433,7 @@ export default function AdminDashboard() {
                     <h3 className="text-sm font-bold text-white">Emergency Hospitals</h3>
                   </div>
                   <button onClick={() => setActiveSection('hospitals')} className="text-xs text-orange-400 hover:text-orange-300">
-                    View ({hospitals.length}) →
+                    View →
                   </button>
                 </div>
                 <div className="space-y-2.5">
@@ -1462,7 +1462,7 @@ export default function AdminDashboard() {
                     <h3 className="text-sm font-bold text-white">Citizen Reports</h3>
                   </div>
                   <button onClick={() => setActiveSection('reports')} className="text-xs text-blue-400 hover:text-blue-300">
-                    Review ({communityReports.length}) →
+                    Review →
                   </button>
                 </div>
                 <div className="space-y-2.5">
@@ -1494,7 +1494,7 @@ export default function AdminDashboard() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Managed User Accounts ({filteredUsers.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Managed User Accounts</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     Create users, assign roles (Citizen, Rescue Worker, Government Official), toggle active status, or delete accounts.
                   </p>
@@ -2008,7 +2008,7 @@ export default function AdminDashboard() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Citizen Incident Reports ({filteredCommunityReports.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Citizen Incident Reports</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     Review public incident submissions with photos, assign teams, update status, or convert to alerts.
                   </p>
@@ -2152,7 +2152,7 @@ export default function AdminDashboard() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Emergency Relief Shelters ({filteredShelters.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Emergency Relief Shelters</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     Add, update, or remove disaster relief shelters with automatic duplicate verification.
                   </p>
@@ -2263,7 +2263,7 @@ export default function AdminDashboard() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Registered Emergency Hospitals ({filteredHospitals.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Registered Emergency Hospitals</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     Add, update, or remove emergency medical centers with duplicate verification.
                   </p>
@@ -2416,7 +2416,7 @@ export default function AdminDashboard() {
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Historical Flood Predictions ({filteredPredictions.length})</h2>
+                  <h2 className="text-lg font-bold text-white">Historical Flood Predictions</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     Filter predictions by date range or risk level, inspect SHAP feature attributions, and export CSV reports.
                   </p>
