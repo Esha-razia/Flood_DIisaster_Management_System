@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
@@ -6,6 +6,7 @@ import Navbar from "../components/Navbar";
 import { useLanguage } from "../context/LanguageContext";
 import Footer from "../components/Footer";
 import { API_BASE } from "../config";
+import { facilitiesForCity } from "../utils/registeredFacilities";
 import { formatAlertDateTime } from "../utils/alertDateTime";
 
 // Coordinates for the cities the ML model was trained on — used to pull
@@ -127,6 +128,7 @@ export default function CitizenDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [toastAlerts, setToastAlerts] = useState([]);
+  const helpRequestRef = useRef(0);
   const [nearestPlaces, setNearestPlaces] = useState(null); // { shelter, hospital } | 'loading' | 'error'
 
   // Add useEffect to update prediction when predictions change
@@ -495,57 +497,38 @@ export default function CitizenDashboard() {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  const findNearestPlaces = async () => {
+  // Help belongs to the completed prediction, never an edited form or device city.
+  useEffect(() => {
+    const city = prediction?.location?.trim();
+    if (!city) {
+      helpRequestRef.current += 1;
+      setNearestPlaces(null);
+      return;
+    }
+    findNearestPlaces(city);
+    return () => { helpRequestRef.current += 1; };
+  }, [prediction]);
+
+  const findNearestPlaces = async (city = prediction?.location?.trim()) => {
+    if (!city) return;
+    const requestId = ++helpRequestRef.current;
     setNearestPlaces("loading");
-
-    // Prefer the city typed into the form — that's what the citizen actually
-    // means by "nearest to me" here, not wherever the browser/device thinks
-    // it physically is (which can be wildly wrong on a VM, VPN, or IP-based
-    // geolocation fallback).
-    const typedMatch = resolveCityCoords(formData.location);
-
-    const runSearch = async (lat, lon) => {
-      try {
-        const [sheltersRes, hospitalsRes] = await Promise.all([
-          axios.get(`${API_BASE}/shelters`),
-          axios.get(`${API_BASE}/hospitals`),
-        ]);
-        const withDistance = (list) =>
-          list
-            .filter((p) => p.latitude && p.longitude)
-            .map((p) => ({ ...p, distanceKm: haversineKm(lat, lon, p.latitude, p.longitude) }))
-            .sort((a, b) => a.distanceKm - b.distanceKm)
-            .slice(0, 5);
-
-        setNearestPlaces({
-          shelters: withDistance(sheltersRes.data),
-          hospitals: withDistance(hospitalsRes.data),
-          userLat: lat,
-          userLon: lon,
-          source: typedMatch ? "typed" : "geolocation",
-        });
-      } catch (err) {
-        console.error("Failed to find nearest places:", err);
-        setNearestPlaces("error");
-      }
-    };
-
-    if (typedMatch) {
-      const [lat, lon] = typedMatch.coords;
-      runSearch(lat, lon);
-      return;
+    try {
+      const [sheltersRes, hospitalsRes] = await Promise.all([
+        axios.get(`${API_BASE}/shelters`),
+        axios.get(`${API_BASE}/hospitals`),
+      ]);
+      if (requestId !== helpRequestRef.current) return;
+      const origin = resolveCityCoords(city)?.coords;
+      setNearestPlaces({
+        shelters: facilitiesForCity(sheltersRes.data, city, origin, haversineKm),
+        hospitals: facilitiesForCity(hospitalsRes.data, city, origin, haversineKm),
+        city,
+      });
+    } catch (err) {
+      if (requestId === helpRequestRef.current) setNearestPlaces("error");
+      console.error("Failed to load registered facilities:", err);
     }
-
-    // No recognised city typed — fall back to the browser's actual location
-    if (!navigator.geolocation) {
-      setNearestPlaces("error");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => runSearch(pos.coords.latitude, pos.coords.longitude),
-      () => setNearestPlaces("error"),
-      { timeout: 10000 }
-    );
   };
 
   const getRiskColor = (risk) => {
@@ -964,20 +947,19 @@ export default function CitizenDashboard() {
                 <p className="eyebrow text-marigold-400 mb-2">{t("inEmergency")}</p>
                 <h3 className="font-display text-lg text-parchment mb-4">{t("findNearestHelp")}</h3>
                 {!nearestPlaces && (
-                  <button onClick={findNearestPlaces} className="btn-secondary text-sm py-2.5 w-full">
-                    {resolveCityCoords(formData.location) ? `${t('findHelpNear')} ${formData.location.trim()}` : t('useMyLocation')}
+                  <button onClick={() => findNearestPlaces()} disabled={!prediction?.location} className="btn-secondary text-sm py-2.5 w-full">
+                    {prediction?.location ? `${t('findHelpNear')} ${prediction.location}` : (lang === 'ur' ? 'پہلے سیلاب کے خطرے کی پیش گوئی کریں۔' : 'Run a prediction to find registered help.')}
                   </button>
                 )}
                 {nearestPlaces === "loading" && <p className="text-sm text-muted">{t("findingNearby")}</p>}
                 {nearestPlaces === "error" && (
-                  <p className="text-sm text-muted">{t("couldntGetLocation")}</p>
+                  <p className="text-sm text-muted">{lang === 'ur' ? 'رجسٹرڈ سہولیات لوڈ نہیں ہو سکیں۔' : 'Could not load registered facilities.'}
+                    <button onClick={() => findNearestPlaces()} className="underline ml-2">{lang === 'ur' ? 'دوبارہ کوشش کریں' : 'Retry'}</button></p>
                 )}
                 {nearestPlaces && typeof nearestPlaces === "object" && (
                   <div className="space-y-4">
                     <p className="text-xs text-muted">
-                      {nearestPlaces.source === "typed"
-                        ? `${t('basedOnTypedCity')} (${formData.location.trim()})`
-                        : t('basedOnDeviceLocation')}
+                      {`${t('basedOnTypedCity')} (${nearestPlaces.city})`}
                     </p>
 
                     <div>
@@ -989,7 +971,7 @@ export default function CitizenDashboard() {
                             <div>
                               <p className="text-parchment font-medium">{lang === "ur" && s.name_ur ? s.name_ur : s.name}</p>
                               <p className="text-xs text-muted">
-                                {s.distanceKm.toFixed(1)} {t("kmAway")}
+                                {s.distanceKm != null ? `${s.distanceKm.toFixed(1)} ${t("kmAway")}` : ""}
                                 {s.capacity ? ` · 👥 ${s.current_occupancy || s.occupancy || 0} / ${s.capacity}` : ""}
                               </p>
                             </div>
@@ -1009,7 +991,7 @@ export default function CitizenDashboard() {
                           <div key={h.id} className="flex items-center justify-between text-sm border-b border-white/10 pb-2 last:border-0">
                             <div>
                               <p className="text-parchment font-medium">{lang === "ur" && h.name_ur ? h.name_ur : h.name}</p>
-                              <p className="text-xs text-muted">{h.distanceKm.toFixed(1)} {t("kmAway")}{h.services ? ` · ${h.services}` : ""}</p>
+                              <p className="text-xs text-muted">{h.distanceKm != null ? `${h.distanceKm.toFixed(1)} ${t("kmAway")}` : ""}{h.services ? ` · ${h.services}` : ""}</p>
                             </div>
                             <Link to={`/map?lat=${h.latitude}&lng=${h.longitude}&name=${encodeURIComponent(h.name)}`} className="text-xs text-teal-400 hover:text-teal-300 shrink-0 ml-2">{t("viewOnMap")}</Link>
                           </div>

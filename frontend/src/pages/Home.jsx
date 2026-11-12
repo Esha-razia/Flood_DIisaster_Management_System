@@ -28,6 +28,15 @@ const CAPABILITY_KEYS = [
   { num: "06", titleKey: "cap6Title", descKey: "cap6Desc" },
 ];
 
+const CAPABILITY_IMAGES = {
+  "01": { image: "prediction", alt: "Rainfall over a city, illustrating weather factors used for risk prediction" },
+  "02": { image: "explainable", alt: "Analysing information on a laptop, illustrating explainable results" },
+  "03": { image: "alerts", alt: "Checking messages on a smartphone, illustrating alert notifications" },
+  "04": { image: "rescue", alt: "Relief supplies being unloaded in Pakistan during flood recovery" },
+  "05": { image: "community", alt: "A volunteer recording information for a community report" },
+  "06": { image: "facilities", alt: "Beds and equipment inside a hospital ward" },
+};
+
 const accentClasses = {
   teal: { text: "text-teal-300", border: "border-teal-500/30", dot: "bg-teal-400" },
   marigold: { text: "text-marigold-300", border: "border-marigold-500/30", dot: "bg-marigold-400" },
@@ -203,14 +212,19 @@ export default function Home() {
           <h2 className="font-display text-3xl text-parchment mb-12">{t("recentFloodsTitle")}</h2>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { year: "2010", titleKey: "flood2010Title", descKey: "flood2010Desc" },
-              { year: "2011", titleKey: "flood2011Title", descKey: "flood2011Desc" },
-              { year: "2022", titleKey: "flood2022Title", descKey: "flood2022Desc" },
+              { image: "history-2010", alt: "Flood-affected homes in Pakistan during the 2010 floods", year: "2010", titleKey: "flood2010Title", descKey: "flood2010Desc" },
+              { image: "history-2011", alt: "NASA satellite view of flooding in Sindh in September 2011", year: "2011", titleKey: "flood2011Title", descKey: "flood2011Desc" },
+              { image: "history-2022", alt: "NASA satellite view of the extensive Pakistan floods in August 2022", year: "2022", titleKey: "flood2022Title", descKey: "flood2022Desc" },
             ].map((f) => (
-              <div key={f.year} className="dashboard-card p-7">
+              <div key={f.year} className="overflow-hidden border-b border-white/10">
+                <img src={`/images/home-sections/${f.image}.webp`} alt={f.alt}
+                  loading="lazy" decoding="async" width="1920" height="1200"
+                  className="w-full aspect-[8/5] object-cover" />
+                <div className="py-6">
                 <span className="font-mono-data text-xs text-red-300 uppercase tracking-widest">{f.year}</span>
                 <h3 className="font-display text-lg text-parchment mt-3 mb-2">{t(f.titleKey)}</h3>
                 <p className="text-sm text-muted leading-relaxed">{t(f.descKey)}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -225,12 +239,17 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6">
           <p className="eyebrow text-marigold-400 mb-3">{t("whatSystemDoes")}</p>
           <h2 className="font-display text-3xl text-parchment mb-12">{t("builtForResponse")}</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/5 rounded-2xl overflow-hidden border border-white/10">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-10">
             {CAPABILITY_KEYS.map((c) => (
-              <div key={c.num} className="bg-ink p-7 hover:bg-white/[0.03] transition-colors">
+              <div key={c.num} className="border-b border-white/10 overflow-hidden">
+                <img src={`/images/home-sections/${CAPABILITY_IMAGES[c.num].image}.webp`}
+                  alt={CAPABILITY_IMAGES[c.num].alt} loading="lazy" decoding="async"
+                  width="1920" height="1200" className="w-full aspect-[8/5] object-cover" />
+                <div className="py-6">
                 <span className="font-mono-data text-xs text-muted">{c.num}</span>
                 <h3 className="font-display text-lg text-parchment mt-3 mb-2">{t(c.titleKey)}</h3>
                 <p className="text-sm text-muted leading-relaxed">{t(c.descKey)}</p>
+                </div>
               </div>
             ))}
           </div>

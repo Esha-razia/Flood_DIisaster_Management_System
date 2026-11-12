@@ -1,4 +1,4 @@
-import { capitalizeDescription, validateReportFields, reportImageError, getReportImageSource } from '../utils/reportValidation';
+import { getReportImageSource } from '../utils/reportValidation';
 import { lookupLocation, getCurrentPosition, escapeMapText, locationErrorMessage } from "../utils/mapLocation";
 import { printMapOnly } from "../utils/printMap";
 import { useEffect, useRef, useState, useMemo } from "react";
@@ -124,7 +124,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const [addingFacility, setAddingFacility] = useState(null);
   const [locationError, setLocationError] = useState("");
   const locationSuccessVersion = useRef(0);
-  const locationRequest = useRef(0);
   const [loading, setLoading] = useState(() => !(cachedData?.markers?.length > 0));
   const [routing, setRouting] = useState(false);
   const [routeInfo, setRouteInfo] = useState(null); // { destination, distanceKm, durationMin } | 'error'
@@ -151,14 +150,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const [measuring, setMeasuring] = useState(false);
   const [measurePoints, setMeasurePoints] = useState([]); // up to 2 [lat,lng] points
   const [tripStops, setTripStops] = useState([]); // marker ids selected for multi-stop routing
-  const [reportMode, setReportMode] = useState(false);
-  const [reportReceipt, setReportReceipt] = useState(null);
-  useEffect(() => {
-    if (!reportReceipt) return;
-    const timer = setTimeout(() => setReportReceipt(null), 8000);
-    return () => clearTimeout(timer);
-  }, [reportReceipt]);
-  const [reportDraft, setReportDraft] = useState(null); // { lat, lng, location, description, severity, contact }
   const [weatherPoints, setWeatherPoints] = useState([]);
   const [showWeather, setShowWeather] = useState(false);
 
@@ -169,18 +160,9 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
   const containerRef = useRef(null);
   const sidebarItemRefs = useRef({});
   const markerInstancesRef = useRef({});
+  const openLocationPopupRef = useRef(false);
 
   const userRole = localStorage.getItem("userRole");
-  const userEmail = localStorage.getItem("userEmail");
-  const isCitizen = userRole === "citizen" && Boolean(userEmail);
-
-  useEffect(() => {
-    if (!isCitizen) {
-      setReportMode(false);
-      setReportDraft(null);
-    }
-  }, [isCitizen]);
-
   const [isOffline, setIsOffline] = useState(false);
 
   const isFetchingRef = useRef(false);
@@ -450,95 +432,6 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     ? haversineKm(measurePoints[0][0], measurePoints[0][1], measurePoints[1][0], measurePoints[1][1])
     : null;
 
-  // Use the address of the clicked point and retain its exact coordinates.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const handler = async event => {
-      if (!reportMode || !isCitizen) return;
-      const lat = event.latlng.lat, lng = event.latlng.lng;
-      const request = ++locationRequest.current;
-      setReportMode(false);
-      setReportDraft({ lat, lng, location:'', locating:true, description:'', severity:'', contact:'', imageUrl:'', error:'' });
-      const location = await lookupLocation(lat, lng);
-      if (request === locationRequest.current) setReportDraft(current => current?.lat === lat && current?.lng === lng ? { ...current, location, locating:false } : current);
-    };
-    map.on('click', handler);
-    return () => map.off('click', handler);
-  }, [reportMode]);
-
-  const reportLocationBusy = useRef(false);
-  const fillReportLocation = async () => {
-    if (reportLocationBusy.current) return;
-    reportLocationBusy.current = true;
-    const version = ++locationRequest.current;
-    setReportDraft(d => d ? {...d, locating:true, error:''} : d);
-    try {
-      const position = await getCurrentPosition();
-      const lat = position.coords.latitude, lng = position.coords.longitude;
-      const location = await lookupLocation(lat, lng);
-      if (version === locationRequest.current) {
-        setUserLocation({lat,lng,location,accuracy:position.coords.accuracy});
-        setReportDraft(d => d ? {...d,lat,lng,location,locating:false,errors:{...d.errors,location:''}} : d);
-      }
-    } catch (error) {
-      if (version === locationRequest.current) setReportDraft(d => d ? {...d,locating:false,error:locationErrorMessage(error)} : d);
-    } finally { reportLocationBusy.current = false; }
-  };
-  const reportField = field => reportDraft?.errors?.[field] ? 'border-red-500 ring-1 ring-red-500' : '';
-  const reportError = field => reportDraft?.errors?.[field] && <p role="alert" className="text-xs text-red-300">{reportDraft.errors[field]}</p>;
-  const chooseReportPhoto = file => {
-    if (!file) return;
-    const error = reportImageError(file);
-    if (error) { setReportDraft(d => ({...d,imageUrl:'',errors:{...d.errors,image:error}})); return; }
-    const reader = new FileReader();
-    reader.onload = () => setReportDraft(current => current ? {...current,imageUrl:reader.result,error:'',errors:{...current.errors,image:''}} : current);
-    reader.readAsDataURL(file);
-  };
-  const submitQuickReport = async () => {
-    if (!reportDraft) return;
-    const errors = validateReportFields(reportDraft);
-    if (reportDraft.locating) errors.location = 'Wait for location lookup to finish.';
-    if (Object.keys(errors).length) {
-      setReportDraft(d => ({
-        ...d,
-        errors,
-        error: lang === "ur" ? "براہ کرم جمع کرانے سے پہلے تمام مطلوبہ فیلڈز پر کریں۔" : "Please fill all required fields before submitting."
-      }));
-      return;
-    }
-    const email = localStorage.getItem('userEmail');
-    const name = localStorage.getItem('userName');
-    if (!email || !name || localStorage.getItem('userRole') !== 'citizen') {
-      setReportDraft(d => ({...d,error:'Sign in as a citizen to submit and track your report.'})); return;
-    }
-    try {
-      const result = await axios.post(`${API_BASE}/community-reports`, {
-        authorEmail: email, authorName: name,
-        location: reportDraft.location.trim(),
-        imageUrl: reportDraft.imageUrl,
-        description: reportDraft.description.trim(),
-        severity: reportDraft.severity,
-        contact: reportDraft.contact.trim(),
-        type: "Flooding",
-        latitude: reportDraft.lat,
-        longitude: reportDraft.lng,
-        source: "map",
-      }, {
-        headers: {
-          "X-FMS-Actor-Role": "citizen",
-          "X-FMS-Actor-Email": email,
-        }
-      });
-      setReportReceipt(result.data);
-      setReportDraft(null);
-      fetchMarkers();
-    } catch (err) {
-      setReportDraft(d => d ? {...d,errors:err.response?.data?.errors || {},error:err.response?.data?.message || "Could not submit report. Please try again."} : d);
-      console.error("Failed to submit report:", err);
-    }
-  };
-
   // Weather overlay (Open-Meteo — free, no API key) showing current rain
   // intensity for major cities, since "where is it raining right now" is
   // directly relevant to a flood-response map.
@@ -619,6 +512,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
     const map = mapRef.current;
     const layer = markersLayerRef.current;
     if (!map || !layer) return;
+    const reopenLocationPopup = openLocationPopupRef.current;
     layer.clearLayers();
     markerInstancesRef.current = {};
 
@@ -654,10 +548,14 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
 
     // "You are here" marker
     if (userLocation) {
-      L.marker([userLocation.lat, userLocation.lng], { icon: makeUserDivIcon(), zIndexOffset: 1000 })
+      const locationMarker = L.marker([userLocation.lat, userLocation.lng], { icon: makeUserDivIcon(), zIndexOffset: 1000 })
         .bindPopup(`<strong>${t("yourLocationLabel")}</strong><div>${escapeMapText(userLocation.location || "Finding address...")}</div><small>${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)} · Accuracy: ${Math.round(userLocation.accuracy || 0)} m</small>`, { className: "fdm-popup" })
-        .bindTooltip(escapeMapText(userLocation.location || t("yourLocationLabel")), { permanent:true, direction:"top", offset:[0,-12], className:"fdm-location-label" })
         .addTo(layer);
+      if (reopenLocationPopup) {
+        openLocationPopupRef.current = true;
+        locationMarker.openPopup();
+        locationMarker.on('popupclose', () => { openLocationPopupRef.current = false; });
+      }
     }
 
     // Zoomed out (viewing most/all of Pakistan) clustering vs individual pins
@@ -876,6 +774,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       const loc = { lat:position.coords.latitude, lng:position.coords.longitude, accuracy:position.coords.accuracy };
       locationSuccessVersion.current += 1;
       setLocationError('');
+      openLocationPopupRef.current = true;
       setUserLocation(loc);
       mapRef.current?.setView([loc.lat, loc.lng], 14, { animate:true });
     } catch (error) {
@@ -1222,9 +1121,9 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
         </div>
         {canEdit && (
           <>
-          {['shelter','hospital'].map(category => <button key={category} onClick={() => { setAddingFacility(category); setAddingRoad(false); setReportMode(false); setMeasuring(false); }} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">{addingFacility === category ? 'Click map to place' : category === 'shelter' ? 'Add shelter' : 'Add hospital'}</button>)}
+          {['shelter','hospital'].map(category => <button key={category} onClick={() => { setAddingFacility(category); setAddingRoad(false); setMeasuring(false); }} className="text-xs px-3 py-2 rounded-full font-semibold btn-secondary">{addingFacility === category ? 'Click map to place' : category === 'shelter' ? 'Add shelter' : 'Add hospital'}</button>)}
           <button
-            onClick={() => { setAddingRoad(v => !v); setAddingFacility(null); setReportMode(false); setMeasuring(false); }}
+            onClick={() => { setAddingRoad(v => !v); setAddingFacility(null); setMeasuring(false); }}
             className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${
               addingRoad ? "bg-red-500 text-white" : "btn-secondary"
             }`}
@@ -1233,16 +1132,8 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           </button>
           </>
         )}
-        {isCitizen && (
-          <button
-            onClick={() => { setReportMode((v) => !v); setMeasuring(false); setAddingRoad(false); setAddingFacility(null); }}
-            className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${reportMode ? "bg-marigold-500 text-ink" : "btn-secondary"}`}
-          >
-            {reportMode ? t("clickMapToReport") : t("reportHereBtn")}
-          </button>
-        )}
         <button
-          onClick={() => { setMeasuring((v) => !v); setMeasurePoints([]); setReportMode(false); setAddingRoad(false); setAddingFacility(null); }}
+          onClick={() => { setMeasuring((v) => !v); setMeasurePoints([]); setAddingRoad(false); setAddingFacility(null); }}
           className={`text-xs px-3 py-2 rounded-full font-semibold transition-colors ${measuring ? "bg-teal-500 text-ink" : "btn-secondary"}`}
         >
           {measuring ? t("clickTwoPoints") : t("measureBtn")}
@@ -1317,113 +1208,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
           <button onClick={() => setMeasurePoints([])} className="text-teal-300 hover:text-teal-100">✕</button>
         </div>
       )}
-      {reportReceipt && <div role="status" className="fdm-no-print mx-4 my-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-        {lang === "ur" ? `رپورٹ کامیابی سے جمع ہو گئی۔ ٹریکنگ آئی ڈی: ${reportReceipt.trackingId}۔` : `Report submitted successfully. Tracking ID: ${reportReceipt.trackingId}.`}
-        <a href="/community" className="underline ml-2">{lang === "ur" ? "میری رپورٹس دیکھیں" : "View My reports"}</a>
-        <button type="button" className="float-right ml-3" aria-label="Close report confirmation" onClick={() => setReportReceipt(null)}>×</button>
-      </div>}
       {locationError && <p className="fdm-no-print px-4 py-2 text-xs text-red-300">{locationError}</p>}
-      {isCitizen && reportDraft && (
-        <div className="fdm-no-print px-4 py-3 bg-marigold-500/10 border-b border-marigold-500/20 space-y-2">
-          <p className="text-xs text-marigold-200 font-semibold">{t("quickReportTitle")}</p>
-          <div className="grid sm:grid-cols-2 gap-2">
-            <div>
-              <input
-                aria-label="Incident location"
-                onFocus={fillReportLocation}
-                value={reportDraft.location}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setReportDraft((d) => {
-                    if (!d) return d;
-                    const nextErrors = { ...(d.errors || {}) };
-                    if (val.trim().length >= 3) delete nextErrors.location;
-                    const hasOther = Object.keys(nextErrors).length > 0;
-                    return { ...d, location: val, lat: null, lng: null, errors: nextErrors, error: hasOther ? d.error : "" };
-                  });
-                }}
-                placeholder={reportDraft.locating ? "Finding address..." : t("locationLabel")}
-                aria-busy={reportDraft.locating}
-                className={`field-input py-2 text-sm w-full ${reportField("location")}`}
-              />
-              {reportError("location")}
-            </div>
-            <div>
-              <select
-                aria-label="Incident severity"
-                value={reportDraft.severity || ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setReportDraft((d) => {
-                    if (!d) return d;
-                    const nextErrors = { ...(d.errors || {}) };
-                    if (["Low", "Medium", "High"].includes(val)) delete nextErrors.severity;
-                    const hasOther = Object.keys(nextErrors).length > 0;
-                    return { ...d, severity: val, errors: nextErrors, error: hasOther ? d.error : "" };
-                  });
-                }}
-                className={`field-input py-2 text-sm w-full ${reportField("severity")}`}
-              >
-                <option value="" disabled>{lang === "ur" ? "شدت منتخب کریں" : "Select severity"}</option>
-                <option value="Low">{t("lowSeverity")}</option>
-                <option value="Medium">{t("mediumSeverity")}</option>
-                <option value="High">{t("highSeverity")}</option>
-              </select>
-              {reportError("severity")}
-            </div>
-          </div>
-          <div>
-            <textarea
-              aria-label="Incident description"
-              value={reportDraft.description}
-              onChange={(e) => {
-                const val = capitalizeDescription(e.target.value);
-                setReportDraft((d) => {
-                  if (!d) return d;
-                  const nextErrors = { ...(d.errors || {}) };
-                  const text = val.trim();
-                  if (text.length >= 10 && (/^\p{L}/u.test(text) && !/^[a-z]/.test(text))) delete nextErrors.description;
-                  const hasOther = Object.keys(nextErrors).length > 0;
-                  return { ...d, description: val, errors: nextErrors, error: hasOther ? d.error : "" };
-                });
-              }}
-              placeholder={lang === "ur" ? "کم از کم 10 حروف درج کریں۔" : "Minimum 10 characters. Start with a capital letter."}
-              minLength={10}
-              rows={2}
-              className={`field-input py-2 text-sm w-full ${reportField("description")}`}
-            />
-            {reportError("description")}
-          </div>
-          <div>
-            <input
-              aria-label="Contact number"
-              inputMode="numeric"
-              maxLength={11}
-              value={reportDraft.contact}
-              onChange={(e) => {
-                const val = e.target.value;
-                setReportDraft((d) => {
-                  if (!d) return d;
-                  const nextErrors = { ...(d.errors || {}) };
-                  if (/^03\d{9}$/.test(val.trim())) delete nextErrors.contact;
-                  const hasOther = Object.keys(nextErrors).length > 0;
-                  return { ...d, contact: val, errors: nextErrors, error: hasOther ? d.error : "" };
-                });
-              }}
-              placeholder="03001234567 (11 digits)"
-              className={`field-input py-2 text-sm w-full ${reportField("contact")}`}
-            />
-            {reportError("contact")}
-          </div>
-          <label className={`block text-xs text-parchment rounded-lg p-2 ${reportField("image")}`}>{lang === "ur" ? "واقعے کی تصویر — JPG, PNG, WebP, GIF · زیادہ سے زیادہ 50 MB" : "Incident photo — JPG, PNG, WebP, GIF · Maximum 50 MB"}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event=>chooseReportPhoto(event.target.files?.[0])} className="block mt-2 text-xs" /></label>
-          {reportError("image")}{reportDraft.imageUrl && <img src={reportDraft.imageUrl} alt="Incident preview" className="max-h-24 rounded-lg" />}
-          {reportDraft.error && <p role="alert" className="text-xs text-red-300 font-semibold">{reportDraft.error}</p>}
-          <div className="flex justify-end gap-2">
-            <button onClick={() => { locationRequest.current += 1; setReportDraft(null); }} className="text-xs px-3 py-2 rounded-full btn-secondary">{t("cancel")}</button>
-            <button onClick={submitQuickReport} className="text-xs px-3 py-2 rounded-full bg-marigold-500 text-ink font-semibold">{t("submitReportBtn")}</button>
-          </div>
-        </div>
-      )}
       {routeInfo && routeInfo !== "error" && (
         <div className="px-4 py-2.5 bg-marigold-500/10 border-b border-marigold-500/20 text-xs text-marigold-200 flex items-center justify-between">
           <span>To <strong>{routeInfo.destination}</strong> — {routeInfo.distanceKm.toFixed(1)} km{routeInfo.durationMin ? `, ~${Math.round(routeInfo.durationMin)} min by road` : " (straight-line estimate)"}</span>
@@ -1437,7 +1222,7 @@ export default function FloodMap({ height = 480, canEdit = false, typeFilter = n
       )}
 
       <div className="flex flex-col lg:flex-row">
-        <div className={`relative flex-1 lg:flex-[1.7]${reportMode || addingRoad || addingFacility || measuring ? ' fdm-picking' : ''}`}>
+        <div className={`relative flex-1 lg:flex-[1.7]${addingRoad || addingFacility || measuring ? ' fdm-picking' : ''}`}>
           <div ref={mapContainerRef} className="fdm-print-only-map" style={{ height: isFullscreen ? "calc(100vh - 64px)" : height, width: "100%", background: "#101826" }} />
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-ink/70 backdrop-blur-sm">
